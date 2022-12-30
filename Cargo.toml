@@ -1,0 +1,25 @@
+[package]
+name = "ftlman"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+eframe = { version = "0.20", features = ["persistence"] }
+egui_dnd = "0.1"
+xdg = "2.4"
+anyhow = "1.0"
+regex = "1.7"
+lazy_static = "1.4"
+
+tokio = { version = "1.23", features = ["full", "macros"] }
+poll-promise = "0.2"
+
+silpkg = { path = "../silpkg" }
+walkdir = "2.3"
+zip = "0.6.3"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-xml-rs = "0.6"
