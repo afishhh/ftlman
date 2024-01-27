@@ -1,5 +1,3 @@
-#![feature(lazy_cell, iterator_try_collect)]
-
 use std::{
     collections::HashMap,
     fmt::Display,
@@ -59,8 +57,8 @@ fn get_cache_dir() -> PathBuf {
 
 enum HumanSizeUnit {
     Si,
+    IecNoI,
     Iec,
-    IecI,
 }
 
 fn to_human_size_units(units: HumanSizeUnit, num: u64) -> (f64, &'static str) {
@@ -69,8 +67,8 @@ fn to_human_size_units(units: HumanSizeUnit, num: u64) -> (f64, &'static str) {
 
     let (div, arr) = match units {
         HumanSizeUnit::Si => (1000.0, UNITS),
-        HumanSizeUnit::Iec => (1024.0, UNITS),
-        HumanSizeUnit::IecI => (1024.0, IUNITS),
+        HumanSizeUnit::IecNoI => (1024.0, UNITS),
+        HumanSizeUnit::Iec => (1024.0, IUNITS),
     };
 
     let mut i = 0;
@@ -115,7 +113,7 @@ fn main() {
             let v = log::LevelFilter::Info;
             v
         })
-        .parse_env("FTLMAN_LOG")
+        .parse_default_env()
         .init();
 
     // from: https://github.com/parasyte/egui-tokio-example/blob/main/src/main.rs
@@ -457,8 +455,8 @@ impl eframe::App for App {
                                     match stage {
                                         ApplyStage::DownloadingHyperspace { version, progress } => {
                                             if let Some((downloaded, total)) = *progress.borrow() {
-                                                let (dl_iec, dl_sfx) = to_human_size_units(HumanSizeUnit::IecI, downloaded);
-                                                let (tot_iec, tot_sfx) = to_human_size_units(HumanSizeUnit::IecI, total);
+                                                let (dl_iec, dl_sfx) = to_human_size_units(HumanSizeUnit::Iec, downloaded);
+                                                let (tot_iec, tot_sfx) = to_human_size_units(HumanSizeUnit::Iec, total);
                                                 ui.add(
                                                     egui::ProgressBar::new(
                                                         downloaded as f32 / total as f32,
@@ -805,7 +803,7 @@ impl eframe::App for App {
                                 ui.monospace("No metadata available for this mod");
                             }
                         } else {
-                            ui.monospace("Hover over a mod and it's description will appear here.");
+                            ui.monospace("Hover over a mod and its description will appear here.");
                         }
                     }
                 })

@@ -1,6 +1,7 @@
-use std::{path::PathBuf, time::SystemTime};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use once_cell::sync::OnceCell;
 use reqwest::{header::HeaderValue, Client, Request, Url};
 use serde::Deserialize;
 
@@ -9,32 +10,27 @@ use crate::{get_cache_dir, USER_AGENT};
 const API_ROOT: &str = "https://api.github.com";
 
 fn api_client() -> Result<&'static Client> {
-    static mut CLIENT: Option<Client> = None;
+    static CLIENT: OnceCell<Client> = OnceCell::new();
 
-    match unsafe { &mut CLIENT } {
-        Some(client) => Ok(client),
-        client @ None => {
-            let mut headers = reqwest::header::HeaderMap::new();
+    CLIENT.get_or_try_init(|| {
+        let mut headers = reqwest::header::HeaderMap::new();
 
-            headers.insert(
-                reqwest::header::ACCEPT,
-                HeaderValue::from_static("application/vnd.github+json"),
-            );
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("application/vnd.github+json"),
+        );
 
-            headers.insert(
-                "X-GitHub-Api-Version",
-                HeaderValue::from_static("2022-11-28"),
-            );
+        headers.insert(
+            "X-GitHub-Api-Version",
+            HeaderValue::from_static("2022-11-28"),
+        );
 
-            Ok(client.insert(
-                Client::builder()
-                    .user_agent(HeaderValue::from_str(&USER_AGENT).unwrap())
-                    .default_headers(headers)
-                    .https_only(true)
-                    .build()?,
-            ))
-        }
-    }
+        Ok(Client::builder()
+            .user_agent(HeaderValue::from_str(&USER_AGENT).unwrap())
+            .default_headers(headers)
+            .https_only(true)
+            .build()?)
+    })
 }
 
 pub struct Repository {
@@ -74,7 +70,7 @@ impl Repository {
             response.bytes().await?
         });
 
-        Ok(serde_json::from_slice(&bytes).context("Could not parse github API response")?)
+        serde_json::from_slice(&bytes).context("Could not parse github API response")
     }
 }
 

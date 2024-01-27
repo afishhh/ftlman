@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use anyhow::{anyhow, bail, Result};
-use xmltree::{Element, ElementPredicate, XMLNode};
+use xmltree::{Element, XMLNode};
 
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
@@ -13,28 +13,52 @@ pub fn patch(context: &mut Element, patch: Element) -> Result<()> {
                 let Some(matches) = mod_find(context, &el)? else {
                     bail!("Unrecognised mod tag {}", el.name);
                 };
+
                 for element in matches {
                     mod_commands(element, &el)?;
                 }
             }
+            XMLNode::Comment(..) => (),
             _ => {
                 if let Some(e) = node.as_mut_element() {
-                    e.namespaces = None;
+                    cleanup(e)
                 }
                 context.children.push(node);
             }
         }
     }
 
+    cleanup(context);
+
     Ok(())
 }
 
-fn cleanup(context: &mut Element) {
-    for child in std::mem::take(&mut context.children) {
+fn cleanup(element: &mut Element) {
+    if element.namespace.as_deref() == Some("mod") {
+        element.namespace = None
+    }
+
+    if let Some(ns) = element.namespaces.as_mut() {
+        ns.0.remove("mod");
+        ns.0.remove("mod-append");
+        ns.0.remove("mod-overwrite");
+    }
+
+    for (k, v) in std::mem::take(&mut element.attributes) {
+        if !k.starts_with("xmlns:mod") {
+            element.attributes.insert(k, v);
+        }
+    }
+
+    for child in std::mem::take(&mut element.children) {
         match child {
             XMLNode::Element(e) if e.namespace.as_deref() == Some(REMOVE_MARKER) => {}
+            XMLNode::Element(mut e) => {
+                cleanup(&mut e);
+                element.children.push(XMLNode::Element(e))
+            }
             XMLNode::Comment(..) => {}
-            n => context.children.push(n),
+            n => element.children.push(n),
         }
     }
 }
@@ -114,7 +138,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     })
                     .collect();
 
-                return Ok(Some(matches));
+                Ok(Some(matches))
             }
             "findLike" => {
                 let search_type = get_attr!("findName", String, "type")?;
@@ -193,89 +217,88 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     })
                     .collect();
 
-                return Ok(Some(matches));
+                Ok(Some(matches))
             }
-            _ => return Ok(None),
+            _ => Ok(None),
         }
     } else {
-        return Ok(None);
+        Ok(None)
     }
 }
 
 fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
     for command_node in &element.children {
-        match command_node {
-            XMLNode::Element(command_element) => {
-                match command_element.namespace.as_ref().map(|x| x.as_str()) {
-                    Some("mod") => {
-                        if let Some(matches) = mod_find(context, command_element)? {
-                            for element in matches {
-                                mod_commands(element, command_element)?;
+        if let XMLNode::Element(command_element) = command_node {
+            match command_element.namespace.as_deref() {
+                Some("mod") => {
+                    if let Some(matches) = mod_find(context, command_element)? {
+                        for element in matches {
+                            mod_commands(element, command_element)?;
+                        }
+                    } else {
+                        match command_element.name.as_str() {
+                            "selector" | "par" => {
+                                log::debug!("selector element {:?}", command_element);
                             }
-                        } else {
-                            match command_element.name.as_str() {
-                                "selector" | "par" => {}
-                                "setAttributes" => {
-                                    context.attributes.extend(
-                                        command_element
-                                            .attributes
-                                            .iter()
-                                            .map(|x| (x.0.to_owned(), x.0.to_owned())),
-                                    );
+                            "setAttributes" => {
+                                context.attributes.extend(
+                                    command_element
+                                        .attributes
+                                        .iter()
+                                        .map(|(k, v)| (k.to_owned(), v.to_owned())),
+                                );
+                            }
+                            "removeAttributes" => {
+                                for key in command_element.attributes.keys() {
+                                    let _ = context.attributes.remove(key);
                                 }
-                                "removeAttributes" => {
-                                    for key in command_element.attributes.keys() {
-                                        let _ = context.attributes.remove(key);
-                                    }
-                                }
-                                "setValue" => {
-                                    // Remove all text and cdata nodes
-                                    for node in std::mem::take(&mut context.children) {
-                                        match node {
-                                            XMLNode::Element(_)
-                                            | XMLNode::Comment(_)
-                                            | XMLNode::ProcessingInstruction(_, _) => {
-                                                context.children.push(node)
-                                            }
-                                            XMLNode::CData(_) | XMLNode::Text(_) => {}
+                            }
+                            "setValue" => {
+                                // Remove all text and cdata nodes
+                                for node in std::mem::take(&mut context.children) {
+                                    match node {
+                                        XMLNode::Element(_)
+                                        | XMLNode::Comment(_)
+                                        | XMLNode::ProcessingInstruction(_, _) => {
+                                            context.children.push(node)
                                         }
+                                        XMLNode::CData(_) | XMLNode::Text(_) => {}
                                     }
+                                }
 
-                                    context.children.push(XMLNode::Text(
-                                        command_element
-                                            .get_text()
-                                            .map(|x| x.trim().to_string())
-                                            .unwrap_or_else(String::new),
-                                    ))
-                                }
-                                "removeTag" => {
-                                    context.namespace = Some(REMOVE_MARKER.to_string());
-                                }
-                                _ => {
-                                    bail!("Unrecognised mod tag {}", command_element.name)
-                                }
+                                context.children.push(XMLNode::Text(
+                                    command_element
+                                        .get_text()
+                                        .map(|x| x.trim().to_string())
+                                        .unwrap_or_else(String::new),
+                                ))
+                            }
+                            "removeTag" => {
+                                context.namespace = Some(REMOVE_MARKER.to_string());
+                            }
+                            _ => {
+                                bail!("Unrecognised mod tag {}", command_element.name)
                             }
                         }
                     }
-                    Some("mod-append") => {
-                        let mut new = element.clone();
-                        new.namespace = None;
+                }
+                Some("mod-append") => {
+                    let mut new = element.clone();
+                    new.namespace = None;
+                    context.children.push(XMLNode::Element(new));
+                }
+                Some("mod-overwrite") => {
+                    let mut new = element.clone();
+                    new.namespace = None;
+
+                    if let Some(old) = context.get_mut_child(new.name.as_str()) {
+                        let _ = std::mem::replace(old, new);
+                    } else {
                         context.children.push(XMLNode::Element(new));
                     }
-                    Some("mod-overwrite") => {
-                        let mut new = element.clone();
-                        new.namespace = None;
-
-                        if let Some(old) = context.get_mut_child(new.name.as_str()) {
-                            let _ = std::mem::replace(old, new);
-                        } else {
-                            context.children.push(XMLNode::Element(new));
-                        }
-                    }
-                    _ => bail!("Unrecognised mod command tag {}", command_element.name),
                 }
+                _ => bail!("Unrecognised mod command tag {}", command_element.name),
             }
-            _ => {}
         }
     }
 

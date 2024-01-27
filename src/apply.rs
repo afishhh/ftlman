@@ -1,21 +1,19 @@
 use std::{
-    cell::LazyCell,
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
-use log::{error, trace};
+use log::{info, trace};
 use regex::{Regex, RegexBuilder};
-use reqwest::header::HeaderValue;
 use tokio::sync::Mutex;
 use tokio_stream::StreamExt;
 
-use crate::{base_reqwest_client_builder, get_cache_dir, Mod, ModSource, SharedState, USER_AGENT};
+use crate::{base_reqwest_client_builder, get_cache_dir, Mod, ModSource, SharedState};
 
 mod append;
 // mod doc;
@@ -50,7 +48,7 @@ async fn install_hyperspace_linux(
     ftl_path: &Path,
     state: Arc<Mutex<SharedState>>,
 ) -> Result<Option<Mod>> {
-    let mut lock = state.lock().await;
+    let lock = state.lock().await;
 
     if let Some(hs) = lock.hyperspace.clone() {
         let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
@@ -283,7 +281,7 @@ async fn patch_ftl_data(
     };
 
     for (i, m) in mods.iter().enumerate().filter(|(_, x)| x.enabled) {
-        trace!("Applying mod {}", m.filename());
+        info!("Applying mod {}", m.filename());
         // FIXME: propagate error
         let paths = m.source.paths().unwrap();
         let path_count = paths.len();
@@ -298,7 +296,12 @@ async fn patch_ftl_data(
             {
                 let mut lock = state.lock().await;
                 lock.apply_stage = Some(ApplyStage::Mod {
-                    mod_idx: i,
+                    // FIXME: Hacky
+                    mod_idx: i + lock
+                        .hyperspace
+                        .as_ref()
+                        .map(|x| x.patch_hyperspace_ftl.into())
+                        .unwrap_or(0),
                     file_idx: j,
                     files_total: path_count,
                 });
@@ -314,22 +317,19 @@ async fn patch_ftl_data(
                     .open(&name)
                     .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
 
-                if !pkg.contains(&real_name) {
-                    trace!("warning: {} contains append file {name} but ftl.dat does not contain {real_name} (inserting {name} as {real_name})", m.filename());
-                    std::io::copy(
-                        &mut reader,
-                        &mut pkg.insert(real_name.clone(), INSERT_FLAGS)?,
-                    )
-                    .with_context(|| format!("Could not insert {real_name} into ftl.dat"))?;
-                    continue;
-                }
-
                 let original_text = {
                     let mut buf = Vec::new();
-                    pkg.open(&real_name)
-                        .map_err(|x| anyhow!(x))
-                        .and_then(|mut x| Ok(x.read_to_end(&mut buf)))
-                        .with_context(|| format!("Failed to extract {real_name} from ftl.dat"))?;
+                    match pkg.open(&real_name) {
+                        Ok(mut x) => x.read_to_end(&mut buf).map(|_| ()),
+                        Err(silpkg::sync::OpenError::NotFound) => {
+                            buf.extend_from_slice(
+                                br#"<?xml version="1.0" encoding="utf-8"?><FTL></FTL>"#,
+                            );
+                            Ok(())
+                        }
+                        Err(silpkg::sync::OpenError::Io(x)) => Err(x),
+                    }
+                    .with_context(|| format!("Failed to extract {real_name} from ftl.dat"))?;
                     String::from_utf8(buf).with_context(|| {
                         format!("Failed to decode {real_name} from ftl.dat as UTF-8")
                     })?
@@ -373,13 +373,16 @@ async fn patch_ftl_data(
                 )
                 .with_context(|| format!("Could not patch XML file {}", name))?;
 
+                // FIXME: Make this a setting
+                #[cfg(debug_assertions)]
                 if MOD_NAMESPACE_TAG_REGEX.find(&append_without_root).is_some() {
-                    std::fs::create_dir_all("/tmp/ftlmantest/").unwrap();
-                    std::fs::write("/tmp/ftlmantest/in", original_fixed).unwrap();
-                    std::fs::write("/tmp/ftlmantest/patch", append_fixed).unwrap();
+                    let base = PathBuf::from_str("/tmp/ftlmantest").unwrap().join(&name);
+                    std::fs::create_dir_all(&base).unwrap();
+                    std::fs::write(base.join("in"), original_fixed).unwrap();
+                    std::fs::write(base.join("patch"), append_fixed).unwrap();
                     document
                         .write_with_config(
-                            &mut std::fs::File::create("/tmp/ftlmantest/out").unwrap(),
+                            &mut std::fs::File::create(base.join("out")).unwrap(),
                             xmltree::EmitterConfig {
                                 write_document_declaration: false,
                                 perform_indent: true,
@@ -387,20 +390,22 @@ async fn patch_ftl_data(
                             },
                         )
                         .unwrap();
-                    error!("Mod namespaced tag in: {}/{}", m.filename(), name);
+                    log::debug!("Mod namespaced tag in: {}/{}", m.filename(), name);
                 }
 
                 const PREFIX: &str = "<FTL>";
                 const SUFFIX: &str = "</FTL>";
-                let mut new_text = {
+                let new_text = {
                     let mut out = vec![];
-                    document.write_with_config(
-                        &mut std::io::Cursor::new(&mut out),
-                        xmltree::EmitterConfig {
-                            write_document_declaration: false,
-                            ..Default::default()
-                        },
-                    );
+                    document
+                        .write_with_config(
+                            &mut std::io::Cursor::new(&mut out),
+                            xmltree::EmitterConfig {
+                                write_document_declaration: false,
+                                ..Default::default()
+                            },
+                        )
+                        .unwrap();
                     let mut buf = String::from_utf8(out)?;
 
                     if !had_ftl_root {
@@ -414,8 +419,16 @@ async fn patch_ftl_data(
                     buf
                 };
 
-                pkg.remove(&real_name)
-                    .with_context(|| format!("Failed to remove {real_name} from ftl.dat"))?;
+                match pkg.remove(&real_name) {
+                    Ok(()) => {}
+                    Err(silpkg::sync::RemoveError::NotFound) => {}
+                    Err(x) => {
+                        return Err(x).with_context(|| {
+                            format!("Failed to remove {real_name} from ftl.dat")
+                        })?
+                    }
+                }
+
                 pkg.insert(real_name.clone(), INSERT_FLAGS)
                     .map_err(|x| anyhow!(x))
                     .and_then(|mut x| x.write_all(new_text.as_bytes()).map_err(Into::into))
