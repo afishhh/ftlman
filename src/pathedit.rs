@@ -3,7 +3,8 @@
 use std::{hash::Hash, path::Path};
 
 use eframe::egui::{
-    Area, FontSelection, Frame, Id, Modifiers, Response, RichText, TextBuffer, TextEdit, Ui, Widget,
+    text_edit::TextEditState, Area, FontSelection, Frame, Id, Modifiers, Response, RichText,
+    TextBuffer, TextEdit, Ui, Widget,
 };
 
 pub struct PathEdit<'a> {
@@ -16,16 +17,24 @@ pub struct PathEdit<'a> {
 
 impl<'a> PathEdit<'a> {
     fn suggestions_for(&self, pref: &str) -> Vec<String> {
-        let path = Path::new(pref);
-
-        if path.is_relative() && !self.complete_relative {
+        if Path::new(pref).is_relative() && !self.complete_relative {
             return vec![];
         }
 
+        let last_slash = pref.chars().rev().enumerate().find_map(|(i, c)| {
+            if c == '/' {
+                Some(pref.len() - i)
+            } else {
+                None
+            }
+        });
+        let filename = last_slash.map(|idx| pref.char_range(idx..pref.len()));
+        let basename = last_slash.map(|idx| pref.char_range(0..idx));
+
         let opt = if pref.ends_with('/') {
-            Some(path)
+            Some(pref)
         } else {
-            path.parent()
+            basename
         };
 
         if let Some(dir) = opt {
@@ -33,36 +42,23 @@ impl<'a> PathEdit<'a> {
                 Ok(rd) => rd,
                 Err(_) => return vec![],
             })
-            .map(|result| {
+            .filter_map(|result| {
                 result.ok().and_then(|entry| {
-                    entry
-                        .path()
-                        .file_name()
-                        .unwrap()
-                        .to_str()
-                        .map(|s| s.to_string())
-                })
-            })
-            .filter(|result| {
-                result.as_ref().is_some_and(|p| {
-                    pref.ends_with('/')
-                        || path
-                            .file_name()
-                            .and_then(|x| x.to_str())
-                            .is_some_and(|p2| p.starts_with(p2))
-                })
-            })
-            .filter(|result| {
-                result.as_ref().is_some_and(|p| {
-                    (self.completion_filter)(&if pref.ends_with('/') {
-                        path.join(p)
-                    } else {
-                        path.with_file_name(p)
+                    let path = entry.path();
+                    path.file_name().unwrap().to_str().map(|s| {
+                        let mut s = s.to_string();
+
+                        if path.is_dir() {
+                            s.push(std::path::MAIN_SEPARATOR);
+                        }
+
+                        s
                     })
                 })
             })
-            .try_collect::<Vec<_>>()
-            .unwrap_or_default();
+            .filter(|p| pref.ends_with('/') || filename.is_some_and(|p2| p.starts_with(p2)))
+            .filter(|result| (self.completion_filter)(&Path::new(dir).join(result)))
+            .collect::<Vec<_>>();
             suggestions.sort();
             suggestions
         } else {
@@ -94,13 +90,6 @@ impl<'a> PathEdit<'a> {
         }
     }
 
-    pub fn complete_relative(self, value: bool) -> Self {
-        Self {
-            complete_relative: value,
-            ..self
-        }
-    }
-
     pub fn desired_width(self, desired_width: f32) -> Self {
         Self {
             desired_width: Some(desired_width),
@@ -116,18 +105,84 @@ impl<'a> PathEdit<'a> {
 impl Widget for PathEdit<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         let memid = self.id.with("memory");
+        let text_edit_id = self.id.with("inner textedit");
 
-        let mut input = ui.input_mut();
-        let shift_tab = input.consume_key(Modifiers::SHIFT, eframe::egui::Key::Tab);
-        let tab = input.consume_key(Modifiers::NONE, eframe::egui::Key::Tab);
-        let enter = input.consume_key(Modifiers::NONE, eframe::egui::Key::Enter);
-        // println!("{tab} {shift_tab}");
-        drop(input);
+        let mut shift_tab = false;
+        let mut tab = false;
+        let mut enter = false;
 
-        let output = {
+        if ui.memory(|x| x.has_focus(text_edit_id)) {
+            ui.input_mut(|input| {
+                shift_tab = input.consume_key(Modifiers::SHIFT, eframe::egui::Key::Tab);
+                tab = input.consume_key(Modifiers::NONE, eframe::egui::Key::Tab);
+                enter = input.consume_key(Modifiers::NONE, eframe::egui::Key::Enter);
+            });
+        } else {
+            shift_tab = false;
+            tab = false;
+            enter = false;
+        }
+
+        let state = TextEditState::load(ui.ctx(), text_edit_id);
+        let mut changed = false;
+
+        if let Some((state, cursor)) = state
+            .and_then(|x| {
+                x.ccursor_range()
+                    .and_then(|x| {
+                        if x.primary == x.secondary {
+                            Some(x.primary)
+                        } else {
+                            None
+                        }
+                    })
+                    .map(|r| (x, r))
+            })
+            .filter(|_| ui.memory(|x| x.has_focus(text_edit_id)))
+        {
+            if enter {
+                let pref = self
+                    .buffer
+                    .as_str()
+                    .chars()
+                    .take(cursor.index)
+                    .collect::<String>();
+
+                let mut suggestions = self.suggestions_for(&pref);
+                if !suggestions.is_empty() {
+                    if let Some(suggestion) = {
+                        let idx = ui.memory(|x| x.data.get_temp::<usize>(memid));
+                        idx.and_then(|idx| suggestions.get_mut(idx).map(std::mem::take))
+                    } {
+                        let replaced_len = if pref.ends_with('/') {
+                            0
+                        } else {
+                            Path::new(&pref).file_name().map(|a| a.len()).unwrap_or(0)
+                        };
+                        let insert_start = pref.len() - replaced_len;
+                        self.buffer
+                            .delete_char_range(insert_start..(insert_start + replaced_len));
+                        self.buffer.insert_text(&suggestion, insert_start);
+                        let new_pos = eframe::egui::text::CCursor {
+                            index: insert_start + suggestion.len(),
+                            ..cursor
+                        };
+                        let mut state = state;
+                        state.set_ccursor_range(Some(eframe::egui::text_edit::CCursorRange {
+                            primary: new_pos,
+                            secondary: new_pos,
+                        }));
+                        state.store(ui.ctx(), text_edit_id);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        let mut output = {
             let mut edit = TextEdit::singleline(self.buffer)
                 .lock_focus(true)
-                .id(self.id.with("inner textedit"))
+                .id(text_edit_id)
                 .font(FontSelection::Style(eframe::egui::TextStyle::Monospace));
 
             if let Some(width) = self.desired_width {
@@ -138,8 +193,11 @@ impl Widget for PathEdit<'_> {
         }
         .show(ui);
 
+        if changed {
+            output.response.mark_changed();
+        }
+
         if output.response.has_focus() {
-            // why the fuck does this work?
             if let Some(cursor) = output.cursor_range.and_then(|r| r.single()) {
                 let pref = self
                     .buffer
@@ -148,35 +206,19 @@ impl Widget for PathEdit<'_> {
                     .take(cursor.ccursor.index)
                     .collect::<String>();
 
-                let mut suggestions = self.suggestions_for(&pref);
+                let suggestions = self.suggestions_for(&pref);
+
                 if !suggestions.is_empty() {
                     let cursor_pos =
                         output.text_draw_pos + output.galley.pos_from_cursor(&cursor).max.to_vec2();
 
-                    if let Some(suggestion) = {
-                        if enter {
-                            let val = ui.memory().data.get_temp::<usize>(memid);
-                            val.and_then(|idx| suggestions.get_mut(idx).map(std::mem::take))
-                        } else {
-                            None
-                        }
-                    } {
-                        // println!("test");
-                        // TODO: insert completion
-                        //       this should instead be done before drawing
-                        //       moving this would also allow completing the two TODOs below
-                        //       (this is non-trivial because we have to know the cursor position)
-                    } else {
-                        // self.buffer.replace("OwO");
-                        let selected = {
-                            let down = tab;
-                            /* TODO: input.key_pressed(eframe::egui::Key::ArrowDown) */
-                            let up = shift_tab; /* TODO: input.key_pressed(eframe::egui::Key::ArrowUp) */
+                    let selected = {
+                        let down = tab;
+                        let up = shift_tab;
 
-                            let mut mem = ui.memory();
+                        ui.memory_mut(|mem| {
                             let sel = mem.data.get_temp_mut_or_default::<usize>(memid);
 
-                            // println!("{sel} {down} {up} {tab} {shift_tab}");
                             if down && !up {
                                 *sel += 1;
                             } else if !down && up && *sel > 0 {
@@ -186,42 +228,36 @@ impl Widget for PathEdit<'_> {
                             *sel = std::cmp::min(*sel, suggestions.len() - 1);
 
                             *sel
-                        };
-                        // println!("{selected}");
+                        })
+                    };
 
-                        Area::new(self.id.with("completion area"))
-                            .fixed_pos(cursor_pos)
-                            .order(eframe::egui::Order::Tooltip)
-                            .interactable(true)
-                            .movable(false)
-                            .show(ui.ctx(), |ui| {
-                                Frame::default()
-                                    .fill(ui.visuals().faint_bg_color.linear_multiply(0.9))
-                                    .show(ui, |ui| {
-                                        let mut it = suggestions.iter().enumerate();
-                                        for (i, value) in (&mut it)
-                                            .skip(selected.checked_sub(2).unwrap_or(selected))
-                                            .take(5)
-                                        {
-                                            _ = ui.selectable_label(
-                                                i == selected,
-                                                RichText::new(value.as_str()).strong(),
-                                            );
-                                        }
+                    Area::new(self.id.with("completion area"))
+                        .fixed_pos(cursor_pos)
+                        .order(eframe::egui::Order::Tooltip)
+                        .interactable(true)
+                        .movable(false)
+                        .show(ui.ctx(), |ui| {
+                            Frame::default()
+                                .fill(ui.visuals().faint_bg_color.linear_multiply(0.9))
+                                .show(ui, |ui| {
+                                    let mut it = suggestions.iter().enumerate().skip(
+                                        selected.saturating_sub(
+                                            2 + 3usize.saturating_sub(suggestions.len() - selected),
+                                        ),
+                                    );
 
-                                        if it.len() > 0 {
-                                            ui.spacing_mut().item_spacing.y = 0.0;
-                                            ui.vertical_centered(|ui| {
-                                                ui.label(RichText::new("•••").size(24.0).raised());
-                                            });
-                                        }
-                                    });
-                            });
-                    }
+                                    for (i, value) in (&mut it).take(5) {
+                                        _ = ui.selectable_label(
+                                            i == selected,
+                                            RichText::new(value.as_str()).strong(),
+                                        );
+                                    }
+                                });
+                        });
                 }
             }
         } else {
-            ui.memory().data.remove::<usize>(memid);
+            ui.memory_mut(|x| x.data.remove::<usize>(memid));
         }
 
         output.response

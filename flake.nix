@@ -9,8 +9,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         inherit (pkgs) lib;
-      in
-      with pkgs.lib; {
+      in {
         devShell = pkgs.mkShell {
           nativeBuildInputs = with pkgs; with pkgs.xorg; [
             bashInteractive
@@ -22,11 +21,11 @@
             libXrandr
             libXi
             fontconfig
-            libGL
+            openssl
           ];
 
           shellHook = ''
-            export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${lib.makeLibraryPath (with pkgs; [libGL libGLU])}
+            export LD_LIBRARY_PATH=/run/opengl-driver/lib/:${lib.makeLibraryPath (with pkgs; [ libGL libGLU libxkbcommon ])}
           '';
         };
       });

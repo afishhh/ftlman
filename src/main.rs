@@ -1,24 +1,25 @@
-#![feature(is_some_and, iterator_try_collect, async_closure)]
-#![feature(generators, generator_trait)]
+#![feature(lazy_cell, iterator_try_collect)]
 
 use std::{
     collections::HashMap,
     fmt::Display,
     fs::File,
-    io::{self, Read},
+    io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use eframe::{
-    egui::{self, RichText, TextFormat, Ui, Visuals},
-    epaint::{text::LayoutJob, FontId, Rect, RectShape, Rounding, Vec2},
+    egui::{self, RichText, Ui, Visuals},
+    epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2},
 };
-use egui_dnd::{DragDropItem, DragDropUi};
+use egui_dnd::DragDropItem;
 use lazy_static::lazy_static;
-use regex::Regex;
+use log::{debug, error};
+use poll_promise::Promise;
+use reqwest::{header::HeaderValue, Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use walkdir::WalkDir;
@@ -27,16 +28,96 @@ use zip::ZipArchive;
 mod pathedit;
 use pathedit::PathEdit;
 
+mod apply;
+mod cache;
+mod github;
+mod lazy;
+mod scan;
+
+use apply::ApplyStage;
+use lazy::ResettableLazy;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
-const APPEND_FTL_TAG_PATTERN: &str = "(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)";
 lazy_static! {
-    static ref APPEND_FTL_TAG_REGEX: Regex = Regex::new(APPEND_FTL_TAG_PATTERN).unwrap();
+    static ref USER_AGENT: String = format!("FTL Mod Manager v{}", crate::VERSION);
+    static ref HYPERSPACE_REPOSITORY: github::Repository =
+        github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace");
+    static ref BASE_DIRECTORIES: xdg::BaseDirectories =
+        xdg::BaseDirectories::new().expect("Could not determine xdg base directories");
+}
+
+fn base_reqwest_client_builder() -> ClientBuilder {
+    Client::builder().user_agent(HeaderValue::from_str(&USER_AGENT).unwrap())
+}
+
+fn get_cache_dir() -> PathBuf {
+    BASE_DIRECTORIES.get_cache_home().join("ftlman")
+}
+
+enum HumanSizeUnit {
+    Si,
+    Iec,
+    IecI,
+}
+
+fn to_human_size_units(units: HumanSizeUnit, num: u64) -> (f64, &'static str) {
+    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB", "YB"];
+    const IUNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
+
+    let (div, arr) = match units {
+        HumanSizeUnit::Si => (1000.0, UNITS),
+        HumanSizeUnit::Iec => (1024.0, UNITS),
+        HumanSizeUnit::IecI => (1024.0, IUNITS),
+    };
+
+    let mut i = 0;
+    let mut cur = num as f64;
+    while cur > div {
+        cur /= div;
+        i += 1;
+    }
+
+    (cur, arr.get(i).unwrap_or_else(|| arr.last().unwrap()))
 }
 
 fn main() {
+    env_logger::builder()
+        .format(|f, record| {
+            let module = record
+                .module_path()
+                .map(|x| x.split_once("::").map(|(m, _)| m).unwrap_or(x))
+                .filter(|x| *x != env!("CARGO_PKG_NAME"));
+
+            for line in record.args().to_string().split('\n') {
+                write!(f, "\x1b[90m[")?;
+                f.default_level_style(record.level()).write_to(f)?;
+                write!(f, "{}", record.level())?;
+
+                if let Some(module) = module {
+                    write!(f, " {}", module)?;
+                }
+
+                write!(f, "\x1b[90m]\x1b[0m")?;
+
+                writeln!(f, " {line}")?;
+            }
+
+            Ok(())
+        })
+        .filter_level(log::LevelFilter::Info)
+        .filter_module(module_path!(), {
+            #[cfg(debug_assertions)]
+            let v = log::LevelFilter::Debug;
+            #[cfg(not(debug_assertions))]
+            let v = log::LevelFilter::Info;
+            v
+        })
+        .parse_env("FTLMAN_LOG")
+        .init();
+
     // from: https://github.com/parasyte/egui-tokio-example/blob/main/src/main.rs
     let rt = tokio::runtime::Runtime::new().expect("Unable to create async runtime");
 
@@ -53,26 +134,29 @@ fn main() {
         })
     });
 
-    eframe::run_native(
+    if let Err(error) = eframe::run_native(
         "FTL Manager",
         eframe::NativeOptions {
-            initial_window_size: Some(Vec2::new(620., 480.)),
-            resizable: true,
-            min_window_size: Some(Vec2::new(620., 480.)),
-            transparent: true,
+            viewport: egui::ViewportBuilder::default()
+                .with_inner_size(Vec2::new(620., 480.))
+                .with_min_inner_size(Vec2::new(620., 480.))
+                .with_resizable(true),
+
             ..Default::default()
         },
-        Box::new(|cc| Box::new(App::new(cc))),
-    )
+        Box::new(|cc| Box::new(App::new(cc).expect("Failed to set up application state"))),
+    ) {
+        error!("{error}");
+    }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ThemeSetting {
     colors: ThemeColorscheme,
     opacity: f32,
 }
 
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum ThemeColorscheme {
     Dark,
     Light,
@@ -105,8 +189,8 @@ fn value_true() -> bool {
     true
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-struct Settings {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
     mod_directory: PathBuf,
     #[serde(default)]
     ftl_directory: Option<PathBuf>,
@@ -121,37 +205,28 @@ struct Settings {
 }
 
 impl Settings {
-    fn path() -> PathBuf {
-        // TODO: Cache this
-        xdg::BaseDirectories::new()
-            .unwrap()
-            .place_config_file(SETTINGS_LOCATION)
-            .unwrap()
+    fn default_path() -> Result<PathBuf> {
+        Ok(BASE_DIRECTORIES.place_config_file(SETTINGS_LOCATION)?)
     }
 
-    pub fn load_or_create() -> Settings {
-        let path = Self::path();
-        println!("Settings path: {}", path.display());
-
+    pub fn load(path: &Path) -> Option<Settings> {
         if path.exists() {
             serde_json::de::from_reader(File::open(path).unwrap()).unwrap()
         } else {
-            let settings = Settings::default();
-            settings.save();
-            settings
+            None
         }
     }
 
-    pub fn save(&self) {
-        serde_json::ser::to_writer(File::create(Self::path()).unwrap(), self).unwrap()
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        serde_json::ser::to_writer(File::create(path)?, self)?;
+        Ok(())
     }
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            mod_directory: xdg::BaseDirectories::new()
-                .unwrap()
+            mod_directory: BASE_DIRECTORIES
                 .create_data_directory("ftlman/mods")
                 .unwrap(),
             ftl_directory: None,
@@ -175,111 +250,132 @@ impl Default for ThemeSetting {
     }
 }
 
-enum ApplyStage {
-    Preparing,
-    Mod {
-        mod_idx: usize,
-        file_idx: usize,
-        files_total: usize,
-    },
-    Repacking,
-}
-
-struct SharedState {
+pub struct SharedState {
     // whether something is currently being done with the mods
     // (if this is true and apply_state is None that means we're scanning)
     locked: bool,
     // this is a value in the range 0-1 that is used as the progress value in the applying popup
     apply_stage: Option<ApplyStage>,
 
-    last_error: Option<anyhow::Error>,
     ctx: egui::Context,
+    #[cfg(target_os = "linux")]
+    hyperspace: Option<HyperspaceState>,
+    #[cfg(target_os = "linux")]
+    hyperspace_releases: ResettableLazy<Promise<Result<Vec<github::Release>>>>,
     mods: Vec<Mod>,
+}
+
+enum CurrentTask {
+    Scan(Promise<Result<()>>),
+    Apply(Promise<Result<()>>),
+    None,
+}
+
+impl CurrentTask {
+    pub fn is_none(&self) -> bool {
+        match self {
+            CurrentTask::Scan(_) => true,
+            CurrentTask::Apply(_) => true,
+            CurrentTask::None => true,
+        }
+    }
 }
 
 struct App {
     last_hovered_mod: Option<usize>,
-    mods_dnd: DragDropUi,
-    mods: Arc<Mutex<SharedState>>,
+    shared: Arc<Mutex<SharedState>>,
 
+    current_task: CurrentTask,
+    settings_path: PathBuf,
     settings: Settings,
     settings_open: bool,
     visuals: Visuals,
 }
 
 impl App {
-    fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let settings = Settings::load_or_create();
-        let app = App {
+    fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
+        let settings_path = Settings::default_path()?;
+        let settings = Settings::load(&settings_path).unwrap_or_default();
+        let shared = Arc::new(Mutex::new(SharedState {
+            locked: false,
+            apply_stage: None,
+            ctx: cc.egui_ctx.clone(),
+            #[cfg(target_os = "linux")]
+            hyperspace: None,
+            #[cfg(target_os = "linux")]
+            hyperspace_releases: ResettableLazy::new(|| {
+                Promise::spawn_async(HYPERSPACE_REPOSITORY.releases())
+            }),
+            mods: vec![],
+        }));
+        let mut app = App {
             last_hovered_mod: None,
-            mods_dnd: DragDropUi::default(),
-            mods: Arc::new(Mutex::new(SharedState {
-                locked: false,
-                apply_stage: None,
-                last_error: None,
-                ctx: cc.egui_ctx.clone(),
-                mods: vec![],
-            })),
+            shared: shared.clone(),
 
+            current_task: CurrentTask::None,
             visuals: settings.theme.visuals(),
+            settings_path,
             settings,
             settings_open: false,
         };
 
-        tokio::spawn(SharedState::scan(
-            app.settings.mod_directory.clone(),
+        app.current_task = CurrentTask::Scan(Promise::spawn_async(scan::scan(
             app.settings.clone(),
-            app.mods.clone(),
-        ));
+            shared,
+            true,
+        )));
 
-        app
+        Ok(app)
     }
 }
 
 pub fn truncate_to_fit(ui: &mut Ui, font: &FontId, text: &str, desired_width: f32) -> String {
-    let fonts = ui.fonts();
-    let mut truncated = String::with_capacity(text.len());
-    const TRUNCATION_SUFFIX: &str = "...";
-    let truncation_suffix_width: f32 = TRUNCATION_SUFFIX
-        .chars()
-        .map(|c| fonts.glyph_width(font, c))
-        .sum();
-    let mut current_width = 0.;
+    ui.fonts(|fonts| {
+        let mut truncated = String::with_capacity(text.len());
+        const TRUNCATION_SUFFIX: &str = "...";
+        let truncation_suffix_width: f32 = TRUNCATION_SUFFIX
+            .chars()
+            .map(|c| fonts.glyph_width(font, c))
+            .sum();
+        let mut current_width = 0.;
 
-    for chr in text.chars() {
-        let chr_width = fonts.glyph_width(font, chr);
-        if current_width + chr_width > desired_width - truncation_suffix_width {
-            if !truncated.is_empty() {
-                truncated += TRUNCATION_SUFFIX;
+        for chr in text.chars() {
+            let chr_width = fonts.glyph_width(font, chr);
+            if current_width + chr_width > desired_width - truncation_suffix_width {
+                if !truncated.is_empty() {
+                    truncated += TRUNCATION_SUFFIX;
+                }
+                break;
+            } else {
+                truncated.push(chr);
+                current_width += chr_width
             }
-            break;
-        } else {
-            truncated.push(chr);
-            current_width += chr_width
         }
-    }
 
-    truncated
+        truncated
+    })
 }
 
 impl eframe::App for App {
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
-        println!("Saving settings");
-        self.settings.save();
-        println!("Saving mod order");
-        let order = self.mods.blocking_lock().mod_order();
+        debug!("Saving settings");
+        self.settings
+            .save(&self.settings_path)
+            .unwrap_or_else(|e| error!("Failed to save settings: {e}"));
+        debug!("Saving mod order");
+        let order = self.shared.blocking_lock().mod_configuration();
         match std::fs::File::create(self.settings.mod_directory.join(MOD_ORDER_FILENAME)) {
             Ok(f) => {
                 if let Err(e) = serde_json::to_writer(f, &order) {
-                    eprintln!("Failed to write mod order: {e}")
+                    error!("Failed to write mod order: {e}")
                 }
             }
-            Err(e) => eprintln!("Failed to open mod order file: {e}"),
+            Err(e) => error!("Failed to open mod order file: {e}"),
         }
     }
 
-    fn persist_native_window(&self) -> bool {
-        true
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(120)
     }
 
     fn persist_egui_memory(&self) -> bool {
@@ -316,15 +412,17 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     ui.label("Mods");
 
-                    let mut lock = self.mods.blocking_lock();
-                    let modifiable = !lock.locked && lock.last_error.is_none();
+                    let mut lock = self.shared.blocking_lock();
+                    let modifiable = !lock.locked && self.current_task.is_none();
 
-                    if ui.button("Unselect all").clicked() {
-                        lock.mods.iter_mut().for_each(|m| m.enabled = false);
-                    }
-                    if ui.button("Select all").clicked() {
-                        lock.mods.iter_mut().for_each(|m| m.enabled = true);
-                    }
+                    ui.add_enabled_ui(modifiable, |ui| {
+                        if ui.button("Unselect all").clicked() {
+                            lock.mods.iter_mut().for_each(|m| m.enabled = false);
+                        }
+                        if ui.button("Select all").clicked() {
+                            lock.mods.iter_mut().for_each(|m| m.enabled = true);
+                        }
+                    });
 
                     ui.with_layout(
                         egui::Layout::right_to_left(eframe::emath::Align::Min),
@@ -336,10 +434,11 @@ impl eframe::App for App {
                                 )
                                 .on_hover_text_at_pointer("Apply mods to FTL");
                             if apply.clicked() {
-                                tokio::spawn(SharedState::apply(
-                                    self.settings.ftl_directory.clone().unwrap(),
-                                    self.mods.clone(),
-                                ));
+                                self.current_task =
+                                    CurrentTask::Apply(Promise::spawn_async(apply::apply(
+                                        self.settings.ftl_directory.clone().unwrap(),
+                                        self.shared.clone(),
+                                    )))
                             }
 
                             let scan = ui
@@ -348,35 +447,58 @@ impl eframe::App for App {
 
                             if scan.clicked() && !lock.locked {
                                 self.last_hovered_mod = None;
-                                tokio::spawn(SharedState::scan(
-                                    self.settings.mod_directory.clone(),
-                                    self.settings.clone(),
-                                    self.mods.clone(),
+                                self.current_task = CurrentTask::Scan(Promise::spawn_async(
+                                    scan::scan(self.settings.clone(), self.shared.clone(), false),
                                 ));
                             }
 
                             if lock.locked {
                                 if let Some(stage) = &lock.apply_stage {
                                     match stage {
-                                        ApplyStage::Preparing => ui.strong("Preparing"),
+                                        ApplyStage::DownloadingHyperspace { version, progress } => {
+                                            if let Some((downloaded, total)) = *progress.borrow() {
+                                                let (dl_iec, dl_sfx) = to_human_size_units(HumanSizeUnit::IecI, downloaded);
+                                                let (tot_iec, tot_sfx) = to_human_size_units(HumanSizeUnit::IecI, total);
+                                                ui.add(
+                                                    egui::ProgressBar::new(
+                                                        downloaded as f32 / total as f32,
+                                                    )
+                                                    .text(format!(
+                                                        "Downloading Hyperspace {version} ({dl_iec:.2}{dl_sfx}/{tot_iec:.2}{tot_sfx})")),
+                                                );
+                                            } else {
+                                                ui.strong(format!(
+                                                    "Downloading Hyperspace {version}"
+                                                ));
+                                            }
+                                        }
+                                        ApplyStage::InstallingHyperspace => {
+                                            ui.spinner();
+                                            ui.strong("Installing Hyperspace");
+                                        }
+                                        ApplyStage::Preparing => {
+                                            ui.spinner();
+                                            ui.strong("Preparing");
+                                        }
                                         ApplyStage::Repacking => {
                                             ui.spinner();
-                                            ui.strong("Repacking archive")
+                                            ui.strong("Repacking archive");
                                         }
                                         ApplyStage::Mod {
                                             mod_idx,
                                             file_idx,
                                             files_total,
-                                        } => ui.add(
-                                            egui::ProgressBar::new(
-                                                *file_idx as f32 / *files_total as f32,
-                                            )
-                                            .text(format!(
-                                                "Applying {}",
-                                                lock.mods[*mod_idx].filename(),
-                                            ))
-                                            .desired_width(320.),
-                                        ),
+                                        } => {
+                                            ui.add(
+                                                egui::ProgressBar::new(
+                                                    *file_idx as f32 / *files_total as f32,
+                                                )
+                                                .text(format!(
+                                                    "Applying {}",
+                                                    lock.mods[*mod_idx].filename(),
+                                                )),
+                                            );
+                                        }
                                     };
                                 } else {
                                     ui.spinner();
@@ -386,22 +508,22 @@ impl eframe::App for App {
                         },
                     );
 
-                    if let Some(e) = &lock.last_error {
-                        let mut open = true;
-                        egui::Window::new("Error")
-                            .auto_sized()
-                            .open(&mut open)
-                            .show(ctx, |ui| {
-                                // FIXME: This is slow
-                                ui.strong(
-                                    e.chain()
-                                        .map(|e| e.to_string())
-                                        .collect::<Vec<String>>()
-                                        .join(": "),
-                                );
-                            });
-                        if !open {
-                            lock.last_error = None;
+                    if let Some((title, error)) = match &self.current_task {
+                        CurrentTask::Scan(p) => p
+                            .ready()
+                            .and_then(|x| x.as_ref().err())
+                            .map(|x| ("Could not scan mod folder", x)),
+                        CurrentTask::Apply(p) => p
+                            .ready()
+                            .and_then(|x| x.as_ref().err())
+                            .map(|x| ("Could not apply mods", x)),
+                        CurrentTask::None => None,
+                    } {
+                        lock.apply_stage = None;
+                        if error_popup(ui, title, error) {
+                            self.current_task = CurrentTask::None;
+                            // TODO: Make this cleaner
+                            lock.locked = false;
                         }
                     }
                 });
@@ -409,25 +531,125 @@ impl eframe::App for App {
                 ui.separator();
 
                 ui.horizontal_top(|ui| {
-                    let mut mods = self.mods.blocking_lock();
+                    let mut shared = self.shared.blocking_lock();
 
-                    egui::ScrollArea::vertical().show_rows(
-                        ui,
-                        /* TODO calculate this instead */ 16.,
-                        mods.mods.len(),
-                        |ui, row_range| {
-                            ui.set_min_width(400.);
-                            ui.set_max_width(ui.available_width() / 2.1);
-                            ui.add_enabled_ui(!mods.locked, |ui| {
-                                ui.vertical(|ui| {
-                                    let mut i = row_range.start;
-                                    let mut did_change_hovered_mod = false;
-                                    let dnd_response = self.mods_dnd.ui::<Mod>(
-                                        ui,
-                                        mods.mods[row_range.clone()].iter_mut(),
-                                        |item, ui, handle| {
+                    ui.vertical(|ui| {
+                        ui.set_min_width(400.);
+                        ui.set_max_width(ui.available_width() / 2.1);
+
+                        ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
+                            #[cfg(target_os = "linux")]
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new("Hyperspace").font(FontId::default()).strong(),
+                                );
+
+                                let combobox =
+                                    egui::ComboBox::new("hyperspace select combobox", "")
+                                        .selected_text(
+                                            shared
+                                                .hyperspace
+                                                .as_ref()
+                                                .map(|x| x.version_name.as_str())
+                                                .unwrap_or("none"),
+                                        );
+
+                                let mut clicked = None;
+                                match shared.hyperspace_releases.ready() {
+                                    Some(Ok(releases)) => {
+                                        combobox.show_ui(ui, |ui| {
+                                            for release in releases.iter() {
+                                                let response = ui.selectable_label(
+                                                    shared.hyperspace.as_ref().is_some_and(|x| {
+                                                        x.release_id == release.id
+                                                    }),
+                                                    &release.name,
+                                                );
+                                                let desc_pos = Pos2::new(
+                                                    ui.min_rect().max.x
+                                                        + ui.spacing().window_margin.left,
+                                                    ui.min_rect().min.y
+                                                        - ui.spacing().window_margin.top,
+                                                );
+
+                                                if response.clicked() {
+                                                    clicked =
+                                                        Some((release.name.clone(), release.id));
+                                                } else if response.hovered() {
+                                                    egui::Window::new("hyperspace version tooltip")
+                                                        .fixed_pos(desc_pos)
+                                                        .title_bar(false)
+                                                        .resizable(false)
+                                                        .show(ctx, |ui| {
+                                                            // FIXME: this doesn't work
+                                                            ui.set_max_height(
+                                                                ui.available_height() * 0.5,
+                                                            );
+                                                            ui.monospace(&release.body)
+                                                        });
+                                                }
+                                            }
+                                        });
+                                    }
+                                    Some(Err(err)) => {
+                                        if error_popup(
+                                            ui,
+                                            "Failed to fetch hyperspace releases",
+                                            err,
+                                        ) {
+                                            shared.hyperspace_releases.take();
+                                        }
+                                    }
+                                    None => {
+                                        combobox.show_ui(ui, |ui| {
+                                            ui.strong("Loading...");
+                                        });
+                                    }
+                                };
+
+                                if let Some((name, id)) = clicked {
+                                    shared.hyperspace = Some(HyperspaceState {
+                                        version_name: name,
+                                        release_id: id,
+                                        patch_hyperspace_ftl: false,
+                                    });
+                                }
+
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(eframe::emath::Align::Center),
+                                    |ui| {
+                                        if shared.hyperspace_releases.ready().is_none() {
+                                            ui.label("Fetching hyperspace releases...");
+                                            ui.spinner();
+                                        }
+                                    },
+                                );
+
+                            if let Some(HyperspaceState { ref mut patch_hyperspace_ftl, .. }) = shared.hyperspace {
+                                                    ui.with_layout(
+                                                        egui::Layout::right_to_left(
+                                                            eframe::emath::Align::Center,
+                                                        ),
+                                    |ui| {
+                                ui.checkbox(patch_hyperspace_ftl, "Patch Hyperspace.ftl");
+                            });}
+                            });
+
+                            // TODO: Separate this into a separate widget
+                            egui::ScrollArea::vertical()
+                                .id_source("mod scroll area")
+                                .show_rows(
+                                    ui,
+                                    /* TODO calculate this instead */ 16.,
+                                    shared.mods.len(),
+                                    |ui, row_range| {
+                                        let mut i = row_range.start;
+                                        let mut did_change_hovered_mod = false;
+                                        let dnd_response = egui_dnd::dnd(ui, "mod list dnd").show(
+                                            shared.mods[row_range.clone()].iter_mut(), 
+                                        |ui, item, handle, item_state| {
                                             ui.horizontal(|ui| {
-                                                handle.ui(ui, item, |ui| {
+                                                handle.ui(ui, |ui| {
                                                     let (resp, painter) = ui.allocate_painter(
                                                         Vec2::new(10., 16.),
                                                         egui::Sense {
@@ -528,27 +750,28 @@ impl eframe::App for App {
                                         },
                                     );
 
-                                    if let Some(resp) = dnd_response.completed {
-                                        egui_dnd::utils::shift_vec(
-                                            row_range.start + resp.from,
-                                            row_range.start + resp.to,
-                                            &mut mods.mods,
-                                        );
-                                        if !did_change_hovered_mod
-                                            && self.last_hovered_mod
-                                                == Some(row_range.start + resp.from)
-                                        {
-                                            self.last_hovered_mod = Some(if resp.from >= resp.to {
-                                                row_range.start + resp.to
-                                            } else {
-                                                row_range.start + resp.to - 1
-                                            });
+                                        if let Some(update) = dnd_response.final_update() {
+                                            egui_dnd::utils::shift_vec(
+                                                row_range.start + update.from,
+                                                row_range.start + update.to,
+                                                &mut shared.mods,
+                                            );
+                                            if !did_change_hovered_mod
+                                                && self.last_hovered_mod
+                                                    == Some(row_range.start + update.from)
+                                            {
+                                                self.last_hovered_mod =
+                                                    Some(if update.from >= update.to {
+                                                        row_range.start + update.to
+                                                    } else {
+                                                        row_range.start + update.to - 1
+                                                    });
+                                            }
                                         }
-                                    }
-                                });
-                            });
-                        },
-                    );
+                                    },
+                                );
+                        });
+                    });
 
                     if ui.available_width() > 0. {
                         ui.separator();
@@ -556,7 +779,7 @@ impl eframe::App for App {
                         ui.style_mut().wrap = Some(true);
 
                         if let Some(idx) = self.last_hovered_mod {
-                            if let Some(metadata) = mods.mods[idx].metadata().ok().flatten() {
+                            if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
                                 ui.vertical(|ui| {
                                     ui.horizontal(|ui| {
                                         ui.label(RichText::new(&metadata.title).heading().strong());
@@ -626,11 +849,11 @@ impl eframe::App for App {
                         .changed();
 
                     if filters_changed {
-                        tokio::spawn(SharedState::scan(
-                            self.settings.mod_directory.clone(),
+                        self.current_task = CurrentTask::Scan(Promise::spawn_async(scan::scan(
                             self.settings.clone(),
-                            self.mods.clone(),
-                        ));
+                            self.shared.clone(),
+                            false,
+                        )));
                     }
 
                     ui.horizontal(|ui| {
@@ -703,291 +926,68 @@ impl eframe::App for App {
     }
 }
 
-impl SharedState {
-    fn mod_order(&self) -> ModOrder {
-        ModOrder(
-            self.mods
-                .iter()
-                .map(|x| ModOrderElement {
-                    filename: x.filename(),
-                    enabled: x.enabled,
-                })
-                .collect(),
-        )
-    }
+fn error_popup(ui: &mut Ui, title: &str, error: &anyhow::Error) -> bool {
+    let mut open = true;
+    egui::Window::new(title)
+        .auto_sized()
+        .open(&mut open)
+        .show(ui.ctx(), |ui| {
+            let mut job = LayoutJob::default();
 
-    async fn internal_scan(
-        dir: PathBuf,
-        settings: Settings,
-        state: Arc<Mutex<Self>>,
-    ) -> Result<()> {
-        let mut lock = state.lock().await;
-
-        if lock.locked {
-            return Ok(());
-        }
-        lock.locked = true;
-
-        let old = std::mem::take(&mut lock.mods)
-            .into_iter()
-            .map(|m| Mod {
-                source: m.source.clone(),
-                enabled: m.enabled,
-                cached_metadata: None,
-            })
-            .map(|m| (m.filename(), m))
-            .collect::<HashMap<String, Mod>>();
-
-        lock.ctx.request_repaint();
-        drop(lock);
-
-        let mod_order_map = (match std::fs::File::open(dir.join(MOD_ORDER_FILENAME)) {
-            Ok(f) => serde_json::from_reader(std::io::BufReader::new(f)).with_context(|| {
-                format!("Failed to deserialize mod order from {MOD_ORDER_FILENAME}")
-            })?,
-            Err(e) if e.kind() == io::ErrorKind::NotFound => ModOrder(vec![]),
-            Err(e) => return Err(e).context("Failed to open mod order file"),
-        })
-        .into_map();
-
-        for result in std::fs::read_dir(dir).context("Failed to open mod directory")? {
-            let entry = result.context("Failed to read entry from mod directory")?;
-
-            if let Some(mut m) = ModSource::new(&settings, entry.path()).map(Mod::maybe_from) {
-                let filename = m.filename();
-                m.enabled = old.get(&filename).map_or(
-                    mod_order_map.get(&filename).map(|x| x.1).unwrap_or(false),
-                    |o| o.enabled,
+            let msg_font = ui
+                .style()
+                .text_styles
+                .get(&egui::TextStyle::Body)
+                .unwrap()
+                .clone();
+            let msg_color = Rgba::from_srgba_unmultiplied(255, 100, 0, 255);
+            for (i, err) in error.chain().enumerate() {
+                if i != 0 {
+                    job.append("\n", 0.0, egui::TextFormat::default());
+                }
+                job.append(&i.to_string(), 0.0, egui::TextFormat::default());
+                job.append(
+                    &err.to_string(),
+                    10.,
+                    egui::TextFormat::simple(msg_font.clone(), msg_color.into()),
                 );
+            }
 
-                let mut lock = state.lock().await;
-                lock.mods.push(m);
-                lock.mods.sort_by_cached_key(|m| {
-                    mod_order_map
-                        .get(&m.filename())
-                        .map(|x| x.0)
-                        .unwrap_or(usize::MAX)
-                });
-                lock.ctx.request_repaint();
+            let galley = ui.fonts(|x| x.layout_job(job));
+            ui.label(galley);
+        });
+
+    ui.memory_mut(|mem| {
+        let was_open: &mut bool = mem
+            .data
+            .get_temp_mut_or_default("error popup was open".into());
+        if !*was_open && open {
+            let mut it = error.chain().enumerate();
+            let (_, err) = it.next().unwrap();
+            error!("{err}");
+            for (i, err) in it {
+                error!("#{i} {err}")
             }
         }
+        *was_open = open;
+    });
 
-        {
-            let mut lock = state.lock().await;
-            lock.locked = false;
-            lock.ctx.request_repaint();
-        }
+    !open
+}
 
-        Ok(())
-    }
-
-    async fn scan(dir: PathBuf, settings: Settings, state: Arc<Mutex<Self>>) {
-        if let Err(e) = Self::internal_scan(dir, settings, state.clone()).await {
-            let mut lock = state.lock().await;
-            lock.last_error = Some(e);
-            lock.locked = false;
-            lock.ctx.request_repaint();
-        }
-    }
-
-    async fn internal_apply(ftl_path: PathBuf, state: Arc<Mutex<Self>>) -> Result<()> {
-        let mut lock = state.lock().await;
-
-        if lock.locked {
-            return Ok(());
-        }
-        lock.locked = true;
-        lock.apply_stage = Some(ApplyStage::Preparing);
-        lock.ctx.request_repaint();
-
-        let mods = lock.mods.clone();
-        drop(lock);
-
-        let data_file = {
-            const BACKUP_FILENAME: &str = "ftl.dat.vanilla";
-            let vanilla_path = ftl_path.join(BACKUP_FILENAME);
-            let original_path = ftl_path.join("ftl.dat");
-
-            if vanilla_path.exists() {
-                let mut orig = std::fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(original_path)
-                    .context("Failed to open ftl.dat")?;
-                std::io::copy(
-                    &mut File::open(vanilla_path)
-                        .with_context(|| format!("Failed to open {BACKUP_FILENAME}"))?,
-                    &mut orig,
-                )
-                .with_context(|| format!("Failed to copy {BACKUP_FILENAME} to ftl.dat"))?;
-                orig
-            } else {
-                let mut orig = std::fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(original_path)
-                    // FIXME: This duplication does not look nice
-                    .context("Failed to open ftl.dat")?;
-                std::io::copy(
-                    &mut orig,
-                    &mut File::create(vanilla_path)
-                        .with_context(|| format!("Failed to open {BACKUP_FILENAME}"))?,
-                )
-                .context("Failed to backup ftl.dat")?;
-                orig
-            }
-        };
-
-        let mut pkg = silpkg::Pkg::parse(data_file, true).context("Failed to parse ftl.dat")?;
-
-        for (i, m) in mods.iter().enumerate().filter(|(_, x)| x.enabled) {
-            println!("Applying mod {}", m.filename());
-            // FIXME: propagate error
-            let paths = m.source.paths().unwrap();
-            let path_count = paths.len();
-            // FIXME: propagate error
-            let mut handle = m.source.open().unwrap();
-            for (j, name) in paths.into_iter().enumerate() {
-                if name.starts_with("mod-appendix") {
-                    println!("Skipping {name}");
-                    continue;
-                }
-
-                {
-                    let mut lock = state.lock().await;
-                    lock.apply_stage = Some(ApplyStage::Mod {
-                        mod_idx: i,
-                        file_idx: j,
-                        files_total: path_count,
-                    });
-                    lock.ctx.request_repaint();
-                }
-
-                if let Some(real_stem) = name
-                    .strip_suffix(".xml.append")
-                    .or_else(|| name.strip_suffix(".append.xml"))
-                {
-                    let real_name = format!("{real_stem}.xml");
-                    let mut reader = handle.open(&name).with_context(|| {
-                        format!("Failed to open {name} from mod {}", m.filename())
-                    })?;
-
-                    if !pkg.contains(&real_name) {
-                        println!("warning: {} contains append file {name} but ftl.dat does not contain {real_name} (inserting {name} as {real_name})", m.filename());
-                        pkg.insert(real_name.clone(), silpkg::Flags::empty(), None, reader)
-                            .with_context(|| {
-                                format!("Could not insert {real_name} into ftl.dat")
-                            })?;
-                        continue;
-                    }
-
-                    let original_text = {
-                        let mut buf = Vec::new();
-                        pkg.extract_to(&real_name, &mut buf).with_context(|| {
-                            format!("Failed to extract {real_name} from ftl.dat")
-                        })?;
-                        String::from_utf8(buf).with_context(|| {
-                            format!("Failed to decode {real_name} from ftl.dat as UTF-8")
-                        })?
-                    };
-
-                    println!("Modifying {real_name} according to {name}");
-
-                    // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
-
-                    let append_text = {
-                        let mut buf = String::new();
-                        reader
-                            .read_to_string(&mut buf)
-                            .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
-                        buf
-                    };
-
-                    // FIXME: this can be made quicker
-                    let had_ftl_root = APPEND_FTL_TAG_REGEX.is_match(&original_text);
-                    let original_without_root =
-                        APPEND_FTL_TAG_REGEX.replace_all(&original_text, "");
-                    let append_without_root = APPEND_FTL_TAG_REGEX.replace_all(&append_text, "");
-                    const PREFIX: &str = "<FTL>";
-                    const SUFFIX: &str = "</FTL>";
-                    let new_text = {
-                        let mut buf = String::with_capacity(
-                            original_without_root.len()
-                                + append_without_root.len()
-                                + if had_ftl_root {
-                                    PREFIX.len() + SUFFIX.len()
-                                } else {
-                                    0
-                                },
-                        );
-
-                        if had_ftl_root {
-                            buf += PREFIX;
-                        }
-                        buf += &original_without_root;
-                        buf += &append_without_root;
-                        if had_ftl_root {
-                            buf += SUFFIX;
-                        }
-
-                        buf
-                    };
-
-                    pkg.remove(&real_name)
-                        .with_context(|| format!("Failed to remove {real_name} from ftl.dat"))?;
-                    pkg.insert(
-                        real_name.clone(),
-                        silpkg::Flags::empty(),
-                        None,
-                        std::io::Cursor::new(new_text),
-                    )
-                    .with_context(|| {
-                        format!("Failed to insert modified {real_name} into ftl.dat")
-                    })?;
-                } else {
-                    if pkg.contains(&name) {
-                        println!("Overwriting {name}...");
-                        pkg.remove(&name)
-                            .with_context(|| format!("Failed to remove {name} from ftl.dat"))?;
-                    } else {
-                        println!("Inserting {name}...");
-                    }
-
-                    let reader = handle.open(&name).with_context(|| {
-                        format!("Failed to open {name} from mod {}", m.filename())
-                    })?;
-                    pkg.insert(name.clone(), silpkg::Flags::empty(), None, reader)
-                        .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
-                }
-            }
-            println!("Applied {}", m.filename());
-        }
-
-        println!("Repacking...");
-        {
-            let mut lock = state.lock().await;
-            lock.apply_stage = Some(ApplyStage::Repacking);
-            lock.ctx.request_repaint();
-        }
-        pkg.repack().context("Failed to repack ftl.dat")?;
-        drop(pkg);
-
-        let mut lock = state.lock().await;
-        lock.apply_stage = None;
-        lock.locked = false;
-        lock.ctx.request_repaint();
-
-        Ok(())
-    }
-
-    async fn apply(ftl_path: PathBuf, state: Arc<Mutex<Self>>) {
-        if let Err(e) = Self::internal_apply(ftl_path, state.clone()).await {
-            let mut lock = state.lock().await;
-            lock.last_error = Some(e);
-            lock.locked = false;
-            lock.apply_stage = None;
-            lock.ctx.request_repaint();
+impl SharedState {
+    fn mod_configuration(&self) -> ModConfigurationState {
+        ModConfigurationState {
+            hyperspace: self.hyperspace.clone(),
+            order: ModOrder(
+                self.mods
+                    .iter()
+                    .map(|x| ModOrderElement {
+                        filename: x.filename().to_string(),
+                        enabled: x.enabled,
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -999,26 +999,40 @@ struct Mod {
     cached_metadata: Option<Metadata>,
 }
 
-impl DragDropItem for Mod {
+impl DragDropItem for &mut Mod {
     fn id(&self) -> egui::Id {
         match &self.source {
             ModSource::Directory { path } => path.id(),
             ModSource::Zip { path } => path.id(),
+            ModSource::InMemoryZip { filename, .. } => filename.id().with("in memory zip filename"),
         }
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct ModOrderElement {
     filename: String,
     enabled: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct ModOrder(Vec<ModOrderElement>);
 
+#[derive(Clone, Serialize, Deserialize)]
+struct HyperspaceState {
+    version_name: String,
+    release_id: u64,
+    patch_hyperspace_ftl: bool,
+}
+
+#[derive(Default, Clone, Serialize, Deserialize)]
+struct ModConfigurationState {
+    hyperspace: Option<HyperspaceState>,
+    order: ModOrder,
+}
+
 impl ModOrder {
-    fn into_map(self) -> HashMap<String, (usize, bool)> {
+    fn into_order_map(self) -> HashMap<String, (usize, bool)> {
         self.0
             .into_iter()
             .enumerate()
@@ -1031,18 +1045,29 @@ impl ModOrder {
 enum ModSource {
     Directory { path: PathBuf },
     Zip { path: PathBuf },
+    // Used by in apply for Hyperspace.ftl
+    InMemoryZip { filename: String, data: Vec<u8> },
 }
 
-enum OpenModHandle {
-    Directory { path: PathBuf },
-    Zip { archive: ZipArchive<File> },
+trait ReadSeek: Read + Seek {}
+impl<T: Read + Seek> ReadSeek for T {}
+
+enum OpenModHandle<'a> {
+    Directory {
+        path: PathBuf,
+    },
+    Zip {
+        archive: ZipArchive<Box<dyn ReadSeek + Send + Sync + 'a>>,
+    },
 }
 
 impl ModSource {
-    pub fn path(&self) -> &Path {
+    pub fn filename(&self) -> &str {
         match self {
-            ModSource::Directory { path } => path,
-            ModSource::Zip { path } => path,
+            ModSource::Directory { path } | ModSource::Zip { path } => {
+                path.file_name().unwrap().to_str().unwrap()
+            }
+            ModSource::InMemoryZip { filename, .. } => filename,
         }
     }
 
@@ -1090,8 +1115,31 @@ impl ModSource {
             }
             ModSource::Zip { path } => {
                 let mut out = vec![];
-
                 let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
+                for name in archive
+                    .file_names()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>()
+                {
+                    if !name.ends_with('/') {
+                        out.push(
+                            archive
+                                .by_name(&name)?
+                                .enclosed_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string(),
+                        );
+                    }
+                }
+
+                Ok(out)
+            }
+            Self::InMemoryZip { data, .. } => {
+                let mut out = vec![];
+                let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))?;
+
                 for name in archive
                     .file_names()
                     .map(|s| s.to_string())
@@ -1115,17 +1163,24 @@ impl ModSource {
         }
     }
 
-    pub fn open(&self) -> Result<OpenModHandle> {
+    pub fn open<'a>(&'a self) -> Result<OpenModHandle<'a>> {
         Ok(match self {
             ModSource::Directory { path } => OpenModHandle::Directory { path: path.clone() },
             ModSource::Zip { path } => OpenModHandle::Zip {
-                archive: zip::ZipArchive::new(std::fs::File::open(path)?)?,
+                archive: zip::ZipArchive::new(
+                    Box::new(std::fs::File::open(path)?) as Box<dyn ReadSeek + Send + Sync>
+                )?,
+            },
+            Self::InMemoryZip { data, .. } => OpenModHandle::Zip {
+                archive: zip::ZipArchive::new(
+                    Box::new(Cursor::new(data.as_slice())) as Box<dyn ReadSeek + Send + Sync>
+                )?,
             },
         })
     }
 }
 
-impl OpenModHandle {
+impl<'a> OpenModHandle<'a> {
     // TODO: Async IO
     pub fn open(&mut self, name: &str) -> Result<Box<dyn Read + '_>> {
         Ok(match self {
@@ -1136,20 +1191,15 @@ impl OpenModHandle {
 }
 
 impl Mod {
-    fn filename(&self) -> String {
-        self.source
-            .path()
-            .file_name()
-            .unwrap()
-            .to_string_lossy()
-            .to_string()
+    fn filename(&self) -> &str {
+        self.source.filename()
     }
 
     fn title(&mut self) -> Result<Option<&str>> {
         Ok(self.metadata()?.map(|m| &*m.title))
     }
 
-    fn maybe_from(source: ModSource) -> Mod {
+    fn new(source: ModSource) -> Mod {
         Mod {
             source,
             enabled: false,
@@ -1161,9 +1211,9 @@ impl Mod {
         if self.cached_metadata.is_some() {
             return Ok(self.cached_metadata.as_ref());
         } else {
-            self.cached_metadata = Some(serde_xml_rs::from_reader(
+            self.cached_metadata = Some(quick_xml::de::from_reader(
                 // FIXME: Differentiate between not found and IO error
-                self.source.open()?.open("mod-appendix/metadata.xml")?,
+                std::io::BufReader::new(self.source.open()?.open("mod-appendix/metadata.xml")?),
             )?);
             Ok(self.cached_metadata.as_ref())
         }
