@@ -22,7 +22,7 @@ tokio-stream = "0.1"
 poll-promise = { version = "0.3", features = ["tokio"] }
 
 reqwest = { version = "0.11", features = ["stream", "json"] }
-cacache = "12"
+cacache = { version = "12", features = ["tokio-runtime"], default-features = false }
 
 silpkg = { git = "https://github.com/afishhh/silpkg.git" }
 walkdir = "2.3"
