@@ -48,7 +48,7 @@ lazy_static! {
 }
 
 fn base_reqwest_client_builder() -> ClientBuilder {
-    Client::builder().user_agent(HeaderValue::from_str(&USER_AGENT).unwrap())
+    Client::builder().user_agent(HeaderValue::from_static(&USER_AGENT))
 }
 
 fn get_cache_dir() -> PathBuf {
@@ -261,6 +261,20 @@ pub struct SharedState {
     #[cfg(target_os = "linux")]
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<github::Release>>>>,
     mods: Vec<Mod>,
+}
+
+impl SharedState {
+    fn change_hyperspace_state(&mut self, new: Option<HyperspaceState>) {
+        for m in std::mem::take(&mut self.mods) {
+            if let ModSource::InMemoryZip { ref filename, .. }  = m.source {
+                if filename == "Hyperspace.ftl" {
+                    continue
+                }
+            }
+
+            self.mods.push(m);
+        }
+    }
 }
 
 enum CurrentTask {
@@ -549,13 +563,17 @@ impl eframe::App for App {
                                                 .hyperspace
                                                 .as_ref()
                                                 .map(|x| x.version_name.as_str())
-                                                .unwrap_or("none"),
+                                                .unwrap_or("None"),
                                         );
 
                                 let mut clicked = None;
                                 match shared.hyperspace_releases.ready() {
                                     Some(Ok(releases)) => {
                                         combobox.show_ui(ui, |ui| {
+                                            if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
+                                                clicked = Some(None);
+                                            }
+
                                             for release in releases.iter() {
                                                 let response = ui.selectable_label(
                                                     shared.hyperspace.as_ref().is_some_and(|x| {
@@ -572,7 +590,7 @@ impl eframe::App for App {
 
                                                 if response.clicked() {
                                                     clicked =
-                                                        Some((release.name.clone(), release.id));
+                                                        Some(Some((release.name.clone(), release.id)));
                                                 } else if response.hovered() {
                                                     egui::Window::new("hyperspace version tooltip")
                                                         .fixed_pos(desc_pos)
@@ -605,12 +623,16 @@ impl eframe::App for App {
                                     }
                                 };
 
-                                if let Some((name, id)) = clicked {
-                                    shared.hyperspace = Some(HyperspaceState {
-                                        version_name: name,
-                                        release_id: id,
-                                        patch_hyperspace_ftl: false,
-                                    });
+                                if let Some(new_value) = clicked {
+                                    if let Some((name, id)) = new_value {
+                                        shared.hyperspace = Some(HyperspaceState {
+                                            version_name: name,
+                                            release_id: id,
+                                            patch_hyperspace_ftl: false,
+                                        });
+                                    } else {
+                                        shared.hyperspace = None;
+                                    }
                                 }
 
                                 ui.with_layout(
@@ -645,7 +667,7 @@ impl eframe::App for App {
                                         let mut did_change_hovered_mod = false;
                                         let dnd_response = egui_dnd::dnd(ui, "mod list dnd").show(
                                             shared.mods[row_range.clone()].iter_mut(), 
-                                        |ui, item, handle, item_state| {
+                                        |ui, item, handle, _item_state| {
                                             ui.horizontal(|ui| {
                                                 handle.ui(ui, |ui| {
                                                     let (resp, painter) = ui.allocate_painter(
@@ -866,7 +888,7 @@ impl eframe::App for App {
                         .ftl_directory
                         .as_ref()
                         .map(|x| x.to_str().unwrap().to_string())
-                        .unwrap_or_else(String::new);
+                        .unwrap_or_default();
                     if PathEdit::new(&mut ftl_dir_buf)
                         .id("pathedit ftl dir")
                         .desired_width(320.)
@@ -1043,7 +1065,7 @@ impl ModOrder {
 enum ModSource {
     Directory { path: PathBuf },
     Zip { path: PathBuf },
-    // Used by in apply for Hyperspace.ftl
+    // Used for Hyperspace.ftl
     InMemoryZip { filename: String, data: Vec<u8> },
 }
 
@@ -1089,7 +1111,7 @@ impl ModSource {
 
     pub fn paths(&self) -> Result<Vec<String>> {
         match self {
-            ModSource::Directory { path } => {
+            Self::Directory { path } => {
                 let mut out = vec![];
 
                 for result in WalkDir::new(path).into_iter() {
@@ -1111,7 +1133,7 @@ impl ModSource {
 
                 Ok(out)
             }
-            ModSource::Zip { path } => {
+            Self::Zip { path } => {
                 let mut out = vec![];
                 let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
                 for name in archive
@@ -1163,8 +1185,8 @@ impl ModSource {
 
     pub fn open<'a>(&'a self) -> Result<OpenModHandle<'a>> {
         Ok(match self {
-            ModSource::Directory { path } => OpenModHandle::Directory { path: path.clone() },
-            ModSource::Zip { path } => OpenModHandle::Zip {
+            Self::Directory { path } => OpenModHandle::Directory { path: path.clone() },
+            Self::Zip { path } => OpenModHandle::Zip {
                 archive: zip::ZipArchive::new(
                     Box::new(std::fs::File::open(path)?) as Box<dyn ReadSeek + Send + Sync>
                 )?,

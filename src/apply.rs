@@ -1,6 +1,7 @@
 use std::{
     fs::File,
     io::{Read, Write},
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -39,6 +40,23 @@ pub enum ApplyStage {
         files_total: usize,
     },
     Repacking,
+}
+
+lazy_static! {
+    static ref LD_LIBRARY_PATH_REGEX: Regex =
+        RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#)
+            .multi_line(true)
+            .build()
+            .unwrap();
+    static ref LD_PRELOAD_REGEX: Regex = RegexBuilder::new("^export LD_PRELOAD=(.*?)\n")
+        .multi_line(true)
+        .build()
+        .unwrap();
+    static ref EXEC_REGEX: Regex = RegexBuilder::new(r#"^exec "[^"]*" .*?$"#)
+        .multi_line(true)
+        .build()
+        .unwrap();
+    static ref HYPERSPACE_SO_REGEX: Regex = Regex::new(r#"^Hyperspace(\.\d+)*.amd64.so$"#).unwrap();
 }
 
 // FIXME: This interface is not very clean
@@ -84,7 +102,6 @@ async fn install_hyperspace_linux(
                 };
                 drop(lock);
 
-                // FIXME: This should probably be cached
                 let client = base_reqwest_client_builder().build()?;
                 let response = client
                     .execute(reqwest::Request::new(
@@ -155,18 +172,9 @@ async fn install_hyperspace_linux(
 
         trace!("Patching FTL start script");
 
-        // FIXME: Don't load everything into memory here
         let script_path = ftl_path.join("FTL");
         let mut script =
             std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
-
-        lazy_static! {
-            // FIXME: These regexes are not very robust
-            static ref LD_LIBRARY_PATH_REGEX: Regex = RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#).multi_line(true).build().unwrap();
-            static ref LD_PRELOAD_REGEX: Regex = RegexBuilder::new(r#"^export LD_PRELOAD=(.*?)$"#).multi_line(true).build().unwrap();
-            static ref EXEC_REGEX: Regex = RegexBuilder::new(r#"^exec "[^"]*" .*?$"#).multi_line(true).build().unwrap();
-            static ref HYPERSPACE_SO_REGEX: Regex = Regex::new(r#"^Hyperspace(\.\d+)*.amd64.so$"#).unwrap();
-        }
 
         let exec_range = EXEC_REGEX.find(&script).map(|m| m.range());
 
@@ -182,7 +190,12 @@ async fn install_hyperspace_linux(
                 script.insert_str(range.start, s);
             }
 
-            let obj = "Hyperspace.1.6.12.amd64.so";
+            // Hopefully the two FTL version have different sizes...
+            let obj = if std::fs::metadata(ftl_path.join("FTL.amd64"))?.size() == 72443660 {
+                "Hyperspace.1.6.13.amd64.so"
+            } else {
+                "Hyperspace.1.6.12.amd64.so"
+            };
             let s = format!("export LD_PRELOAD={obj}\n");
             if let Some(m) = LD_PRELOAD_REGEX.captures(&script) {
                 let group = m.get(1).unwrap();
@@ -223,6 +236,18 @@ async fn install_hyperspace_linux(
             Ok(None)
         }
     } else {
+        let script_path = ftl_path.join("FTL");
+        let script =
+            std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
+
+        if LD_PRELOAD_REGEX.find(&script).is_some() {
+            std::fs::write(
+                script_path,
+                LD_PRELOAD_REGEX.replace_all(&script, "").as_bytes(),
+            )
+            .context("Failed to write FTL start script")?;
+        }
+
         Ok(None)
     }
 }
@@ -296,12 +321,16 @@ async fn patch_ftl_data(
             {
                 let mut lock = state.lock().await;
                 lock.apply_stage = Some(ApplyStage::Mod {
-                    // FIXME: Hacky
-                    mod_idx: i + lock
-                        .hyperspace
-                        .as_ref()
-                        .map(|x| x.patch_hyperspace_ftl.into())
-                        .unwrap_or(0),
+                    // FIXME: This is just incorrect and hacky...
+                    mod_idx: if i == 0 {
+                        0
+                    } else {
+                        i - lock
+                            .hyperspace
+                            .as_ref()
+                            .map(|x| x.patch_hyperspace_ftl.into())
+                            .unwrap_or(0)
+                    },
                     file_idx: j,
                     files_total: path_count,
                 });

@@ -237,9 +237,7 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                         }
                     } else {
                         match command_element.name.as_str() {
-                            "selector" | "par" => {
-                                log::debug!("selector element {:?}", command_element);
-                            }
+                            "selector" | "par" => {}
                             "setAttributes" => {
                                 context.attributes.extend(
                                     command_element
