@@ -1,10 +1,26 @@
 use std::{borrow::Cow, collections::HashMap};
 
 use anyhow::{anyhow, bail, Result};
+use lazy_static::lazy_static;
+use regex::Regex;
 use xmltree::{Element, XMLNode};
 
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
+
+lazy_static! {
+    static ref XML_COMMENT_REGEX: Regex = Regex::new("<!--(?s:.*?)-->").unwrap();
+}
+
+// Sometimes our beloved mods (Multiverse) contain comments in the form
+// <!-- something something <!--  more things -->
+// which are rejected by xml-rs.
+// Since we don't care about comments we can just remove everything
+// that even resembles a comment.
+// Hopefully this doesn't break anything.
+pub fn clean_xml(xml: &str) -> Cow<'_, str> {
+    XML_COMMENT_REGEX.replace_all(xml, "")
+}
 
 pub fn patch(context: &mut Element, patch: Element) -> Result<()> {
     for mut node in patch.children {

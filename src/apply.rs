@@ -4,7 +4,7 @@ use std::{
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc,
+    sync::Arc
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -240,6 +240,7 @@ async fn install_hyperspace_linux(
         let script =
             std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
 
+        // TODO: Only remove matches that match HYPERSPACE_SO_REGEX
         if LD_PRELOAD_REGEX.find(&script).is_some() {
             std::fs::write(
                 script_path,
@@ -383,7 +384,7 @@ async fn patch_ftl_data(
 
                 // FIXME: This is terrible
                 let mut append_fixed = "<wrapper xmlns:mod='mod' xmlns:mod-append='mod-append' xmlns:mod-overwrite='mod-overwrite'>".to_string();
-                append_fixed += &append_without_root;
+                append_fixed += &append::clean_xml(&append_without_root);
                 append_fixed += "</wrapper>";
 
                 let mut original_fixed = "<FTL>".to_string();
