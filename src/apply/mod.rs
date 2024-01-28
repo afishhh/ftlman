@@ -1,23 +1,21 @@
 use std::{
     fs::File,
-    io::{Read, Write},
-    os::unix::fs::MetadataExt,
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
-    sync::Arc
+    sync::Arc,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
 use log::{info, trace};
-use regex::{Regex, RegexBuilder};
-use tokio::sync::Mutex;
-use tokio_stream::StreamExt;
+use regex::Regex;
+use tokio::{sync::Mutex, task::block_in_place};
+use zip::ZipArchive;
 
-use crate::{base_reqwest_client_builder, get_cache_dir, Mod, ModSource, SharedState};
+use crate::{cache, get_cache_dir, hyperspace, HyperspaceState, Mod, ModSource, SharedState};
 
 mod append;
-// mod doc;
 
 lazy_static! {
     // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
@@ -40,217 +38,6 @@ pub enum ApplyStage {
         files_total: usize,
     },
     Repacking,
-}
-
-lazy_static! {
-    static ref LD_LIBRARY_PATH_REGEX: Regex =
-        RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#)
-            .multi_line(true)
-            .build()
-            .unwrap();
-    static ref LD_PRELOAD_REGEX: Regex = RegexBuilder::new("^export LD_PRELOAD=(.*?)\n")
-        .multi_line(true)
-        .build()
-        .unwrap();
-    static ref EXEC_REGEX: Regex = RegexBuilder::new(r#"^exec "[^"]*" .*?$"#)
-        .multi_line(true)
-        .build()
-        .unwrap();
-    static ref HYPERSPACE_SO_REGEX: Regex = Regex::new(r#"^Hyperspace(\.\d+)*.amd64.so$"#).unwrap();
-}
-
-// FIXME: This interface is not very clean
-/// # Returns
-/// Hyperspace.ftl mod
-async fn install_hyperspace_linux(
-    ftl_path: &Path,
-    state: Arc<Mutex<SharedState>>,
-) -> Result<Option<Mod>> {
-    let lock = state.lock().await;
-
-    if let Some(hs) = lock.hyperspace.clone() {
-        let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
-        let egui_ctx = lock.ctx.clone();
-        drop(lock);
-
-        let cache_dir = get_cache_dir().join("hyperspace");
-        let cache_key = hs.release_id.to_string();
-        let bytes = match cacache::read(&cache_dir, &cache_key).await {
-            Ok(data) => data,
-            Err(cacache::Error::EntryNotFound(..)) => {
-                let mut lock = state.lock().await;
-                lock.apply_stage = Some(ApplyStage::DownloadingHyperspace {
-                    version: hs.version_name.clone(),
-                    progress: progress_receiver,
-                });
-
-                // FIXME: This may block for a long time and hold the lock
-                let releases =
-                    tokio::task::block_in_place(|| lock.hyperspace_releases.block_until_ready())
-                        .as_ref()
-                        // TODO: This creates a duplicate error popup
-                        .map_err(|_| anyhow!("Could not fetch hyperspace releases"))?;
-                let release = releases.iter().find(|x| x.id == hs.release_id).ok_or_else(|| anyhow!("Invalid Hyperspace release selected, please choose another Hyperspace version as this one may not exist anymore"))?;
-                let download_url = match release.assets.len().cmp(&1) {
-                    std::cmp::Ordering::Less => {
-                        bail!("Selected Hyperspace release contains no assets")
-                    }
-                    std::cmp::Ordering::Equal => release.assets[0].browser_download_url.clone(),
-                    std::cmp::Ordering::Greater => {
-                        bail!("Selected Hyperspace release contains more than one asset")
-                    }
-                };
-                drop(lock);
-
-                let client = base_reqwest_client_builder().build()?;
-                let response = client
-                    .execute(reqwest::Request::new(
-                        reqwest::Method::GET,
-                        download_url
-                            .parse()
-                            .context("Could not parse Hyperspace zip download url")?,
-                    ))
-                    .await
-                    .context("Could not download Hyperspace zip")?;
-
-                let content_length = response.content_length();
-
-                let mut out = vec![];
-                let mut stream = response.bytes_stream();
-                // FIXME: This may be slow
-                while let Some(value) = stream
-                    .try_next()
-                    .await
-                    .context("Hyperspace zip download failed")?
-                {
-                    out.extend_from_slice(&value);
-                    if let Some(length) = content_length {
-                        progress_sender.send(Some((out.len() as u64, length)))?;
-                        egui_ctx.request_repaint();
-                    }
-                }
-
-                cacache::write(cache_dir, cache_key, &out)
-                    .await
-                    .context("Could not hyperspace zip to cache")?;
-
-                out
-            }
-            err => err.context("Could not lookup hyperspace release in cache")?,
-        };
-
-        state.lock().await.apply_stage = Some(ApplyStage::InstallingHyperspace);
-        egui_ctx.request_repaint();
-        drop(egui_ctx);
-
-        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
-            .context("Could not parse Hyperspace asset as zip")?;
-
-        lazy_static! {
-            static ref SO_REGEX: Regex =
-                Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap();
-        }
-
-        let shared_objects = archive
-            .file_names()
-            .filter(|name| SO_REGEX.is_match(name))
-            .map(|s| s.to_owned())
-            .collect::<Vec<_>>();
-
-        trace!("Copying Hyperspace shared objects");
-        for obj in shared_objects.iter() {
-            let dst = obj.strip_prefix("Linux/").unwrap();
-            trace!("    {obj} -> {dst}");
-            let mut input = archive
-                .by_name(obj)
-                .with_context(|| format!("Could not open {obj} from Hyperspace zip"))?;
-            let mut output = std::fs::File::create(ftl_path.join(dst))?;
-
-            std::io::copy(&mut input, &mut output)
-                .with_context(|| format!("Could not copy {obj} from Hyperspace zip"))?;
-        }
-
-        trace!("Patching FTL start script");
-
-        let script_path = ftl_path.join("FTL");
-        let mut script =
-            std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
-
-        let exec_range = EXEC_REGEX.find(&script).map(|m| m.range());
-
-        if let Some(range) = exec_range {
-            let s = "export LD_LIBRARY_PATH=\"$here:$LD_LIBRARY_PATH\"\n";
-            let s_no_nl = &s[..s.len() - 1];
-            if let Some(m) = LD_LIBRARY_PATH_REGEX.find(&script) {
-                if m.as_str() != s_no_nl {
-                    trace!("   Already modified LD_LIBRARY_PATH export found, ignoring")
-                }
-            } else {
-                trace!("    Adding LD_LIBRARY_PATH");
-                script.insert_str(range.start, s);
-            }
-
-            // Hopefully the two FTL version have different sizes...
-            let obj = if std::fs::metadata(ftl_path.join("FTL.amd64"))?.size() == 72443660 {
-                "Hyperspace.1.6.13.amd64.so"
-            } else {
-                "Hyperspace.1.6.12.amd64.so"
-            };
-            let s = format!("export LD_PRELOAD={obj}\n");
-            if let Some(m) = LD_PRELOAD_REGEX.captures(&script) {
-                let group = m.get(1).unwrap();
-                if HYPERSPACE_SO_REGEX
-                    .is_match(group.as_str().trim_matches(['\'', '\"'].as_slice()))
-                {
-                    script.replace_range(group.range(), obj);
-                } else {
-                    trace!("   Already modified LD_PRELOAD export found, ignoring")
-                }
-            } else {
-                trace!("    Adding LD_PRELOAD");
-                script.insert_str(range.start, &s);
-            }
-        } else {
-            trace!("FTL start script seems modified, no changes will be made");
-        }
-
-        std::fs::write(script_path, script).context("Could not write new FTL start script")?;
-
-        let mut buf = vec![];
-        archive
-            .by_name("Hyperspace.ftl")
-            .context("Could not open Hyperspace.ftl in hyperspace zip")?
-            .read_to_end(&mut buf)
-            .context("Could not read Hyperspace.ftl from hyperspace zip")?;
-
-        if hs.patch_hyperspace_ftl {
-            Ok(Some(Mod {
-                source: ModSource::InMemoryZip {
-                    filename: format!("Hyperspace {}.ftl", hs.version_name),
-                    data: buf,
-                },
-                enabled: true,
-                cached_metadata: None,
-            }))
-        } else {
-            Ok(None)
-        }
-    } else {
-        let script_path = ftl_path.join("FTL");
-        let script =
-            std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
-
-        // TODO: Only remove matches that match HYPERSPACE_SO_REGEX
-        if LD_PRELOAD_REGEX.find(&script).is_some() {
-            std::fs::write(
-                script_path,
-                LD_PRELOAD_REGEX.replace_all(&script, "").as_bytes(),
-            )
-            .context("Failed to write FTL start script")?;
-        }
-
-        Ok(None)
-    }
 }
 
 async fn patch_ftl_data(
@@ -504,15 +291,60 @@ pub async fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>) -> Result<
     }
     lock.locked = true;
     let mut mods = lock.mods.clone();
-    drop(lock);
 
-    if cfg!(target_os = "linux") {
-        if let Some(hs_mod) = install_hyperspace_linux(&ftl_path, state.clone()).await? {
-            // FIXME: This is not very quick
-            // This has to be inserted first so that other mods can overwrite it
-            mods.insert(0, hs_mod);
+    if let Some(HyperspaceState {
+        release,
+        patch_hyperspace_ftl,
+    }) = lock.hyperspace.clone()
+    {
+        let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
+        let egui_ctx = lock.ctx.clone();
+        drop(lock);
+
+        let zip_data = cache!(read(
+            get_cache_dir().join("hyperspace"),
+            release.name()
+        ) or insert {
+            state.lock().await.apply_stage = Some(ApplyStage::DownloadingHyperspace {
+                version: release.name().to_string(),
+                progress: progress_receiver,
+            });
+
+            release.fetch_zip(
+                |current, max| {
+                    progress_sender.send_replace(Some((current, max)));
+                    egui_ctx.request_repaint();
+                },
+            ).await?
+        })?;
+        let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
+
+        block_in_place(|| -> anyhow::Result<()> {
+            hyperspace::install(&ftl_path, &mut zip)?;
+            release.extract_hyperspace_ftl(&mut zip)?;
+            Ok(())
+        })?;
+
+        state.lock().await.apply_stage = Some(ApplyStage::InstallingHyperspace);
+        egui_ctx.request_repaint();
+        drop(egui_ctx);
+
+        if patch_hyperspace_ftl {
+            mods.insert(
+                0,
+                Mod {
+                    source: ModSource::InMemoryZip {
+                        filename: "hyperspace.ftl".to_string(),
+                        data: release.extract_hyperspace_ftl(&mut zip)?,
+                    },
+                    enabled: true,
+                    cached_metadata: None,
+                },
+            );
         }
-    };
+    } else {
+        block_in_place(|| hyperspace::disable(&ftl_path))?;
+    }
 
     patch_ftl_data(&ftl_path, mods, state.clone()).await?;
 

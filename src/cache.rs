@@ -1,5 +1,21 @@
 #[macro_export]
 macro_rules! cache {
+    (read($path: expr, $key: expr) or insert $ins: block) => { {
+        let __cache_path = $path;
+        let __cache_key = $key;
+        match ::cacache::read(&__cache_path, &__cache_key).await {
+                Ok(data) => Ok(data),
+                Err(cacache::Error::EntryNotFound(..)) => {
+                    let result = $ins;
+
+                    cacache::write(__cache_path, __cache_key, &result).await?;
+
+                    Ok(result.into())
+                },
+                Err(err) => Err(err).context("Failed to retrieve cached response"),
+        }
+    } };
+
     (read($path: expr, $key: expr) keepalive($alive: expr) or insert $ins: block) => { {
         let __cache_path = $path;
         let __cache_key = $key;
@@ -27,7 +43,7 @@ macro_rules! cache {
             None => {
                 let result = $ins;
 
-                cacache::write(__cache_path, __cache_key, result.as_ref()).await?;
+                cacache::write(__cache_path, __cache_key, &result).await?;
 
                 result.into()
             }

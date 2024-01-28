@@ -14,6 +14,7 @@ use eframe::{
     epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2},
 };
 use egui_dnd::DragDropItem;
+use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
 use log::{debug, error};
 use poll_promise::Promise;
@@ -29,6 +30,7 @@ use pathedit::PathEdit;
 mod apply;
 mod cache;
 mod github;
+mod hyperspace;
 mod lazy;
 mod scan;
 
@@ -41,8 +43,6 @@ const MOD_ORDER_FILENAME: &str = "modorder.json";
 
 lazy_static! {
     static ref USER_AGENT: String = format!("FTL Mod Manager v{}", crate::VERSION);
-    static ref HYPERSPACE_REPOSITORY: github::Repository =
-        github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace");
     static ref BASE_DIRECTORIES: xdg::BaseDirectories =
         xdg::BaseDirectories::new().expect("Could not determine xdg base directories");
 }
@@ -259,7 +259,7 @@ pub struct SharedState {
     #[cfg(target_os = "linux")]
     hyperspace: Option<HyperspaceState>,
     #[cfg(target_os = "linux")]
-    hyperspace_releases: ResettableLazy<Promise<Result<Vec<github::Release>>>>,
+    hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
     mods: Vec<Mod>,
 }
 
@@ -316,7 +316,7 @@ impl App {
             hyperspace: None,
             #[cfg(target_os = "linux")]
             hyperspace_releases: ResettableLazy::new(|| {
-                Promise::spawn_async(HYPERSPACE_REPOSITORY.releases())
+                Promise::spawn_async(hyperspace::fetch_hyperspace_releases())
             }),
             mods: vec![],
         }));
@@ -562,7 +562,7 @@ impl eframe::App for App {
                                             shared
                                                 .hyperspace
                                                 .as_ref()
-                                                .map(|x| x.version_name.as_str())
+                                                .map(|x| x.release.name())
                                                 .unwrap_or("None"),
                                         );
 
@@ -577,9 +577,9 @@ impl eframe::App for App {
                                             for release in releases.iter() {
                                                 let response = ui.selectable_label(
                                                     shared.hyperspace.as_ref().is_some_and(|x| {
-                                                        x.release_id == release.id
+                                                        x.release.id() == release.id()
                                                     }),
-                                                    &release.name,
+                                                    release.name(),
                                                 );
                                                 let desc_pos = Pos2::new(
                                                     ui.min_rect().max.x
@@ -590,7 +590,7 @@ impl eframe::App for App {
 
                                                 if response.clicked() {
                                                     clicked =
-                                                        Some(Some((release.name.clone(), release.id)));
+                                                        Some(Some(release.to_owned()));
                                                 } else if response.hovered() {
                                                     egui::Window::new("hyperspace version tooltip")
                                                         .fixed_pos(desc_pos)
@@ -601,7 +601,7 @@ impl eframe::App for App {
                                                             ui.set_max_height(
                                                                 ui.available_height() * 0.5,
                                                             );
-                                                            ui.monospace(&release.body)
+                                                            ui.monospace(release.description())
                                                         });
                                                 }
                                             }
@@ -624,10 +624,9 @@ impl eframe::App for App {
                                 };
 
                                 if let Some(new_value) = clicked {
-                                    if let Some((name, id)) = new_value {
+                                    if let Some(release) = new_value {
                                         shared.hyperspace = Some(HyperspaceState {
-                                            version_name: name,
-                                            release_id: id,
+                                            release,
                                             patch_hyperspace_ftl: false,
                                         });
                                     } else {
@@ -1040,8 +1039,7 @@ struct ModOrder(Vec<ModOrderElement>);
 
 #[derive(Clone, Serialize, Deserialize)]
 struct HyperspaceState {
-    version_name: String,
-    release_id: u64,
+    release: HyperspaceRelease,
     patch_hyperspace_ftl: bool,
 }
 

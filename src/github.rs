@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use once_cell::sync::OnceCell;
 use reqwest::{header::HeaderValue, Client, Request, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{get_cache_dir, USER_AGENT};
 
@@ -74,7 +74,7 @@ impl Repository {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub url: String,
     pub id: u64,
@@ -84,7 +84,7 @@ pub struct Release {
     pub assets: Vec<ReleaseAsset>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReleaseAsset {
     pub url: String,
     pub browser_download_url: String,
