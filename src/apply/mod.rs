@@ -32,7 +32,7 @@ pub enum ApplyStage {
     InstallingHyperspace,
     Preparing,
     Mod {
-        mod_idx: usize,
+        mod_name: String,
         file_idx: usize,
         files_total: usize,
     },
@@ -75,13 +75,13 @@ async fn patch_ftl_data(
         compression: silpkg::EntryCompression::None,
     };
 
-    for (i, m) in mods.iter().enumerate().filter(|(_, x)| x.enabled) {
-        info!("Applying mod {}", m.filename());
-        // FIXME: propagate error
-        let paths = m.source.paths().unwrap();
+    for m in mods.into_iter().filter(|x| x.enabled) {
+        let mod_name = m.title_or_filename()?.to_string();
+        info!("Applying mod {}", mod_name);
+
+        let paths = m.source.paths()?;
         let path_count = paths.len();
-        // FIXME: propagate error
-        let mut handle = m.source.open().unwrap();
+        let mut handle = m.source.open()?;
         for (j, name) in paths.into_iter().enumerate() {
             if name.starts_with("mod-appendix") {
                 trace!("Skipping {name}");
@@ -91,16 +91,7 @@ async fn patch_ftl_data(
             {
                 let mut lock = state.lock().await;
                 lock.apply_stage = Some(ApplyStage::Mod {
-                    // FIXME: This is just incorrect and hacky...
-                    mod_idx: if i == 0 {
-                        0
-                    } else {
-                        i - lock
-                            .hyperspace
-                            .as_ref()
-                            .map(|x| x.patch_hyperspace_ftl.into())
-                            .unwrap_or(0)
-                    },
+                    mod_name: mod_name.clone(),
                     file_idx: j,
                     files_total: path_count,
                 });
@@ -348,7 +339,7 @@ pub async fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>) -> Result<
                         data: release.extract_hyperspace_ftl(&mut zip)?,
                     },
                     enabled: true,
-                    cached_metadata: None,
+                    cached_metadata: Default::default(),
                 },
             );
         }

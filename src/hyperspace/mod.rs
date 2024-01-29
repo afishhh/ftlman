@@ -1,7 +1,4 @@
-use std::{
-    future::Future,
-    io::{Cursor, Read},
-};
+use std::io::{Cursor, Read};
 
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
@@ -10,7 +7,7 @@ use tokio_stream::StreamExt;
 use zip::ZipArchive;
 
 use crate::{
-    base_reqwest_client_builder, get_cache_dir,
+    base_reqwest_client_builder,
     github::{self, Release},
 };
 

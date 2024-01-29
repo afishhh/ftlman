@@ -17,6 +17,7 @@ use egui_dnd::DragDropItem;
 use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
 use log::{debug, error};
+use once_cell::sync::OnceCell;
 use poll_promise::Promise;
 use reqwest::{header::HeaderValue, Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
@@ -490,7 +491,7 @@ impl eframe::App for App {
                                             ui.strong("Repacking archive");
                                         }
                                         ApplyStage::Mod {
-                                            mod_idx,
+                                            mod_name,
                                             file_idx,
                                             files_total,
                                         } => {
@@ -499,8 +500,7 @@ impl eframe::App for App {
                                                     *file_idx as f32 / *files_total as f32,
                                                 )
                                                 .text(format!(
-                                                    "Applying {}",
-                                                    lock.mods[*mod_idx].filename(),
+                                                    "Applying {mod_name}",
                                                 )),
                                             );
                                         }
@@ -1008,7 +1008,7 @@ impl SharedState {
 struct Mod {
     source: ModSource,
     enabled: bool,
-    cached_metadata: Option<Metadata>,
+    cached_metadata: OnceCell<Option<Metadata>>,
 }
 
 impl DragDropItem for &mut Mod {
@@ -1199,6 +1199,21 @@ impl<'a> OpenModHandle<'a> {
             OpenModHandle::Zip { archive } => Box::new(archive.by_name(name)?),
         })
     }
+
+    pub fn open_nf_aware(&mut self, name: &str) -> Result<Option<Box<dyn Read + '_>>> {
+        Ok(Some(match self {
+            OpenModHandle::Directory { path } => Box::new(match std::fs::File::open(path.join(name)) {
+                Ok(handle) => handle,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) => return Err(e.into())
+            }),
+            OpenModHandle::Zip { archive } => Box::new(match archive.by_name(name) {
+                Ok(handle) => handle,
+                Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+                Err(e) => return Err(e.into())
+            }),
+        }))
+    }
 }
 
 impl Mod {
@@ -1206,28 +1221,31 @@ impl Mod {
         self.source.filename()
     }
 
-    fn title(&mut self) -> Result<Option<&str>> {
-        Ok(self.metadata()?.map(|m| &*m.title))
+    fn title(&self) -> Result<Option<&str>> {
+        self.metadata().map(|x| x.map(|x| x.title.as_str()))
+    }
+
+    fn title_or_filename(&self) -> Result<&str> {
+        Ok(self.title()?.unwrap_or_else(|| self.filename()))
     }
 
     fn new(source: ModSource) -> Mod {
         Mod {
             source,
             enabled: false,
-            cached_metadata: None,
+            cached_metadata: Default::default(),
         }
     }
 
-    fn metadata(&mut self) -> Result<Option<&Metadata>> {
-        if self.cached_metadata.is_some() {
-            return Ok(self.cached_metadata.as_ref());
-        } else {
-            self.cached_metadata = Some(quick_xml::de::from_reader(
-                // FIXME: Differentiate between not found and IO error
-                std::io::BufReader::new(self.source.open()?.open("mod-appendix/metadata.xml")?),
-            )?);
-            Ok(self.cached_metadata.as_ref())
-        }
+    fn metadata(&self) -> Result<Option<&Metadata>> {
+        self.cached_metadata.get_or_try_init(|| {
+            Ok(Some(quick_xml::de::from_reader(
+                std::io::BufReader::new(match self.source.open()?.open_nf_aware("mod-appendix/metadata.xml")? {
+                    Some(handle) => handle,
+                    None => return Ok(None)
+                }),
+            )?))
+        }).map(|x| x.as_ref())
     }
 }
 
