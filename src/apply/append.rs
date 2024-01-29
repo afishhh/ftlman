@@ -1,4 +1,9 @@
-use std::{borrow::Cow, collections::HashMap};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    fmt::Write,
+    str::FromStr,
+};
 
 use anyhow::{anyhow, bail, Result};
 use lazy_static::lazy_static;
@@ -87,126 +92,158 @@ fn cleanup(element: &mut Element) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParOperation {
+    And,
+    Or,
+}
+
+impl FromStr for ParOperation {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "AND" => Ok(ParOperation::And),
+            "OR" => Ok(ParOperation::Or),
+            _ => bail!("Invalid par operation: {s}"),
+        }
+    }
+}
+
+macro_rules! get_attr {
+    ($node: ident, $type: ty, $name: literal, $default: expr) => {{
+        get_attr!($node, $type, $name)
+            .transpose()
+            .unwrap_or(Ok($default))
+    }};
+    ($node: ident, $type: ty, $name: literal) => {{
+        $node
+            .attributes
+            .get($name)
+            .map(|text| {
+                text.parse::<$type>().map_err(|_| {
+                    anyhow!(
+                        concat!("mod:{}", " attribute ", $name, " has invalid value {}"),
+                        $node.name,
+                        text
+                    )
+                })
+            })
+            .transpose()
+    }};
+}
+
+// FIXME: This is terrible for performance, but should also be used rarely and on small subtress.
+fn index_subtree(node: &Element) -> HashMap<*const Element, u64> {
+    fn rec(out: &mut HashMap<*const Element, u64>, node: &Element, mut next: u64) {
+        out.insert(node as *const Element, next);
+        next += 1;
+
+        for child in node.children.iter().filter_map(|x| x.as_element()) {
+            rec(out, child, next);
+            next += 1;
+        }
+    }
+
+    let mut result = HashMap::new();
+    rec(&mut result, node, 0);
+    result
+}
+
+fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
+    if node.name != "par" || node.namespace.as_deref() != Some("mod") {
+        return Ok(None);
+    }
+
+    let operation = get_attr!(node, ParOperation, "op")?
+        .ok_or_else(|| anyhow!("par node is missing an op attribute"))?;
+
+    let mut set = HashSet::<*mut Element>::new();
+
+    for child in node.children.iter().filter_map(|x| x.as_element()) {
+        // FIXME: What did I just do
+        let Some(candidates) = (match mod_par(context, child)? {
+            Some(x) => Some(x),
+            None => mod_find(context, child)?,
+        }) else {
+            bail!("par node contains an invalid child");
+        };
+
+        match operation {
+            ParOperation::And => {
+                let candidate_set = candidates
+                    .into_iter()
+                    .map(|x| x as *mut Element)
+                    .collect::<HashSet<_>>();
+                set.retain(|x| candidate_set.contains(x));
+            }
+            ParOperation::Or => {
+                set.extend(candidates.into_iter().map(|x| x as *mut Element));
+            }
+        }
+    }
+
+    // SAFETY: This is a set so obviously all the pointers are going to be unique.
+    //         There are no other pointers that can point to these elements apart from
+    //         these.
+    Ok(Some(set.into_iter().map(|x| unsafe { &mut *x }).collect()))
+}
+
 // FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if node.namespace.as_ref().is_some_and(|x| x == "mod") {
-        macro_rules! get_attr {
-            ($tag: literal, $type: ty, $name: literal, $default: expr) => {{
-                get_attr!($tag, $type, $name)
-                    .transpose()
-                    .unwrap_or(Ok($default))
-            }};
-            ($tag: literal, $type: ty, $name: literal) => {{
-                node.attributes
-                    .get($name)
-                    .map(|text| {
-                        text.parse::<$type>().map_err(|_| {
-                            anyhow!(concat!(
-                                "mod:",
-                                $tag,
-                                " ",
-                                $name,
-                                "attribute has invalid value {v}"
-                            ))
-                        })
-                    })
-                    .transpose()
-            }};
+        if !["findName", "findLike", "findComposite"].contains(&node.name.as_str()) {
+            return Ok(None);
         }
 
-        match node.name.as_str() {
+        let search_reverse = get_attr!(node, bool, "reverse", true)?;
+        let search_start = get_attr!(node, usize, "start", 0)?;
+        let search_limit = get_attr!(
+            node,
+            isize,
+            "limit",
+            if node.name == "findName" { 1 } else { -1 }
+        )?;
+
+        if search_limit < -1 {
+            bail!("{} 'limit' attribute must be >= -1", node.name)
+        }
+
+        let panic = get_attr!(node, bool, "panic", false)?;
+
+        let mut matches: Vec<&'a mut Element> = match node.name.as_str() {
             "findName" => {
-                let Some(search_name) = get_attr!("findName", String, "name")? else {
+                let Some(search_name) = get_attr!(node, String, "name")? else {
                     bail!("findName requires a name attribute");
                 };
-                let search_type = get_attr!("findName", String, "type")?;
-                let search_reverse = get_attr!("findName", bool, "reverse", true)?;
-                let search_start = get_attr!("findName", usize, "start", 0)?;
-                let search_limit = get_attr!("findName", isize, "limit", 1)?;
-                let panic = get_attr!("findName", bool, "panic", false)?;
+                let search_type = get_attr!(node, String, "type")?;
 
                 if search_type.as_ref().is_some_and(|x| x.is_empty()) {
                     bail!("findName 'type' attribute cannot be empty")
                 }
 
-                if search_limit < -1 {
-                    bail!("findName 'limit' attribute must be >= -1")
-                }
-
-                let mut matches = vec![];
-
-                for child in context.children.iter_mut() {
-                    if let XMLNode::Element(ref mut element) = child {
-                        if element
-                            .attributes
-                            .get("name")
-                            .is_some_and(|x| x == &search_name)
-                            && search_type
-                                .as_ref()
-                                .map(|x| element.name == *x)
-                                .unwrap_or(true)
-                        {
-                            matches.push(element);
-                        }
-                    }
-                }
-
-                let it = if search_reverse {
-                    Box::new(matches.into_iter().rev()) as Box<dyn Iterator<Item = &mut Element>>
-                } else {
-                    Box::new(matches.into_iter()) as Box<dyn Iterator<Item = &mut Element>>
-                };
-
-                matches = it
-                    .skip(search_start)
-                    .take(if search_limit == -1 {
-                        usize::MAX
-                    } else {
-                        search_limit as usize
+                context
+                    .children
+                    .iter_mut()
+                    .filter_map(|x| {
+                        x.as_mut_element().filter(|element| {
+                            element
+                                .attributes
+                                .get("name")
+                                .is_some_and(|x| x == &search_name)
+                                && search_type
+                                    .as_ref()
+                                    .map(|x| element.name == *x)
+                                    .unwrap_or(true)
+                        })
                     })
-                    .collect();
-
-                if panic && matches.is_empty() {
-                    let mut msg = String::from(
-                        "mod:findName element has panic=true but no elements matched\nParameters:",
-                    );
-
-                    for (name, value) in [
-                        ("name", Some(search_name)),
-                        ("type", search_type),
-                        (
-                            "reverse",
-                            Some(if search_reverse { "true" } else { "false" }.to_string()),
-                        ),
-                        ("start", Some(search_start.to_string())),
-                        ("limit", Some(search_limit.to_string())),
-                    ] {
-                        if let Some(s) = value {
-                            msg.push_str("\n\t");
-                            msg.push_str(name);
-                            msg.push('=');
-                            msg.push_str(&s);
-                        }
-                    }
-
-                    bail!("{msg}");
-                }
-
-                Ok(Some(matches))
+                    .collect()
             }
             "findLike" => {
-                let search_type = get_attr!("findLike", String, "type")?;
-                let search_reverse = get_attr!("findLike", bool, "reverse", false)?;
-                let search_start = get_attr!("findLike", usize, "start", 0)?;
-                let search_limit = get_attr!("findLike", isize, "limit", -1)?;
-                let panic = get_attr!("findLike", bool, "panic", false)?;
+                let search_type = get_attr!(node, String, "type")?;
 
                 if search_type.as_ref().is_some_and(|x| x.is_empty()) {
                     bail!("findLike 'type' attribute cannot be empty")
-                }
-
-                if search_limit < -1 {
-                    bail!("findLike 'limit' attribute must be >= -1")
                 }
 
                 let mut attrs = HashMap::new();
@@ -230,76 +267,81 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     };
                 }
 
-                let mut matches = vec![];
-
-                for child in context.children.iter_mut() {
-                    if let XMLNode::Element(ref mut element) = child {
-                        if let Some(ref tp) = search_type {
-                            if &node.name != tp {
-                                continue;
+                context
+                    .children
+                    .iter_mut()
+                    .filter_map(|x| {
+                        x.as_mut_element().filter(|element| {
+                            if let Some(ref tp) = search_type {
+                                if &node.name != tp {
+                                    return false;
+                                }
                             }
-                        }
 
-                        for (key, value) in &attrs {
-                            if node.attributes.get(key) != Some(value) {
-                                continue;
+                            for (key, value) in &attrs {
+                                if node.attributes.get(key) != Some(value) {
+                                    return false;
+                                }
                             }
-                        }
 
-                        if let Some(ref text) = search_text {
-                            if element.get_text().unwrap_or(Cow::Borrowed("")).trim() != text {
-                                continue;
+                            if let Some(ref text) = search_text {
+                                if element.get_text().unwrap_or(Cow::Borrowed("")).trim() != text {
+                                    return false;
+                                }
                             }
-                        }
 
-                        matches.push(element);
-                    }
-                }
-
-                let it = if search_reverse {
-                    Box::new(matches.into_iter().rev()) as Box<dyn Iterator<Item = &mut Element>>
-                } else {
-                    Box::new(matches.into_iter()) as Box<dyn Iterator<Item = &mut Element>>
+                            true
+                        })
+                    })
+                    .collect()
+            }
+            "findComposite" => {
+                let Some(par) = node.children.iter().find_map(|x| {
+                    x.as_element()
+                        .filter(|x| x.name == "par" && x.namespace.as_deref() == Some("mod"))
+                }) else {
+                    bail!("findComposite element is missing a par child");
                 };
 
-                matches = it
-                    .skip(search_start)
-                    .take(if search_limit == -1 {
-                        usize::MAX
-                    } else {
-                        search_limit as usize
-                    })
-                    .collect();
+                let index = index_subtree(context);
+                let mut vec = mod_par(context, par)?.unwrap();
 
-                if panic && matches.is_empty() {
-                    let mut msg = String::from(
-                        "mod:findLike element has panic=true but no elements matched\nParameters:",
-                    );
+                vec.sort_by_key(|x| index.get(&(*x as *const Element)).unwrap());
 
-                    for (name, value) in [
-                        ("type", search_type),
-                        (
-                            "reverse",
-                            Some(if search_reverse { "true" } else { "false" }.to_string()),
-                        ),
-                        ("start", Some(search_start.to_string())),
-                        ("limit", Some(search_limit.to_string())),
-                    ] {
-                        if let Some(s) = value {
-                            msg.push_str("\n\t");
-                            msg.push_str(name);
-                            msg.push('=');
-                            msg.push_str(&s);
-                        }
-                    }
-
-                    bail!("{msg}");
-                }
-
-                Ok(Some(matches))
+                vec
             }
-            _ => Ok(None),
+            _ => unreachable!(),
+        };
+
+        let it = if search_reverse {
+            Box::new(matches.into_iter().rev()) as Box<dyn Iterator<Item = &mut Element>>
+        } else {
+            Box::new(matches.into_iter()) as Box<dyn Iterator<Item = &mut Element>>
+        };
+
+        matches = it
+            .skip(search_start)
+            .take(if search_limit == -1 {
+                usize::MAX
+            } else {
+                search_limit as usize
+            })
+            .collect();
+
+        if panic && matches.is_empty() {
+            let mut msg = format!(
+                "{} element has panic=true but no elements matched",
+                node.name
+            );
+
+            for (k, v) in node.attributes.iter() {
+                write!(msg, "\n\t{k}={v}").unwrap();
+            }
+
+            bail!("{msg}");
         }
+
+        Ok(Some(matches))
     } else {
         Ok(None)
     }
