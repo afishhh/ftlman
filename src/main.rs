@@ -55,30 +55,17 @@ fn get_cache_dir() -> PathBuf {
     BASE_DIRECTORIES.get_cache_home().join("ftlman")
 }
 
-enum HumanSizeUnit {
-    Si,
-    IecNoI,
-    Iec,
-}
-
-fn to_human_size_units(units: HumanSizeUnit, num: u64) -> (f64, &'static str) {
-    const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB", "YB"];
-    const IUNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
-
-    let (div, arr) = match units {
-        HumanSizeUnit::Si => (1000.0, UNITS),
-        HumanSizeUnit::IecNoI => (1024.0, UNITS),
-        HumanSizeUnit::Iec => (1024.0, IUNITS),
-    };
+fn to_human_size_units(num: u64) -> (f64, &'static str) {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
 
     let mut i = 0;
     let mut cur = num as f64;
-    while cur > div {
-        cur /= div;
+    while cur > 1024.0 {
+        cur /= 1024.0;
         i += 1;
     }
 
-    (cur, arr.get(i).unwrap_or_else(|| arr.last().unwrap()))
+    (cur, UNITS.get(i).unwrap_or_else(|| UNITS.last().unwrap()))
 }
 
 fn main() {
@@ -455,8 +442,8 @@ impl eframe::App for App {
                                     match stage {
                                         ApplyStage::DownloadingHyperspace { version, progress } => {
                                             if let Some((downloaded, total)) = *progress {
-                                                let (dl_iec, dl_sfx) = to_human_size_units(HumanSizeUnit::Iec, downloaded);
-                                                let (tot_iec, tot_sfx) = to_human_size_units(HumanSizeUnit::Iec, total);
+                                                let (dl_iec, dl_sfx) = to_human_size_units(downloaded);
+                                                let (tot_iec, tot_sfx) = to_human_size_units(total);
                                                 ui.add(
                                                     egui::ProgressBar::new(
                                                         downloaded as f32 / total as f32,
