@@ -1238,14 +1238,32 @@ impl Mod {
     }
 
     fn metadata(&self) -> Result<Option<&Metadata>> {
-        self.cached_metadata.get_or_try_init(|| {
-            Ok(Some(quick_xml::de::from_reader(
-                std::io::BufReader::new(match self.source.open()?.open_nf_aware("mod-appendix/metadata.xml")? {
-                    Some(handle) => handle,
-                    None => return Ok(None)
-                }),
-            )?))
-        }).map(|x| x.as_ref())
+        self.cached_metadata
+            .get_or_try_init(|| {
+                Ok(Some({
+                    let mut metadata: Metadata = quick_xml::de::from_reader(std::io::BufReader::new(
+                        match self
+                            .source
+                            .open()?
+                            .open_nf_aware("mod-appendix/metadata.xml")?
+                        {
+                            Some(handle) => handle,
+                            None => return Ok(None),
+                        },
+                    ))?;
+
+                    metadata.title = metadata.title.trim().to_string();
+                    if let Some(url) = metadata.thread_url {
+                        metadata.thread_url = Some(url.trim().to_string());
+                    }
+                    metadata.author = metadata.author.trim().to_string();
+                    metadata.version = metadata.version.trim().to_string();
+                    metadata.description = metadata.description.trim().to_string();
+
+                    metadata
+                }))
+            })
+            .map(|x| x.as_ref())
     }
 }
 
