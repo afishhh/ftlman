@@ -74,37 +74,6 @@ impl HyperspaceRelease {
         Ok(out)
     }
 
-    // pub async fn cached_zip<F, Fut>(
-    //     &self,
-    //     will_download_callback: F,
-    //     progress_callback: impl Fn(u64, u64),
-    // ) -> Result<ZipArchive<Cursor<Vec<u8>>>>
-    // where
-    //     F: FnOnce() -> Fut,
-    //     Fut: Future<Output = ()>,
-    // {
-    //     let cache_dir = get_cache_dir().join("hyperspace");
-    //     let cache_key = self.release.id.to_string();
-    //     let bytes = match cacache::read(&cache_dir, &cache_key).await {
-    //         Ok(data) => data,
-    //         Err(cacache::Error::EntryNotFound(..)) => {
-    //             will_download_callback();
-    //
-    //             let data = self.download_zip(progress_callback).await?;
-    //
-    //             cacache::write(cache_dir, cache_key, &data)
-    //                 .await
-    //                 .context("Could not hyperspace zip to cache")?;
-    //
-    //             data
-    //         }
-    //         err => err.context("Could not lookup hyperspace release in cache")?,
-    //     };
-    //
-    //     zip::ZipArchive::new(std::io::Cursor::new(bytes))
-    //         .context("Could not parse Hyperspace asset as zip")
-    // }
-
     pub fn extract_hyperspace_ftl(&self, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<Vec<u8>> {
         let mut buf = vec![];
 
