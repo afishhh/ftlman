@@ -1,6 +1,6 @@
-use std::{path::Path, io::Cursor};
+use std::{io::Cursor, path::Path};
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use lazy_static::lazy_static;
 use log::trace;
 use regex::{Regex, RegexBuilder};

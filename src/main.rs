@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::Result;
 use eframe::{
-    egui::{self, RichText, Ui, Visuals},
+    egui::{self, RichText, Ui, Visuals, TextBuffer},
     epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2},
 };
 use egui_dnd::DragDropItem;
@@ -658,7 +658,7 @@ impl eframe::App for App {
                                         let mut i = row_range.start;
                                         let mut did_change_hovered_mod = false;
                                         let dnd_response = egui_dnd::dnd(ui, "mod list dnd").show(
-                                            shared.mods[row_range.clone()].iter_mut(), 
+                                            shared.mods[row_range.clone()].iter_mut(),
                                         |ui, item, handle, _item_state| {
                                             ui.horizontal(|ui| {
                                                 handle.ui(ui, |ui| {
@@ -1202,15 +1202,17 @@ impl<'a> OpenModHandle<'a> {
 
     pub fn open_nf_aware(&mut self, name: &str) -> Result<Option<Box<dyn Read + '_>>> {
         Ok(Some(match self {
-            OpenModHandle::Directory { path } => Box::new(match std::fs::File::open(path.join(name)) {
-                Ok(handle) => handle,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-                Err(e) => return Err(e.into())
-            }),
+            OpenModHandle::Directory { path } => {
+                Box::new(match std::fs::File::open(path.join(name)) {
+                    Ok(handle) => handle,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                    Err(e) => return Err(e.into()),
+                })
+            }
             OpenModHandle::Zip { archive } => Box::new(match archive.by_name(name) {
                 Ok(handle) => handle,
                 Err(zip::result::ZipError::FileNotFound) => return Ok(None),
-                Err(e) => return Err(e.into())
+                Err(e) => return Err(e.into()),
             }),
         }))
     }
