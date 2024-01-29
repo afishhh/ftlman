@@ -1,36 +1,17 @@
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use once_cell::sync::OnceCell;
-use reqwest::{header::HeaderValue, Client, Request, Url};
 use serde::{Deserialize, Serialize};
 
-use crate::{get_cache_dir, USER_AGENT};
+use crate::{get_cache_dir, AGENT};
 
 const API_ROOT: &str = "https://api.github.com";
 
-fn api_client() -> Result<&'static Client> {
-    static CLIENT: OnceCell<Client> = OnceCell::new();
-
-    CLIENT.get_or_try_init(|| {
-        let mut headers = reqwest::header::HeaderMap::new();
-
-        headers.insert(
-            reqwest::header::ACCEPT,
-            HeaderValue::from_static("application/vnd.github+json"),
-        );
-
-        headers.insert(
-            "X-GitHub-Api-Version",
-            HeaderValue::from_static("2022-11-28"),
-        );
-
-        Ok(Client::builder()
-            .user_agent(HeaderValue::from_str(&USER_AGENT).unwrap())
-            .default_headers(headers)
-            .https_only(true)
-            .build()?)
-    })
+fn make_get(url: &str) -> ureq::Request {
+    AGENT
+        .get(url)
+        .set("Accept", "application/vnd.github+json")
+        .set("X-GitHub-Api-Version", "2022-11-28")
 }
 
 pub struct Repository {
@@ -53,21 +34,20 @@ impl Repository {
             .join(&self.name)
     }
 
-    pub async fn releases(&self) -> Result<Vec<Release>> {
+    pub fn releases(&self) -> Result<Vec<Release>> {
         const CACHE_KEY: &str = "releases";
         let cache_dir = self.cache_dir();
 
         let bytes = crate::cache!(read(&cache_dir, CACHE_KEY) keepalive(std::time::Duration::from_secs(10 * 60)) or insert {
-            let url: Url = format!(
+            let url: String = format!(
                 "{API_ROOT}/repos/{owner}/{repo}/releases",
                 owner = self.owner,
                 repo = self.name
-            )
-            .parse()?;
+            );
 
-            let request = Request::new(reqwest::Method::GET, url);
-            let response = api_client()?.execute(request).await?;
-            response.bytes().await?
+            let mut out = vec![];
+            make_get(&url).call()?.into_reader().read_to_end(&mut out)?;
+            out
         });
 
         serde_json::from_slice(&bytes).context("Could not parse github API response")

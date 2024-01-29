@@ -5,7 +5,6 @@ use std::{
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
 };
 
 use anyhow::Result;
@@ -18,10 +17,9 @@ use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
 use log::{debug, error};
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use poll_promise::Promise;
-use reqwest::{header::HeaderValue, Client, ClientBuilder};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
@@ -43,13 +41,14 @@ const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
 lazy_static! {
-    static ref USER_AGENT: String = format!("FTL Mod Manager v{}", crate::VERSION);
     static ref BASE_DIRECTORIES: xdg::BaseDirectories =
         xdg::BaseDirectories::new().expect("Could not determine xdg base directories");
-}
 
-fn base_reqwest_client_builder() -> ClientBuilder {
-    Client::builder().user_agent(HeaderValue::from_static(&USER_AGENT))
+    static ref USER_AGENT: String = format!("FTL Mod Manager v{}", crate::VERSION);
+    static ref AGENT: ureq::Agent = ureq::AgentBuilder::new()
+        .user_agent(&USER_AGENT)
+        .https_only(true)
+        .build();
 }
 
 fn get_cache_dir() -> PathBuf {
@@ -116,22 +115,6 @@ fn main() {
         })
         .parse_default_env()
         .init();
-
-    // from: https://github.com/parasyte/egui-tokio-example/blob/main/src/main.rs
-    let rt = tokio::runtime::Runtime::new().expect("Unable to create async runtime");
-
-    // Enter the runtime so that `tokio::spawn` is available immediately.
-    let _enter = rt.enter();
-
-    // Execute the runtime in its own thread.
-    // The future doesn't have to do anything. In this example, it just sleeps forever.
-    std::thread::spawn(move || {
-        rt.block_on(async {
-            loop {
-                tokio::time::sleep(Duration::from_secs(3600)).await;
-            }
-        })
-    });
 
     if let Err(error) = eframe::run_native(
         "FTL Manager",
@@ -306,7 +289,10 @@ impl App {
             hyperspace: None,
             #[cfg(target_os = "linux")]
             hyperspace_releases: ResettableLazy::new(|| {
-                Promise::spawn_async(hyperspace::fetch_hyperspace_releases())
+                Promise::spawn_thread(
+                    "fetch hyperspace releases",
+                    hyperspace::fetch_hyperspace_releases,
+                )
             }),
             mods: vec![],
         }));
@@ -321,11 +307,10 @@ impl App {
             settings_open: false,
         };
 
-        app.current_task = CurrentTask::Scan(Promise::spawn_async(scan::scan(
-            app.settings.clone(),
-            shared,
-            true,
-        )));
+        let settings = app.settings.clone();
+        app.current_task = CurrentTask::Scan(Promise::spawn_thread("task", move || {
+            scan::scan(settings, shared, true)
+        }));
 
         Ok(app)
     }
@@ -365,7 +350,7 @@ impl eframe::App for App {
             .save(&self.settings_path)
             .unwrap_or_else(|e| error!("Failed to save settings: {e}"));
         debug!("Saving mod order");
-        let order = self.shared.blocking_lock().mod_configuration();
+        let order = self.shared.lock().mod_configuration();
         match std::fs::File::create(self.settings.mod_directory.join(MOD_ORDER_FILENAME)) {
             Ok(f) => {
                 if let Err(e) = serde_json::to_writer(f, &order) {
@@ -414,7 +399,7 @@ impl eframe::App for App {
                 ui.horizontal(|ui| {
                     ui.label("Mods");
 
-                    let mut lock = self.shared.blocking_lock();
+                    let mut lock = self.shared.lock();
                     let modifiable = !lock.locked && self.current_task.is_none();
 
                     ui.add_enabled_ui(modifiable, |ui| {
@@ -441,12 +426,12 @@ impl eframe::App for App {
                                 let shared = self.shared.clone();
                                 let settings = self.settings.clone();
                                 self.current_task =
-                                    CurrentTask::Apply(Promise::spawn_async(async move {
+                                    CurrentTask::Apply(Promise::spawn_thread("task", move || {
                                         let result = apply::apply(
                                             ftl_path,
                                             shared,
                                             settings
-                                        ).await;
+                                        );
                                         ctx.request_repaint();
                                         result
                                     }));
@@ -458,8 +443,10 @@ impl eframe::App for App {
 
                             if scan.clicked() && !lock.locked {
                                 self.last_hovered_mod = None;
-                                self.current_task = CurrentTask::Scan(Promise::spawn_async(
-                                    scan::scan(self.settings.clone(), self.shared.clone(), false),
+                                let settings = self.settings.clone();
+                                let shared = self.shared.clone();
+                                self.current_task = CurrentTask::Scan(Promise::spawn_thread("task", move ||
+                                    scan::scan(settings, shared, false),
                                 ));
                             }
 
@@ -467,7 +454,7 @@ impl eframe::App for App {
                                 if let Some(stage) = &lock.apply_stage {
                                     match stage {
                                         ApplyStage::DownloadingHyperspace { version, progress } => {
-                                            if let Some((downloaded, total)) = *progress.borrow() {
+                                            if let Some((downloaded, total)) = *progress {
                                                 let (dl_iec, dl_sfx) = to_human_size_units(HumanSizeUnit::Iec, downloaded);
                                                 let (tot_iec, tot_sfx) = to_human_size_units(HumanSizeUnit::Iec, total);
                                                 ui.add(
@@ -541,7 +528,7 @@ impl eframe::App for App {
                 ui.separator();
 
                 ui.horizontal_top(|ui| {
-                    let mut shared = self.shared.blocking_lock();
+                    let mut shared = self.shared.lock();
 
                     ui.vertical(|ui| {
                         ui.set_min_width(400.);
@@ -866,11 +853,12 @@ impl eframe::App for App {
                         .changed();
 
                     if filters_changed {
-                        self.current_task = CurrentTask::Scan(Promise::spawn_async(scan::scan(
-                            self.settings.clone(),
-                            self.shared.clone(),
-                            false,
-                        )));
+                        let settings = self.settings.clone();
+                        let shared = self.shared.clone();
+                        self.current_task =
+                            CurrentTask::Scan(Promise::spawn_thread("task", || {
+                                scan::scan(settings, shared, false)
+                            }));
                     }
 
                     ui.horizontal(|ui| {
@@ -900,16 +888,15 @@ impl eframe::App for App {
                         }
                     }
 
-                    ui
-                        .checkbox(
-                            &mut self.settings.repack_ftl_data,
-                            "Repack FTL data archive",
-                        )
-                        .on_hover_text(concat!(
-                            "Turning this off will slightly speed up patching but\n",
-                            "will make the archive larger and may slow down startup.\n",
-                            "The impact mostly depends on the number of applied mods."
-                        ));
+                    ui.checkbox(
+                        &mut self.settings.repack_ftl_data,
+                        "Repack FTL data archive",
+                    )
+                    .on_hover_text(concat!(
+                        "Turning this off will slightly speed up patching but\n",
+                        "will make the archive larger and may slow down startup.\n",
+                        "The impact mostly depends on the number of applied mods."
+                    ));
 
                     let mut visuals_changed = false;
                     egui::ComboBox::from_label("Colorscheme")

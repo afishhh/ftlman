@@ -3,12 +3,11 @@ use std::io::{Cursor, Read};
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
-use tokio_stream::StreamExt;
 use zip::ZipArchive;
 
 use crate::{
-    base_reqwest_client_builder,
     github::{self, Release},
+    AGENT,
 };
 
 lazy_static! {
@@ -34,7 +33,7 @@ impl HyperspaceRelease {
         &self.release.body
     }
 
-    pub async fn fetch_zip(&self, progress_callback: impl Fn(u64, u64)) -> Result<Vec<u8>> {
+    pub fn fetch_zip(&self, progress_callback: impl Fn(u64, u64)) -> Result<Vec<u8>> {
         let download_url = match self.release.assets.len().cmp(&1) {
             std::cmp::Ordering::Less => {
                 bail!("Hyperspace release contains no assets")
@@ -45,29 +44,25 @@ impl HyperspaceRelease {
             }
         };
 
-        let client = base_reqwest_client_builder().build()?;
-        let response = client
-            .execute(reqwest::Request::new(
-                reqwest::Method::GET,
-                download_url
-                    .parse()
-                    .context("Could not parse Hyperspace zip download url")?,
-            ))
-            .await
-            .context("Could not download Hyperspace zip")?;
+        let response = AGENT.get(&download_url).call()?;
+        let content_length = response
+            .header("Content-Length")
+            .and_then(|x| x.parse::<u64>().ok());
+        let mut reader = response.into_reader();
 
-        let content_length = response.content_length();
-
-        let mut out = vec![];
-        let mut stream = response.bytes_stream();
-        while let Some(value) = stream
-            .try_next()
-            .await
-            .context("Hyperspace zip download failed")?
-        {
-            out.extend_from_slice(&value);
-            if let Some(length) = content_length {
-                progress_callback(out.len() as u64, length);
+        const BUFFER_SIZE: usize = 4096;
+        let mut out = vec![0; BUFFER_SIZE];
+        loop {
+            let len = out.len();
+            let nread = reader.read(&mut out[(len - BUFFER_SIZE)..])?;
+            if nread == 0 {
+                out.resize(out.len() - BUFFER_SIZE, 0);
+                break;
+            } else {
+                out.extend(std::iter::repeat(0).take(nread));
+                if let Some(length) = content_length {
+                    progress_callback((out.len() - BUFFER_SIZE) as u64, length);
+                }
             }
         }
 
@@ -86,10 +81,9 @@ impl HyperspaceRelease {
     }
 }
 
-pub async fn fetch_hyperspace_releases() -> Result<Vec<HyperspaceRelease>> {
+pub fn fetch_hyperspace_releases() -> Result<Vec<HyperspaceRelease>> {
     Ok(HYPERSPACE_REPOSITORY
-        .releases()
-        .await?
+        .releases()?
         .into_iter()
         .map(|release| HyperspaceRelease { release })
         .collect())

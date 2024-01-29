@@ -8,8 +8,8 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
 use log::{info, trace, warn};
+use parking_lot::Mutex;
 use regex::Regex;
-use tokio::{sync::Mutex, task::block_in_place};
 use zip::ZipArchive;
 
 use crate::{
@@ -29,7 +29,7 @@ lazy_static! {
 pub enum ApplyStage {
     DownloadingHyperspace {
         version: String,
-        progress: tokio::sync::watch::Receiver<Option<(u64, u64)>>,
+        progress: Option<(u64, u64)>,
     },
     InstallingHyperspace,
     Preparing,
@@ -41,13 +41,13 @@ pub enum ApplyStage {
     Repacking,
 }
 
-async fn patch_ftl_data(
+fn patch_ftl_data(
     ftl_path: &Path,
     mods: Vec<Mod>,
     state: Arc<Mutex<SharedState>>,
     repack: bool,
 ) -> Result<()> {
-    let mut lock = state.lock().await;
+    let mut lock = state.lock();
 
     lock.apply_stage = Some(ApplyStage::Preparing);
     lock.ctx.request_repaint();
@@ -92,7 +92,7 @@ async fn patch_ftl_data(
             }
 
             {
-                let mut lock = state.lock().await;
+                let mut lock = state.lock();
                 lock.apply_stage = Some(ApplyStage::Mod {
                     mod_name: mod_name.clone(),
                     file_idx: j,
@@ -275,7 +275,7 @@ async fn patch_ftl_data(
 
     trace!("Repacking");
     {
-        let mut lock = state.lock().await;
+        let mut lock = state.lock();
         lock.apply_stage = Some(ApplyStage::Repacking);
         lock.ctx.request_repaint();
     }
@@ -287,12 +287,8 @@ async fn patch_ftl_data(
     Ok(())
 }
 
-pub async fn apply(
-    ftl_path: PathBuf,
-    state: Arc<Mutex<SharedState>>,
-    settings: Settings,
-) -> Result<()> {
-    let mut lock = state.lock().await;
+pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settings) -> Result<()> {
+    let mut lock = state.lock();
 
     if lock.locked {
         bail!("Apply process already running");
@@ -305,7 +301,6 @@ pub async fn apply(
         patch_hyperspace_ftl,
     }) = lock.hyperspace.clone()
     {
-        let (progress_sender, progress_receiver) = tokio::sync::watch::channel(None);
         let egui_ctx = lock.ctx.clone();
         drop(lock);
 
@@ -313,27 +308,27 @@ pub async fn apply(
             get_cache_dir().join("hyperspace"),
             release.name()
         ) or insert {
-            state.lock().await.apply_stage = Some(ApplyStage::DownloadingHyperspace {
+            state.lock().apply_stage = Some(ApplyStage::DownloadingHyperspace {
                 version: release.name().to_string(),
-                progress: progress_receiver,
+                progress: None,
             });
 
             release.fetch_zip(
                 |current, max| {
-                    progress_sender.send_replace(Some((current, max)));
+                    let Some(ApplyStage::DownloadingHyperspace { ref mut progress, .. }) = state.lock().apply_stage else {
+                        unreachable!();
+                    };
+                    *progress = Some((current, max));
                     egui_ctx.request_repaint();
                 },
-            ).await?
+            )?
         })?;
         let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
-        block_in_place(|| -> anyhow::Result<()> {
-            hyperspace::install(&ftl_path, &mut zip)?;
-            release.extract_hyperspace_ftl(&mut zip)?;
-            Ok(())
-        })?;
+        hyperspace::install(&ftl_path, &mut zip)?;
+        release.extract_hyperspace_ftl(&mut zip)?;
 
-        state.lock().await.apply_stage = Some(ApplyStage::InstallingHyperspace);
+        state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
         egui_ctx.request_repaint();
         drop(egui_ctx);
 
@@ -351,12 +346,12 @@ pub async fn apply(
             );
         }
     } else {
-        block_in_place(|| hyperspace::disable(&ftl_path))?;
+        hyperspace::disable(&ftl_path)?;
     }
 
-    patch_ftl_data(&ftl_path, mods, state.clone(), settings.repack_ftl_data).await?;
+    patch_ftl_data(&ftl_path, mods, state.clone(), settings.repack_ftl_data)?;
 
-    let mut lock = state.lock().await;
+    let mut lock = state.lock();
     lock.apply_stage = None;
     lock.locked = false;
     lock.ctx.request_repaint();

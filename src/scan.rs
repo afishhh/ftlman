@@ -1,12 +1,12 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context, Result};
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::{Mod, ModConfigurationState, ModSource, Settings, SharedState, MOD_ORDER_FILENAME};
 
-pub async fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> Result<()> {
-    let mut lock = state.lock().await;
+pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> Result<()> {
+    let mut lock = state.lock();
 
     if lock.locked {
         return Ok(());
@@ -35,7 +35,7 @@ pub async fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: boo
             Err(e) => return Err(e).context("Failed to open mod order file"),
         };
     if first {
-        state.lock().await.hyperspace = mod_config_state.hyperspace;
+        state.lock().hyperspace = mod_config_state.hyperspace;
     }
     let mod_order_map = mod_config_state.order.into_order_map();
 
@@ -51,7 +51,7 @@ pub async fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: boo
                 |o| o.enabled,
             );
 
-            let mut lock = state.lock().await;
+            let mut lock = state.lock();
             lock.mods.push(m);
             lock.mods.sort_by_cached_key(|m| {
                 mod_order_map
@@ -64,7 +64,7 @@ pub async fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: boo
     }
 
     {
-        let mut lock = state.lock().await;
+        let mut lock = state.lock();
         lock.locked = false;
         lock.ctx.request_repaint();
     }

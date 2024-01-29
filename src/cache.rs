@@ -3,12 +3,12 @@ macro_rules! cache {
     (read($path: expr, $key: expr) or insert $ins: block) => {{
         let __cache_path = $path;
         let __cache_key = $key;
-        match ::cacache::read(&__cache_path, &__cache_key).await {
+        match ::cacache::read_sync(&__cache_path, &__cache_key) {
             Ok(data) => Ok(data),
             Err(cacache::Error::EntryNotFound(..)) => {
                 let result = $ins;
 
-                cacache::write(__cache_path, __cache_key, &result).await?;
+                cacache::write_sync(__cache_path, __cache_key, &result)?;
 
                 Ok(result.into())
             }
@@ -20,8 +20,7 @@ macro_rules! cache {
         let __cache_path = $path;
         let __cache_key = $key;
         let __cache_time_cached =
-            ::cacache::metadata(&__cache_path, &__cache_key)
-                .await?
+            ::cacache::metadata_sync(&__cache_path, &__cache_key)?
                 .map(|md| {
                     ::std::time::UNIX_EPOCH
                         + ::std::time::Duration::from_millis(md.time.try_into().unwrap())
@@ -34,7 +33,7 @@ macro_rules! cache {
                     .map(|x| x < $alive)
                     .unwrap_or(false) =>
             {
-                match ::cacache::read(&__cache_path, &__cache_key).await {
+                match ::cacache::read_sync(&__cache_path, &__cache_key) {
                     Ok(data) => Some(data),
                     Err(cacache::Error::EntryNotFound(..)) => None,
                     Err(err) => return Err(err).context("Failed to retrieve cached response"),
@@ -48,7 +47,7 @@ macro_rules! cache {
             None => {
                 let result = $ins;
 
-                cacache::write(__cache_path, __cache_key, &result).await?;
+                cacache::write_sync(__cache_path, __cache_key, &result)?;
 
                 result.into()
             }
