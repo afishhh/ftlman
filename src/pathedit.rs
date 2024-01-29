@@ -2,9 +2,12 @@
 
 use std::{hash::Hash, path::Path};
 
-use eframe::egui::{
-    text_edit::TextEditState, Area, FontSelection, Frame, Id, Modifiers, Response, RichText,
-    TextBuffer, TextEdit, Ui, Widget,
+use eframe::{
+    egui::{
+        text_edit::TextEditState, Area, FontSelection, Frame, Id, Modifiers, Response, RichText,
+        TextBuffer, TextEdit, Ui, Widget,
+    },
+    epaint::FontId,
 };
 
 pub struct PathEdit<'a> {
@@ -238,7 +241,8 @@ impl Widget for PathEdit<'_> {
                         .movable(false)
                         .show(ui.ctx(), |ui| {
                             Frame::default()
-                                .fill(ui.visuals().faint_bg_color.linear_multiply(0.9))
+                                .fill(ui.visuals().extreme_bg_color.gamma_multiply(0.9))
+                                .inner_margin(5.0)
                                 .show(ui, |ui| {
                                     let mut it = suggestions.iter().enumerate().skip(
                                         selected.saturating_sub(
@@ -252,6 +256,13 @@ impl Widget for PathEdit<'_> {
                                             RichText::new(value.as_str()).strong(),
                                         );
                                     }
+
+                                    ui.add_space(5.0);
+
+                                    ui.label(
+                                        RichText::new("Use Tab and Shift+Tab to cycle suggestions")
+                                            .font(FontId::monospace(8.0)),
+                                    )
                                 });
                         });
                 }
