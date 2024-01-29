@@ -714,7 +714,7 @@ impl eframe::App for App {
                                                 let truncated = truncate_to_fit(
                                                     ui,
                                                     &font,
-                                                    &item.filename(),
+                                                    item.filename(),
                                                     ui.available_width(),
                                                 );
                                                 let label = ui.add(egui::SelectableLabel::new(
@@ -1174,7 +1174,7 @@ impl ModSource {
         }
     }
 
-    pub fn open<'a>(&'a self) -> Result<OpenModHandle<'a>> {
+    pub fn open(&self) -> Result<OpenModHandle<'_>> {
         Ok(match self {
             Self::Directory { path } => OpenModHandle::Directory { path: path.clone() },
             Self::Zip { path } => OpenModHandle::Zip {
