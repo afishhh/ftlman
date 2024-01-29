@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{get_cache_dir, AGENT};
+use crate::{cache::CACHE, AGENT};
 
 const API_ROOT: &str = "https://api.github.com";
 
@@ -27,28 +25,26 @@ impl Repository {
         }
     }
 
-    fn cache_dir(&self) -> PathBuf {
-        get_cache_dir()
-            .join("github")
-            .join(&self.owner)
-            .join(&self.name)
+    fn cache_subdir(&self) -> String {
+        format!("github/{}/{}", self.owner, self.name)
     }
 
     pub fn releases(&self) -> Result<Vec<Release>> {
-        const CACHE_KEY: &str = "releases";
-        let cache_dir = self.cache_dir();
+        let bytes = CACHE.read_or_create_with_ttl(
+            &format!("{}/releases", self.cache_subdir()),
+            std::time::Duration::from_secs(10 * 60),
+            || -> Result<_> {
+                let url: String = format!(
+                    "{API_ROOT}/repos/{owner}/{repo}/releases",
+                    owner = self.owner,
+                    repo = self.name
+                );
 
-        let bytes = crate::cache!(read(&cache_dir, CACHE_KEY) keepalive(std::time::Duration::from_secs(10 * 60)) or insert {
-            let url: String = format!(
-                "{API_ROOT}/repos/{owner}/{repo}/releases",
-                owner = self.owner,
-                repo = self.name
-            );
-
-            let mut out = vec![];
-            make_get(&url).call()?.into_reader().read_to_end(&mut out)?;
-            out
-        });
+                let mut out = vec![];
+                make_get(&url).call()?.into_reader().read_to_end(&mut out)?;
+                Ok(out)
+            },
+        )?;
 
         serde_json::from_slice(&bytes).context("Could not parse github API response")
     }

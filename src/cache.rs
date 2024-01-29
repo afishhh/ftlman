@@ -1,56 +1,85 @@
-#[macro_export]
-macro_rules! cache {
-    (read($path: expr, $key: expr) or insert $ins: block) => {{
-        let __cache_path = $path;
-        let __cache_key = $key;
-        match ::cacache::read_sync(&__cache_path, &__cache_key) {
-            Ok(data) => Ok(data),
-            Err(cacache::Error::EntryNotFound(..)) => {
-                let result = $ins;
+use std::{
+    io::Write,
+    path::{Path, PathBuf},
+    time::{Duration, SystemTime},
+};
 
-                cacache::write_sync(__cache_path, __cache_key, &result)?;
+use anyhow::{Context, Result};
+use lazy_static::lazy_static;
 
-                Ok(result.into())
+use crate::BASE_DIRECTORIES;
+
+pub struct Cache {
+    root: PathBuf,
+}
+
+lazy_static! {
+    pub static ref CACHE: Cache = Cache {
+        root: BASE_DIRECTORIES.get_cache_file("ftlman")
+    };
+}
+
+impl Cache {
+    fn read_or_write_internal(
+        &self,
+        path: PathBuf,
+        check_path: impl FnOnce(&Path) -> Result<bool>,
+        fun: impl FnOnce() -> Result<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
+        std::fs::create_dir_all(path.parent().unwrap())?;
+
+        if check_path(&path)? {
+            Ok(std::fs::read(path)?)
+        } else {
+            let data = fun()?;
+            let tmp_dir = self.root.join(".tmp");
+            std::fs::create_dir_all(&tmp_dir)?;
+            let mut tmp = tempfile::NamedTempFile::new_in(tmp_dir)?;
+            tmp.write_all(&data)?;
+            match std::fs::rename(tmp.into_temp_path(), path) {
+                Ok(()) => (),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+                Err(e) => Err(e)?,
             }
-            Err(err) => Err(err).context("Failed to retrieve cached response"),
+            Ok(data)
         }
-    }};
+    }
 
-    (read($path: expr, $key: expr) keepalive($alive: expr) or insert $ins: block) => {{
-        let __cache_path = $path;
-        let __cache_key = $key;
-        let __cache_time_cached =
-            ::cacache::metadata_sync(&__cache_path, &__cache_key)?
-                .map(|md| {
-                    ::std::time::UNIX_EPOCH
-                        + ::std::time::Duration::from_millis(md.time.try_into().unwrap())
-                });
+    pub fn read_or_create_key(
+        &self,
+        subdir: &str,
+        key: &str,
+        fun: impl FnOnce() -> Result<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
+        self.read_or_write_internal(
+            self.root
+                .join(subdir)
+                .join(base32::encode(base32::Alphabet::Crockford, key.as_bytes())),
+            |p| p.try_exists().map_err(Into::into),
+            fun,
+        )
+    }
 
-        let __cache_maybe_data = match __cache_time_cached {
-            Some(__cache_time)
-                if ::std::time::SystemTime::now()
-                    .duration_since(__cache_time)
-                    .map(|x| x < $alive)
-                    .unwrap_or(false) =>
-            {
-                match ::cacache::read_sync(&__cache_path, &__cache_key) {
-                    Ok(data) => Some(data),
-                    Err(cacache::Error::EntryNotFound(..)) => None,
-                    Err(err) => return Err(err).context("Failed to retrieve cached response"),
-                }
-            }
-            _ => None,
-        };
-
-        match __cache_maybe_data {
-            Some(data) => data,
-            None => {
-                let result = $ins;
-
-                cacache::write_sync(__cache_path, __cache_key, &result)?;
-
-                result.into()
-            }
-        }
-    }};
+    pub fn read_or_create_with_ttl(
+        &self,
+        subpath: &str,
+        ttl: Duration,
+        fun: impl FnOnce() -> Result<Vec<u8>>,
+    ) -> Result<Vec<u8>> {
+        self.read_or_write_internal(
+            self.root.join(subpath),
+            |p| -> Result<bool> {
+                let meta = match p.metadata() {
+                    Ok(meta) => meta,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                    Err(e) => Err(e)?,
+                };
+                let mtime = meta
+                    .modified()
+                    .context("Failed to get modification time of cached file")?;
+                Ok(mtime + ttl >= SystemTime::now())
+            },
+            fun,
+        )
+    }
 }

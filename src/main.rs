@@ -51,10 +51,6 @@ lazy_static! {
         .build();
 }
 
-fn get_cache_dir() -> PathBuf {
-    BASE_DIRECTORIES.get_cache_home().join("ftlman")
-}
-
 fn to_human_size_units(num: u64) -> (f64, &'static str) {
     const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
 

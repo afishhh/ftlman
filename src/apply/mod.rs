@@ -12,9 +12,7 @@ use parking_lot::Mutex;
 use regex::Regex;
 use zip::ZipArchive;
 
-use crate::{
-    cache, get_cache_dir, hyperspace, HyperspaceState, Mod, ModSource, Settings, SharedState,
-};
+use crate::{cache::CACHE, hyperspace, HyperspaceState, Mod, ModSource, Settings, SharedState};
 
 mod append;
 
@@ -304,24 +302,22 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
         let egui_ctx = lock.ctx.clone();
         drop(lock);
 
-        let zip_data = cache!(read(
-            get_cache_dir().join("hyperspace"),
-            release.name()
-        ) or insert {
+        let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
             state.lock().apply_stage = Some(ApplyStage::DownloadingHyperspace {
                 version: release.name().to_string(),
                 progress: None,
             });
 
-            release.fetch_zip(
-                |current, max| {
-                    let Some(ApplyStage::DownloadingHyperspace { ref mut progress, .. }) = state.lock().apply_stage else {
-                        unreachable!();
-                    };
-                    *progress = Some((current, max));
-                    egui_ctx.request_repaint();
-                },
-            )?
+            release.fetch_zip(|current, max| {
+                let Some(ApplyStage::DownloadingHyperspace {
+                    ref mut progress, ..
+                }) = state.lock().apply_stage
+                else {
+                    unreachable!();
+                };
+                *progress = Some((current, max));
+                egui_ctx.request_repaint();
+            })
         })?;
         let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
