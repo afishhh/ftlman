@@ -10,7 +10,7 @@ use std::{
 
 use anyhow::Result;
 use eframe::{
-    egui::{self, RichText, Ui, Visuals, TextBuffer},
+    egui::{self, RichText, Ui, Visuals},
     epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2},
 };
 use egui_dnd::DragDropItem;
@@ -199,6 +199,8 @@ pub struct Settings {
     zips_are_mods: bool,
     #[serde(default = "value_true")]
     ftl_is_zip: bool,
+    #[serde(default = "value_true")]
+    repack_ftl_data: bool,
     #[serde(default)]
     theme: ThemeSetting,
 }
@@ -232,6 +234,7 @@ impl Default for Settings {
             zips_are_mods: true,
             dirs_are_mods: true,
             ftl_is_zip: true,
+            repack_ftl_data: true,
             theme: ThemeSetting {
                 colors: ThemeColorscheme::Dark,
                 opacity: 1.,
@@ -436,11 +439,13 @@ impl eframe::App for App {
                                 let ctx = ctx.clone();
                                 let ftl_path = self.settings.ftl_directory.clone().unwrap();
                                 let shared = self.shared.clone();
+                                let settings = self.settings.clone();
                                 self.current_task =
                                     CurrentTask::Apply(Promise::spawn_async(async move {
                                         let result = apply::apply(
                                             ftl_path,
-                                            shared
+                                            shared,
+                                            settings
                                         ).await;
                                         ctx.request_repaint();
                                         result
@@ -895,6 +900,17 @@ impl eframe::App for App {
                         }
                     }
 
+                    ui
+                        .checkbox(
+                            &mut self.settings.repack_ftl_data,
+                            "Repack FTL data archive",
+                        )
+                        .on_hover_text(concat!(
+                            "Turning this off will slightly speed up patching but\n",
+                            "will make the archive larger and may slow down startup.\n",
+                            "The impact mostly depends on the number of applied mods."
+                        ));
+
                     let mut visuals_changed = false;
                     egui::ComboBox::from_label("Colorscheme")
                         .selected_text(format!("{}", &mut self.settings.theme.colors))
@@ -1243,16 +1259,17 @@ impl Mod {
         self.cached_metadata
             .get_or_try_init(|| {
                 Ok(Some({
-                    let mut metadata: Metadata = quick_xml::de::from_reader(std::io::BufReader::new(
-                        match self
-                            .source
-                            .open()?
-                            .open_nf_aware("mod-appendix/metadata.xml")?
-                        {
-                            Some(handle) => handle,
-                            None => return Ok(None),
-                        },
-                    ))?;
+                    let mut metadata: Metadata =
+                        quick_xml::de::from_reader(std::io::BufReader::new(
+                            match self
+                                .source
+                                .open()?
+                                .open_nf_aware("mod-appendix/metadata.xml")?
+                            {
+                                Some(handle) => handle,
+                                None => return Ok(None),
+                            },
+                        ))?;
 
                     metadata.title = metadata.title.trim().to_string();
                     if let Some(url) = metadata.thread_url {

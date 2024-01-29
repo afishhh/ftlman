@@ -12,7 +12,9 @@ use regex::Regex;
 use tokio::{sync::Mutex, task::block_in_place};
 use zip::ZipArchive;
 
-use crate::{cache, get_cache_dir, hyperspace, HyperspaceState, Mod, ModSource, SharedState};
+use crate::{
+    cache, get_cache_dir, hyperspace, HyperspaceState, Mod, ModSource, Settings, SharedState,
+};
 
 mod append;
 
@@ -43,6 +45,7 @@ async fn patch_ftl_data(
     ftl_path: &Path,
     mods: Vec<Mod>,
     state: Arc<Mutex<SharedState>>,
+    repack: bool,
 ) -> Result<()> {
     let mut lock = state.lock().await;
 
@@ -248,9 +251,7 @@ async fn patch_ftl_data(
                         .find(&std::io::read_to_string(handle.open(&name)?)?)
                         .is_some()
                     {
-                        warn!(
-                            "Mod namespaced tag present in non-append XML. Please tell the mod's developer I hate them."
-                        );
+                        warn!("Useless mod namespaced tag present in non-append xml file {name}.");
                     }
                 }
 
@@ -278,13 +279,19 @@ async fn patch_ftl_data(
         lock.apply_stage = Some(ApplyStage::Repacking);
         lock.ctx.request_repaint();
     }
-    pkg.repack().context("Failed to repack ftl.dat")?;
-    drop(pkg);
+    if repack {
+        pkg.repack().context("Failed to repack ftl.dat")?;
+    }
+    pkg.flush()?;
 
     Ok(())
 }
 
-pub async fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>) -> Result<()> {
+pub async fn apply(
+    ftl_path: PathBuf,
+    state: Arc<Mutex<SharedState>>,
+    settings: Settings,
+) -> Result<()> {
     let mut lock = state.lock().await;
 
     if lock.locked {
@@ -347,7 +354,7 @@ pub async fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>) -> Result<
         block_in_place(|| hyperspace::disable(&ftl_path))?;
     }
 
-    patch_ftl_data(&ftl_path, mods, state.clone()).await?;
+    patch_ftl_data(&ftl_path, mods, state.clone(), settings.repack_ftl_data).await?;
 
     let mut lock = state.lock().await;
     lock.apply_stage = None;
