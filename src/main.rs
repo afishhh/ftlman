@@ -263,20 +263,6 @@ pub struct SharedState {
     mods: Vec<Mod>,
 }
 
-impl SharedState {
-    fn change_hyperspace_state(&mut self, new: Option<HyperspaceState>) {
-        for m in std::mem::take(&mut self.mods) {
-            if let ModSource::InMemoryZip { ref filename, .. }  = m.source {
-                if filename == "Hyperspace.ftl" {
-                    continue
-                }
-            }
-
-            self.mods.push(m);
-        }
-    }
-}
-
 enum CurrentTask {
     Scan(Promise<Result<()>>),
     Apply(Promise<Result<()>>),
