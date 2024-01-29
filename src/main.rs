@@ -446,11 +446,18 @@ impl eframe::App for App {
                                 )
                                 .on_hover_text_at_pointer("Apply mods to FTL");
                             if apply.clicked() {
+                                let ctx = ctx.clone();
+                                let ftl_path = self.settings.ftl_directory.clone().unwrap();
+                                let shared = self.shared.clone();
                                 self.current_task =
-                                    CurrentTask::Apply(Promise::spawn_async(apply::apply(
-                                        self.settings.ftl_directory.clone().unwrap(),
-                                        self.shared.clone(),
-                                    )))
+                                    CurrentTask::Apply(Promise::spawn_async(async move {
+                                        let result = apply::apply(
+                                            ftl_path,
+                                            shared
+                                        ).await;
+                                        ctx.request_repaint();
+                                        result
+                                    }));
                             }
 
                             let scan = ui

@@ -50,19 +50,27 @@ pub fn patch(context: &mut Element, patch: Element) -> Result<()> {
 }
 
 fn cleanup(element: &mut Element) {
-    if element.namespace.as_deref() == Some("mod") {
+    const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-overwrite"];
+
+    if element
+        .namespace
+        .as_ref()
+        .is_some_and(|x| MOD_NAMESPACES.contains(&x.as_str()))
+    {
         element.namespace = None
     }
 
-    if let Some(ns) = element.namespaces.as_mut() {
-        ns.0.remove("mod");
-        ns.0.remove("mod-append");
-        ns.0.remove("mod-overwrite");
+    if element
+        .prefix
+        .as_ref()
+        .is_some_and(|x| MOD_NAMESPACES.contains(&x.as_str()))
+    {
+        element.prefix = None
     }
 
-    for (k, v) in std::mem::take(&mut element.attributes) {
-        if !k.starts_with("xmlns:mod") {
-            element.attributes.insert(k, v);
+    if let Some(ns) = element.namespaces.as_mut() {
+        for mns in MOD_NAMESPACES {
+            ns.0.remove(*mns);
         }
     }
 
@@ -79,7 +87,7 @@ fn cleanup(element: &mut Element) {
     }
 }
 
-// TODO: ModFindError
+// FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if node.namespace.as_ref().is_some_and(|x| x == "mod") {
         macro_rules! get_attr {
@@ -117,7 +125,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                 let search_limit = get_attr!("findName", isize, "limit", 1)?;
                 let panic = get_attr!("findName", bool, "panic", false)?;
 
-                if search_type.is_some_and(|x| x.is_empty()) {
+                if search_type.as_ref().is_some_and(|x| x.is_empty()) {
                     bail!("findName 'type' attribute cannot be empty")
                 }
 
@@ -133,6 +141,10 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                             .attributes
                             .get("name")
                             .is_some_and(|x| x == &search_name)
+                            && search_type
+                                .as_ref()
+                                .map(|x| element.name == *x)
+                                .unwrap_or(true)
                         {
                             matches.push(element);
                         }
@@ -154,21 +166,47 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     })
                     .collect();
 
+                if panic && matches.is_empty() {
+                    let mut msg = String::from(
+                        "mod:findName element has panic=true but no elements matched\nParameters:",
+                    );
+
+                    for (name, value) in [
+                        ("name", Some(search_name)),
+                        ("type", search_type),
+                        (
+                            "reverse",
+                            Some(if search_reverse { "true" } else { "false" }.to_string()),
+                        ),
+                        ("start", Some(search_start.to_string())),
+                        ("limit", Some(search_limit.to_string())),
+                    ] {
+                        if let Some(s) = value {
+                            msg.push_str("\n\t");
+                            msg.push_str(name);
+                            msg.push('=');
+                            msg.push_str(&s);
+                        }
+                    }
+
+                    bail!("{msg}");
+                }
+
                 Ok(Some(matches))
             }
             "findLike" => {
-                let search_type = get_attr!("findName", String, "type")?;
-                let search_reverse = get_attr!("findName", bool, "reverse", false)?;
-                let search_start = get_attr!("findName", usize, "start", 0)?;
-                let search_limit = get_attr!("findName", isize, "limit", -1)?;
-                let panic = get_attr!("findName", bool, "panic", false)?;
+                let search_type = get_attr!("findLike", String, "type")?;
+                let search_reverse = get_attr!("findLike", bool, "reverse", false)?;
+                let search_start = get_attr!("findLike", usize, "start", 0)?;
+                let search_limit = get_attr!("findLike", isize, "limit", -1)?;
+                let panic = get_attr!("findLike", bool, "panic", false)?;
 
                 if search_type.as_ref().is_some_and(|x| x.is_empty()) {
-                    bail!("findName 'type' attribute cannot be empty")
+                    bail!("findLike 'type' attribute cannot be empty")
                 }
 
                 if search_limit < -1 {
-                    bail!("findName 'limit' attribute must be >= -1")
+                    bail!("findLike 'limit' attribute must be >= -1")
                 }
 
                 let mut attrs = HashMap::new();
@@ -233,6 +271,31 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     })
                     .collect();
 
+                if panic && matches.is_empty() {
+                    let mut msg = String::from(
+                        "mod:findLike element has panic=true but no elements matched\nParameters:",
+                    );
+
+                    for (name, value) in [
+                        ("type", search_type),
+                        (
+                            "reverse",
+                            Some(if search_reverse { "true" } else { "false" }.to_string()),
+                        ),
+                        ("start", Some(search_start.to_string())),
+                        ("limit", Some(search_limit.to_string())),
+                    ] {
+                        if let Some(s) = value {
+                            msg.push_str("\n\t");
+                            msg.push_str(name);
+                            msg.push('=');
+                            msg.push_str(&s);
+                        }
+                    }
+
+                    bail!("{msg}");
+                }
+
                 Ok(Some(matches))
             }
             _ => Ok(None),
@@ -243,76 +306,79 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
 }
 
 fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
-    for command_node in &element.children {
-        if let XMLNode::Element(command_element) = command_node {
-            match command_element.namespace.as_deref() {
-                Some("mod") => {
-                    if let Some(matches) = mod_find(context, command_element)? {
-                        for element in matches {
-                            mod_commands(element, command_element)?;
+    for command in element.children.iter().filter_map(|x| x.as_element()) {
+        match command.namespace.as_deref() {
+            Some("mod") => {
+                if let Some(matches) = mod_find(context, command)? {
+                    for matched in matches {
+                        mod_commands(matched, command)?;
+                    }
+                } else {
+                    match command.name.as_str() {
+                        "selector" | "par" => {}
+                        "setAttributes" => {
+                            context.attributes.extend(
+                                command
+                                    .attributes
+                                    .iter()
+                                    .map(|(k, v)| (k.to_owned(), v.to_owned())),
+                            );
                         }
-                    } else {
-                        match command_element.name.as_str() {
-                            "selector" | "par" => {}
-                            "setAttributes" => {
-                                context.attributes.extend(
-                                    command_element
-                                        .attributes
-                                        .iter()
-                                        .map(|(k, v)| (k.to_owned(), v.to_owned())),
-                                );
+                        "removeAttributes" => {
+                            for key in command.attributes.keys() {
+                                let _ = context.attributes.remove(key);
                             }
-                            "removeAttributes" => {
-                                for key in command_element.attributes.keys() {
-                                    let _ = context.attributes.remove(key);
-                                }
-                            }
-                            "setValue" => {
-                                // Remove all text and cdata nodes
-                                for node in std::mem::take(&mut context.children) {
-                                    match node {
-                                        XMLNode::Element(_)
-                                        | XMLNode::Comment(_)
-                                        | XMLNode::ProcessingInstruction(_, _) => {
-                                            context.children.push(node)
-                                        }
-                                        XMLNode::CData(_) | XMLNode::Text(_) => {}
+                        }
+                        "setValue" => {
+                            // Remove all text and cdata nodes
+                            for node in std::mem::take(&mut context.children) {
+                                match node {
+                                    XMLNode::Element(_)
+                                    | XMLNode::Comment(_)
+                                    | XMLNode::ProcessingInstruction(_, _) => {
+                                        context.children.push(node)
                                     }
+                                    XMLNode::CData(_) | XMLNode::Text(_) => {}
                                 }
+                            }
 
-                                context.children.push(XMLNode::Text(
-                                    command_element
-                                        .get_text()
-                                        .map(|x| x.trim().to_string())
-                                        .unwrap_or_else(String::new),
-                                ))
-                            }
-                            "removeTag" => {
-                                context.namespace = Some(REMOVE_MARKER.to_string());
-                            }
-                            _ => {
-                                bail!("Unrecognised mod tag {}", command_element.name)
-                            }
+                            context.children.push(XMLNode::Text(
+                                command
+                                    .get_text()
+                                    .map(|x| x.trim().to_string())
+                                    .unwrap_or_else(String::new),
+                            ))
+                        }
+                        "removeTag" => {
+                            context.namespace = Some(REMOVE_MARKER.to_string());
+                        }
+                        _ => {
+                            bail!("Unrecognised mod tag {}", command.name)
                         }
                     }
                 }
-                Some("mod-append") => {
-                    let mut new = element.clone();
-                    new.namespace = None;
+            }
+            Some("mod-append") => {
+                let mut new = command.clone();
+                new.namespace = None;
+                new.prefix = None;
+
+                // println!("appending {:?} to {:?}", new, context);
+
+                context.children.push(XMLNode::Element(new));
+            }
+            Some("mod-overwrite") => {
+                let mut new = command.clone();
+                new.namespace = None;
+                new.prefix = None;
+
+                if let Some(old) = context.get_mut_child(new.name.as_str()) {
+                    let _ = std::mem::replace(old, new);
+                } else {
                     context.children.push(XMLNode::Element(new));
                 }
-                Some("mod-overwrite") => {
-                    let mut new = element.clone();
-                    new.namespace = None;
-
-                    if let Some(old) = context.get_mut_child(new.name.as_str()) {
-                        let _ = std::mem::replace(old, new);
-                    } else {
-                        context.children.push(XMLNode::Element(new));
-                    }
-                }
-                _ => bail!("Unrecognised mod command tag {}", command_element.name),
             }
+            _ => bail!("Unrecognised mod command namespace {}", command.name),
         }
     }
 

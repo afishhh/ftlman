@@ -1,5 +1,4 @@
 use std::{
-    fs::File,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
@@ -8,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
-use log::{info, trace};
+use log::{info, trace, warn};
 use regex::Regex;
 use tokio::{sync::Mutex, task::block_in_place};
 use zip::ZipArchive;
@@ -19,10 +18,10 @@ mod append;
 
 lazy_static! {
     // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
-    static ref APPEND_FTL_TAG_REGEX: Regex =
+    static ref WRAPPER_TAG_REGEX: Regex =
         Regex::new("(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap();
     static ref MOD_NAMESPACE_TAG_REGEX: Regex =
-        Regex::new("<mod:.+>").unwrap();
+        Regex::new("<mod(|-append|-overwrite):.+>").unwrap();
 }
 
 pub enum ApplyStage {
@@ -57,34 +56,17 @@ async fn patch_ftl_data(
         let original_path = ftl_path.join("ftl.dat");
 
         if vanilla_path.exists() {
-            let mut orig = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .truncate(true)
-                .open(original_path)
-                .context("Failed to open ftl.dat")?;
-            std::io::copy(
-                &mut File::open(vanilla_path)
-                    .with_context(|| format!("Failed to open {BACKUP_FILENAME}"))?,
-                &mut orig,
-            )
-            .with_context(|| format!("Failed to copy {BACKUP_FILENAME} to ftl.dat"))?;
-            orig
+            std::fs::copy(vanilla_path, &original_path)
+                .with_context(|| format!("Failed to copy {BACKUP_FILENAME} to ftl.dat"))?;
         } else {
-            let mut orig = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(original_path)
-                // FIXME: This duplication does not look nice
-                .context("Failed to open ftl.dat")?;
-            std::io::copy(
-                &mut orig,
-                &mut File::create(vanilla_path)
-                    .with_context(|| format!("Failed to open {BACKUP_FILENAME}"))?,
-            )
-            .context("Failed to backup ftl.dat")?;
-            orig
+            std::fs::copy(&original_path, vanilla_path).context("Failed to backup ftl.dat")?;
         }
+
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(original_path)
+            .context("Failed to open ftl.dat")?
     };
 
     let mut pkg = silpkg::sync::Pkg::parse(data_file).context("Failed to parse ftl.dat")?;
@@ -163,20 +145,37 @@ async fn patch_ftl_data(
                 };
 
                 // FIXME: this can be made quicker
-                let had_ftl_root = APPEND_FTL_TAG_REGEX
+                let had_ftl_root = WRAPPER_TAG_REGEX
                     .captures_iter(&original_text)
                     .any(|x| x.get(2).is_some());
-                let original_without_root = APPEND_FTL_TAG_REGEX.replace_all(&original_text, "");
-                let append_without_root = APPEND_FTL_TAG_REGEX.replace_all(&append_text, "");
+                let original_without_root = WRAPPER_TAG_REGEX.replace_all(&original_text, "");
+                let append_without_root = WRAPPER_TAG_REGEX.replace_all(&append_text, "");
 
                 // FIXME: This is terrible
                 let mut append_fixed = "<wrapper xmlns:mod='mod' xmlns:mod-append='mod-append' xmlns:mod-overwrite='mod-overwrite'>".to_string();
                 append_fixed += &append::clean_xml(&append_without_root);
                 append_fixed += "</wrapper>";
 
-                let mut original_fixed = "<FTL>".to_string();
+                // **AHEM** Some **people** decide to put XML files with mod namespaced tags into
+                // files with the .xml file extension.
+                // This obviously makes no freaking sense but will mess us up when we try to parse
+                // the previously inserted document here since it will contain unknown namespaces...
+                let mut original_fixed = "<xml xmlns:mod='mod' xmlns:mod-append='mod-append' xmlns:mod-overwrite='mod-overwrite'>".to_string();
                 original_fixed += &original_without_root;
-                original_fixed += "</FTL>";
+                original_fixed += "</xml>";
+
+                let mut debug_output_file_path: Option<PathBuf> = None;
+
+                // FIXME: Make this a setting
+                #[cfg(debug_assertions)]
+                if MOD_NAMESPACE_TAG_REGEX.find(&append_without_root).is_some() {
+                    let base = PathBuf::from_str("/tmp/ftlmantest").unwrap().join(&name);
+                    std::fs::create_dir_all(&base).unwrap();
+                    std::fs::write(base.join("in"), &original_fixed).unwrap();
+                    std::fs::write(base.join("patch"), &append_fixed).unwrap();
+                    debug_output_file_path = Some(base.join("out"));
+                    log::debug!("Mod namespaced tag in: {}/{}", m.filename(), name);
+                }
 
                 let mut document = xmltree::Element::parse(std::io::Cursor::new(&original_fixed))
                     .with_context(|| {
@@ -190,16 +189,10 @@ async fn patch_ftl_data(
                 )
                 .with_context(|| format!("Could not patch XML file {}", name))?;
 
-                // FIXME: Make this a setting
-                #[cfg(debug_assertions)]
-                if MOD_NAMESPACE_TAG_REGEX.find(&append_without_root).is_some() {
-                    let base = PathBuf::from_str("/tmp/ftlmantest").unwrap().join(&name);
-                    std::fs::create_dir_all(&base).unwrap();
-                    std::fs::write(base.join("in"), original_fixed).unwrap();
-                    std::fs::write(base.join("patch"), append_fixed).unwrap();
+                if let Some(path) = debug_output_file_path {
                     document
                         .write_with_config(
-                            &mut std::fs::File::create(base.join("out")).unwrap(),
+                            &mut std::fs::File::create(path).unwrap(),
                             xmltree::EmitterConfig {
                                 write_document_declaration: false,
                                 perform_indent: true,
@@ -207,11 +200,9 @@ async fn patch_ftl_data(
                             },
                         )
                         .unwrap();
-                    log::debug!("Mod namespaced tag in: {}/{}", m.filename(), name);
                 }
 
-                const PREFIX: &str = "<FTL>";
-                const SUFFIX: &str = "</FTL>";
+                // FIXME: This is so dumb :crying:
                 let new_text = {
                     let mut out = vec![];
                     document
@@ -223,18 +214,25 @@ async fn patch_ftl_data(
                             },
                         )
                         .unwrap();
-                    let mut buf = String::from_utf8(out)?;
+                    let buf = String::from_utf8(out)?;
+                    // NOTE: This becomes <xml> instead of <xml xmlns...> because we strip these
+                    //       extra attributes after patching
+                    let buf_without_root = buf
+                        .strip_prefix("<xml>")
+                        .unwrap()
+                        .strip_suffix("</xml>")
+                        .unwrap();
 
-                    if !had_ftl_root {
-                        buf = buf
-                            .strip_prefix(PREFIX)
-                            .and_then(|x| x.strip_suffix(SUFFIX))
-                            .map(str::to_string)
-                            .unwrap_or(buf);
+                    if had_ftl_root {
+                        format!("<FTL>{buf_without_root}</FTL>")
+                    } else {
+                        buf_without_root.to_string()
                     }
-
-                    buf
                 };
+
+                if MOD_NAMESPACE_TAG_REGEX.find(&new_text).is_some() {
+                    bail!("Mod namespaced tag present in output XML. This is a bug in ftlman!");
+                }
 
                 match pkg.remove(&real_name) {
                     Ok(()) => {}
@@ -253,6 +251,18 @@ async fn patch_ftl_data(
                         format!("Failed to insert modified {real_name} into ftl.dat")
                     })?;
             } else {
+                if name.ends_with(".xml") {
+                    #[cfg(debug_assertions)]
+                    if MOD_NAMESPACE_TAG_REGEX
+                        .find(&std::io::read_to_string(handle.open(&name)?)?)
+                        .is_some()
+                    {
+                        warn!(
+                            "Mod namespaced tag present in non-append XML. Please tell the mod's developer I hate them."
+                        );
+                    }
+                }
+
                 if pkg.contains(&name) {
                     trace!("Overwriting {name}");
                     pkg.remove(&name)
