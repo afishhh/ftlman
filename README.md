@@ -1,4 +1,4 @@
-## Another FTL Mod Manager
+## Another [FTL: Faster Than Light](https://subsetgames.com/ftl.html) Mod Manager
 
 This project is an alternative to the [Slipstream Mod Manager](https://github.com/Vhati/Slipstream-Mod-Manager), written in Rust and with some additional features.
 
