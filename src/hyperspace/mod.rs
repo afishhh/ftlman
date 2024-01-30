@@ -103,4 +103,3 @@ mod linux;
 pub const INSTALLER: Option<&dyn Installer> = Some(&linux::LinuxInstaller);
 #[cfg(not(target_os = "linux"))]
 pub const INSTALLER: Option<&dyn Installer> = None;
-
