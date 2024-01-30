@@ -166,7 +166,6 @@ fn patch_ftl_data(
                     std::fs::write(base.join("in"), &original_fixed).unwrap();
                     std::fs::write(base.join("patch"), &append_fixed).unwrap();
                     debug_output_file_path = Some(base.join("out"));
-                    log::debug!("Mod namespaced tag in: {}/{}", m.filename(), name);
                 }
 
                 let mut document = xmltree::Element::parse(std::io::Cursor::new(&original_fixed))
