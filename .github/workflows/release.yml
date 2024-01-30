@@ -1,0 +1,25 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  upload-assets:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup default nightly
+        shell: bash
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: ftlman
+          token: ${{ secrets.GITHUB_TOKEN }}
