@@ -517,7 +517,7 @@ impl eframe::App for App {
                                 if self.settings.ftl_directory.is_none() || !self.settings.ftl_directory.as_ref().unwrap().exists() {
                                     ui.label(RichText::new("Invalid FTL directory specified").color(ui.visuals().error_fg_color).strong());
                                     return;
-                                } 
+                                }
 
                                 let supported = hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
                                 if let Err(err) = supported {
@@ -852,9 +852,7 @@ impl eframe::App for App {
 
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
-                        ui.label("FTL data directory (");
-                        ui.monospace("<FTL>/data");
-                        ui.label(")");
+                        ui.label("FTL data directory");
                     });
 
                     let mut ftl_dir_buf = self
@@ -863,19 +861,30 @@ impl eframe::App for App {
                         .as_ref()
                         .map(|x| x.to_str().unwrap().to_string())
                         .unwrap_or_default();
-                    if PathEdit::new(&mut ftl_dir_buf)
+                    let ftl_dir_pathedit = PathEdit::new(&mut ftl_dir_buf)
                         .id("pathedit ftl dir")
                         .desired_width(320.)
                         .completion_filter(|p| p.is_dir())
-                        .show(ui)
-                        .changed()
-                    {
+                        .show(ui);
+
+                    if ftl_dir_pathedit.changed() {
                         if ftl_dir_buf.is_empty() {
                             self.settings.ftl_directory = None
                         } else {
-                            self.settings.ftl_directory = Some(PathBuf::from(&ftl_dir_buf));
+                            self.settings.ftl_directory = Some(PathBuf::from(ftl_dir_buf));
                         }
                     }
+
+                    // On Linux + Steam the files we're interested in are located in <FTL>/data but users
+                    // might unknowingly enter <FTL>, try to detect this situation and fix it automatically.
+                    if ftl_dir_pathedit.lost_focus() {
+                        if let Some(path) = self.settings.ftl_directory.as_mut() {
+                            if path.join("data/ftl.dat").exists() {
+                                path.push("data")
+                            }
+                        }
+                    }
+
                     ui.checkbox(
                         &mut self.settings.repack_ftl_data,
                         "Repack FTL data archive",
