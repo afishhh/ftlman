@@ -222,9 +222,7 @@ pub struct SharedState {
     apply_stage: Option<ApplyStage>,
 
     ctx: egui::Context,
-    #[cfg(target_os = "linux")]
     hyperspace: Option<HyperspaceState>,
-    #[cfg(target_os = "linux")]
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
     mods: Vec<Mod>,
 }
@@ -267,9 +265,7 @@ impl App {
             locked: false,
             apply_stage: None,
             ctx: cc.egui_ctx.clone(),
-            #[cfg(target_os = "linux")]
             hyperspace: None,
-            #[cfg(target_os = "linux")]
             hyperspace_releases: ResettableLazy::new(|| {
                 Promise::spawn_thread(
                     "fetch hyperspace releases",
@@ -517,108 +513,111 @@ impl eframe::App for App {
                         ui.set_max_width(ui.available_width() / 2.1);
 
                         ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
-                            #[cfg(target_os = "linux")]
                             ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new("Hyperspace").font(FontId::default()).strong(),
-                                );
+                                if hyperspace::INSTALLER.is_some() {
+                                    ui.label(
+                                        RichText::new("Hyperspace").font(FontId::default()).strong(),
+                                    );
 
-                                let combobox =
-                                    egui::ComboBox::new("hyperspace select combobox", "")
-                                        .selected_text(
-                                            shared
-                                                .hyperspace
-                                                .as_ref()
-                                                .map(|x| x.release.name())
-                                                .unwrap_or("None"),
-                                        );
+                                    let combobox =
+                                        egui::ComboBox::new("hyperspace select combobox", "")
+                                            .selected_text(
+                                                shared
+                                                    .hyperspace
+                                                    .as_ref()
+                                                    .map(|x| x.release.name())
+                                                    .unwrap_or("None"),
+                                            );
 
-                                let mut clicked = None;
-                                match shared.hyperspace_releases.ready() {
-                                    Some(Ok(releases)) => {
-                                        combobox.show_ui(ui, |ui| {
-                                            if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
-                                                clicked = Some(None);
-                                            }
-
-                                            for release in releases.iter() {
-                                                let response = ui.selectable_label(
-                                                    shared.hyperspace.as_ref().is_some_and(|x| {
-                                                        x.release.id() == release.id()
-                                                    }),
-                                                    release.name(),
-                                                );
-                                                let desc_pos = Pos2::new(
-                                                    ui.min_rect().max.x
-                                                        + ui.spacing().window_margin.left,
-                                                    ui.min_rect().min.y
-                                                        - ui.spacing().window_margin.top,
-                                                );
-
-                                                if response.clicked() {
-                                                    clicked =
-                                                        Some(Some(release.to_owned()));
-                                                } else if response.hovered() {
-                                                    egui::Window::new("hyperspace version tooltip")
-                                                        .fixed_pos(desc_pos)
-                                                        .title_bar(false)
-                                                        .resizable(false)
-                                                        .show(ctx, |ui| {
-                                                            // FIXME: this doesn't work
-                                                            ui.set_max_height(
-                                                                ui.available_height() * 0.5,
-                                                            );
-                                                            ui.monospace(release.description())
-                                                        });
+                                    let mut clicked = None;
+                                    match shared.hyperspace_releases.ready() {
+                                        Some(Ok(releases)) => {
+                                            combobox.show_ui(ui, |ui| {
+                                                if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
+                                                    clicked = Some(None);
                                                 }
+
+                                                for release in releases.iter() {
+                                                    let response = ui.selectable_label(
+                                                        shared.hyperspace.as_ref().is_some_and(|x| {
+                                                            x.release.id() == release.id()
+                                                        }),
+                                                        release.name(),
+                                                    );
+                                                    let desc_pos = Pos2::new(
+                                                        ui.min_rect().max.x
+                                                            + ui.spacing().window_margin.left,
+                                                        ui.min_rect().min.y
+                                                            - ui.spacing().window_margin.top,
+                                                    );
+
+                                                    if response.clicked() {
+                                                        clicked =
+                                                            Some(Some(release.to_owned()));
+                                                    } else if response.hovered() {
+                                                        egui::Window::new("hyperspace version tooltip")
+                                                            .fixed_pos(desc_pos)
+                                                            .title_bar(false)
+                                                            .resizable(false)
+                                                            .show(ctx, |ui| {
+                                                                // FIXME: this doesn't work
+                                                                ui.set_max_height(
+                                                                    ui.available_height() * 0.5,
+                                                                );
+                                                                ui.monospace(release.description())
+                                                            });
+                                                    }
+                                                }
+                                            });
+                                        }
+                                        Some(Err(err)) => {
+                                            if error_popup(
+                                                ui,
+                                                "Failed to fetch hyperspace releases",
+                                                err,
+                                            ) {
+                                                shared.hyperspace_releases.take();
                                             }
-                                        });
-                                    }
-                                    Some(Err(err)) => {
-                                        if error_popup(
-                                            ui,
-                                            "Failed to fetch hyperspace releases",
-                                            err,
-                                        ) {
-                                            shared.hyperspace_releases.take();
+                                        }
+                                        None => {
+                                            combobox.show_ui(ui, |ui| {
+                                                ui.strong("Loading...");
+                                            });
+                                        }
+                                    };
+
+                                    if let Some(new_value) = clicked {
+                                        if let Some(release) = new_value {
+                                            shared.hyperspace = Some(HyperspaceState {
+                                                release,
+                                                patch_hyperspace_ftl: false,
+                                            });
+                                        } else {
+                                            shared.hyperspace = None;
                                         }
                                     }
-                                    None => {
-                                        combobox.show_ui(ui, |ui| {
-                                            ui.strong("Loading...");
-                                        });
-                                    }
-                                };
 
-                                if let Some(new_value) = clicked {
-                                    if let Some(release) = new_value {
-                                        shared.hyperspace = Some(HyperspaceState {
-                                            release,
-                                            patch_hyperspace_ftl: false,
-                                        });
-                                    } else {
-                                        shared.hyperspace = None;
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(eframe::emath::Align::Center),
+                                        |ui| {
+                                            if shared.hyperspace_releases.ready().is_none() {
+                                                ui.label("Fetching hyperspace releases...");
+                                                ui.spinner();
+                                            }
+                                        },
+                                    );
+
+                                    if let Some(HyperspaceState { ref mut patch_hyperspace_ftl, .. }) = shared.hyperspace {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(
+                                                eframe::emath::Align::Center,
+                                            ),
+                                            |ui| ui.checkbox(patch_hyperspace_ftl, "Patch Hyperspace.ftl")
+                                        );
                                     }
+                                } else {
+                                    ui.label(RichText::new("Hyperspace installation not supported on this platform").color(ui.visuals().error_fg_color).strong());
                                 }
-
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(eframe::emath::Align::Center),
-                                    |ui| {
-                                        if shared.hyperspace_releases.ready().is_none() {
-                                            ui.label("Fetching hyperspace releases...");
-                                            ui.spinner();
-                                        }
-                                    },
-                                );
-
-                            if let Some(HyperspaceState { ref mut patch_hyperspace_ftl, .. }) = shared.hyperspace {
-                                                    ui.with_layout(
-                                                        egui::Layout::right_to_left(
-                                                            eframe::emath::Align::Center,
-                                                        ),
-                                    |ui| {
-                                ui.checkbox(patch_hyperspace_ftl, "Patch Hyperspace.ftl");
-                            });}
                             });
 
                             // TODO: Separate this into a separate widget

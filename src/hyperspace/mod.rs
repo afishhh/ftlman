@@ -1,4 +1,7 @@
-use std::io::{Cursor, Read};
+use std::{
+    io::{Cursor, Read},
+    path::Path,
+};
 
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
@@ -89,9 +92,15 @@ pub fn fetch_hyperspace_releases() -> Result<Vec<HyperspaceRelease>> {
         .collect())
 }
 
+pub trait Installer {
+    fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()>;
+    fn disable(&self, ftl: &Path) -> Result<()>;
+}
+
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub use linux::{disable, install};
+pub const INSTALLER: Option<&dyn Installer> = Some(&linux::LinuxInstaller);
 #[cfg(not(target_os = "linux"))]
-compile_error!("Platform not supported yet");
+pub const INSTALLER: Option<&dyn Installer> = None;
+

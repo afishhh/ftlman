@@ -294,55 +294,59 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
     lock.locked = true;
     let mut mods = lock.mods.clone();
 
-    if let Some(HyperspaceState {
-        release,
-        patch_hyperspace_ftl,
-    }) = lock.hyperspace.clone()
-    {
-        let egui_ctx = lock.ctx.clone();
-        drop(lock);
+    if let Some(installer) = hyperspace::INSTALLER {
+        if let Some(HyperspaceState {
+            release,
+            patch_hyperspace_ftl,
+        }) = lock.hyperspace.clone()
+        {
+            let egui_ctx = lock.ctx.clone();
+            drop(lock);
 
-        let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
-            state.lock().apply_stage = Some(ApplyStage::DownloadingHyperspace {
-                version: release.name().to_string(),
-                progress: None,
-            });
+            let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
+                state.lock().apply_stage = Some(ApplyStage::DownloadingHyperspace {
+                    version: release.name().to_string(),
+                    progress: None,
+                });
 
-            release.fetch_zip(|current, max| {
-                let Some(ApplyStage::DownloadingHyperspace {
-                    ref mut progress, ..
-                }) = state.lock().apply_stage
-                else {
-                    unreachable!();
-                };
-                *progress = Some((current, max));
-                egui_ctx.request_repaint();
-            })
-        })?;
-        let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
+                release.fetch_zip(|current, max| {
+                    let Some(ApplyStage::DownloadingHyperspace {
+                        ref mut progress, ..
+                    }) = state.lock().apply_stage
+                    else {
+                        unreachable!();
+                    };
+                    *progress = Some((current, max));
+                    egui_ctx.request_repaint();
+                })
+            })?;
+            let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
-        hyperspace::install(&ftl_path, &mut zip)?;
-        release.extract_hyperspace_ftl(&mut zip)?;
+            installer.install(&ftl_path, &mut zip)?;
+            release.extract_hyperspace_ftl(&mut zip)?;
 
-        state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
-        egui_ctx.request_repaint();
-        drop(egui_ctx);
+            state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
+            egui_ctx.request_repaint();
+            drop(egui_ctx);
 
-        if patch_hyperspace_ftl {
-            mods.insert(
-                0,
-                Mod {
-                    source: ModSource::InMemoryZip {
-                        filename: "hyperspace.ftl".to_string(),
-                        data: release.extract_hyperspace_ftl(&mut zip)?,
+            if patch_hyperspace_ftl {
+                mods.insert(
+                    0,
+                    Mod {
+                        source: ModSource::InMemoryZip {
+                            filename: "hyperspace.ftl".to_string(),
+                            data: release.extract_hyperspace_ftl(&mut zip)?,
+                        },
+                        enabled: true,
+                        cached_metadata: Default::default(),
                     },
-                    enabled: true,
-                    cached_metadata: Default::default(),
-                },
-            );
+                );
+            }
+        } else {
+            installer.disable(&ftl_path)?;
         }
     } else {
-        hyperspace::disable(&ftl_path)?;
+        drop(lock);
     }
 
     patch_ftl_data(&ftl_path, mods, state.clone(), settings.repack_ftl_data)?;
