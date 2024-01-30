@@ -20,7 +20,7 @@ Adding support for other game stores is possible, but I only own the game on Ste
 
 #### Pre-built binaries
 
-Currently no pre-built binaries are available, I will work on them soon though.
+Pre-built binaries for both Linux and Windows are available in the [Releases](https://github.com/afishhh/ftlman/releases) tab.
 
 #### Compiling from source
 
