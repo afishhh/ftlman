@@ -8,7 +8,7 @@ This project is an alternative to the [Slipstream Mod Manager](https://github.co
 - [x] Automatic [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) installer
 
 > [!WARNING]
-> There may be bugs in my implementation of Slipstream's .xml.append format. If you encounter issues please verify you are using the latest version of ftlman and make sure the issue is a bug in ftlman and not the mod itself, then [open an issue](https://github.com/afishhh/ftlman/issues/new) on GitHub. Make sure to provide all the information necessary reproduce the bug.
+> There may be bugs in my implementation of Slipstream's .xml.append format. If you encounter issues please verify you are using the latest version of ftlman and make sure the issue is a bug in ftlman and not the mod itself, then [open an issue](https://github.com/afishhh/ftlman/issues/new) on GitHub. Make sure to provide all the information necessary to reproduce the bug.
 
 Currently automatic hyperspace installation is only supported on the following OS + Store combinations:
 - Windows + Steam
