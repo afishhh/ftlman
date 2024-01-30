@@ -115,8 +115,11 @@ impl Installer for UnsupportedOSInstaller {
 }
 
 mod linux;
+mod windows;
 
 #[cfg(target_os = "linux")]
 pub const INSTALLER: &dyn Installer = &linux::LinuxInstaller;
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub const INSTALLER: &dyn Installer = &windows::WindowsInstaller;
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub const INSTALLER: &dyn Installer = &UnsupportedOSInstaller;

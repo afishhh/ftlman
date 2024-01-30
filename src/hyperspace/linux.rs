@@ -38,7 +38,7 @@ impl Installer for LinuxInstaller {
                 if x.len() == 72443660 {
                     Ok(Ok(self))
                 } else {
-                    Ok(Err("Unrecognised FTL binary file size".to_string()))
+                    Ok(Err(format!("Unrecognised FTL binary size: {}", x.len())))
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!("FTL binary not found"),
