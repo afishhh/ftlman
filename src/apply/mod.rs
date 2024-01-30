@@ -343,6 +343,8 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
                 );
             }
         } else {
+            drop(lock);
+
             installer.disable(&ftl_path)?;
         }
     } else {
