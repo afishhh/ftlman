@@ -294,7 +294,7 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
     lock.locked = true;
     let mut mods = lock.mods.clone();
 
-    if let Some(installer) = hyperspace::INSTALLER {
+    if let Ok(installer) = hyperspace::INSTALLER.supported(&ftl_path)? {
         if let Some(HyperspaceState {
             release,
             patch_hyperspace_ftl,

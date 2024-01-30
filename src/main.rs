@@ -514,7 +514,17 @@ impl eframe::App for App {
 
                         ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
                             ui.horizontal(|ui| {
-                                if hyperspace::INSTALLER.is_some() {
+                                if self.settings.ftl_directory.is_none() || !self.settings.ftl_directory.as_ref().unwrap().exists() {
+                                    ui.label(RichText::new("Invalid FTL directory specified").color(ui.visuals().error_fg_color).strong());
+                                    return;
+                                } 
+
+                                let supported = hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
+                                if let Err(err) = supported {
+                                    ui.label(RichText::new(format!("Hyperspace installer support check failed: {err}")).color(ui.visuals().error_fg_color).strong());
+                                } else if let Err(err) = supported.unwrap() {
+                                    ui.label(RichText::new(format!("Hyperspace installer not supported: {err}")).color(ui.visuals().warn_fg_color).strong());
+                                } else {
                                     ui.label(
                                         RichText::new("Hyperspace").font(FontId::default()).strong(),
                                     );
@@ -615,8 +625,6 @@ impl eframe::App for App {
                                             |ui| ui.checkbox(patch_hyperspace_ftl, "Patch Hyperspace.ftl")
                                         );
                                     }
-                                } else {
-                                    ui.label(RichText::new("Hyperspace installation not supported on this platform").color(ui.visuals().error_fg_color).strong());
                                 }
                             });
 
@@ -868,7 +876,6 @@ impl eframe::App for App {
                             self.settings.ftl_directory = Some(PathBuf::from(&ftl_dir_buf));
                         }
                     }
-
                     ui.checkbox(
                         &mut self.settings.repack_ftl_data,
                         "Repack FTL data archive",

@@ -93,13 +93,30 @@ pub fn fetch_hyperspace_releases() -> Result<Vec<HyperspaceRelease>> {
 }
 
 pub trait Installer {
+    fn supported(&self, ftl: &Path) -> Result<Result<&dyn Installer, String>>;
     fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()>;
     fn disable(&self, ftl: &Path) -> Result<()>;
+}
+
+struct UnsupportedOSInstaller;
+
+impl Installer for UnsupportedOSInstaller {
+    fn supported(&self, _ftl: &Path) -> Result<Result<&dyn Installer, String>> {
+        Ok(Err("Unsupported OS".to_string()))
+    }
+
+    fn install(&self, _ftl: &Path, _zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+        bail!("Unsupported OS")
+    }
+
+    fn disable(&self, _ftl: &Path) -> Result<()> {
+        bail!("Unsupported OS")
+    }
 }
 
 mod linux;
 
 #[cfg(target_os = "linux")]
-pub const INSTALLER: Option<&dyn Installer> = Some(&linux::LinuxInstaller);
+pub const INSTALLER: &dyn Installer = &linux::LinuxInstaller;
 #[cfg(not(target_os = "linux"))]
-pub const INSTALLER: Option<&dyn Installer> = None;
+pub const INSTALLER: &dyn Installer = &UnsupportedOSInstaller;

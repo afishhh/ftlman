@@ -1,6 +1,6 @@
 use std::{io::Cursor, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
 use log::trace;
 use regex::{Regex, RegexBuilder};
@@ -30,6 +30,22 @@ lazy_static! {
 pub struct LinuxInstaller;
 
 impl Installer for LinuxInstaller {
+    fn supported(&self, ftl: &Path) -> Result<Result<&dyn Installer, String>> {
+        // TODO: Add FTL 1.16.12 size here
+        // TODO: Is it worth it to use hashes here?
+        match ftl.join("FTL.amd64").metadata() {
+            Ok(x) => {
+                if x.len() == 72443660 {
+                    Ok(Ok(self))
+                } else {
+                    Ok(Err("Unrecognised FTL binary file size".to_string()))
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!("FTL binary not found"),
+            Err(e) => Err(e)?,
+        }
+    }
+
     fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
         let shared_objects = zip
             .file_names()
