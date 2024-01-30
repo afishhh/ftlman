@@ -41,9 +41,6 @@ const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
 lazy_static! {
-    static ref BASE_DIRECTORIES: xdg::BaseDirectories =
-        xdg::BaseDirectories::new().expect("Could not determine xdg base directories");
-
     static ref USER_AGENT: String = format!("FTL Mod Manager v{}", crate::VERSION);
     static ref AGENT: ureq::Agent = ureq::AgentBuilder::new()
         .user_agent(&USER_AGENT)
@@ -172,8 +169,8 @@ pub struct Settings {
 }
 
 impl Settings {
-    fn default_path() -> Result<PathBuf> {
-        Ok(BASE_DIRECTORIES.place_config_file(SETTINGS_LOCATION)?)
+    fn default_path() -> PathBuf {
+        dirs::config_local_dir().unwrap().join(SETTINGS_LOCATION)
     }
 
     pub fn load(path: &Path) -> Option<Settings> {
@@ -185,6 +182,7 @@ impl Settings {
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(path.parent().unwrap())?;
         serde_json::ser::to_writer(File::create(path)?, self)?;
         Ok(())
     }
@@ -193,9 +191,7 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            mod_directory: BASE_DIRECTORIES
-                .create_data_directory("ftlman/mods")
-                .unwrap(),
+            mod_directory: dirs::data_local_dir().unwrap().join("ftlman/mods"),
             ftl_directory: None,
             zips_are_mods: true,
             dirs_are_mods: true,
@@ -262,8 +258,11 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
-        let settings_path = Settings::default_path()?;
+        let settings_path = Settings::default_path();
         let settings = Settings::load(&settings_path).unwrap_or_default();
+        if settings.mod_directory == Settings::default().mod_directory {
+            std::fs::create_dir_all(&settings.mod_directory)?;
+        }
         let shared = Arc::new(Mutex::new(SharedState {
             locked: false,
             apply_stage: None,

@@ -7,15 +7,13 @@ use std::{
 use anyhow::{Context, Result};
 use lazy_static::lazy_static;
 
-use crate::BASE_DIRECTORIES;
-
 pub struct Cache {
     root: PathBuf,
 }
 
 lazy_static! {
     pub static ref CACHE: Cache = Cache {
-        root: BASE_DIRECTORIES.get_cache_file("ftlman")
+        root: dirs::cache_dir().unwrap().join("ftlman")
     };
 }
 

@@ -12,7 +12,7 @@ log = "0.4"
 eframe = { version = "0.25", features = ["persistence"] }
 ureq = "2"
 egui_dnd = "0.6.0"
-xdg = "2"
+dirs = "5"
 anyhow = "1.0"
 regex = "1"
 lazy_static = "1"
