@@ -1791,8 +1791,8 @@ checksum = "b5e6163cb8c49088c2c36f57875e58ccd8c87c7427f7fbd50ea6710b2f3f2e8f"
 
 [[package]]
 name = "macros"
-version = "0.1.0"
-source = "git+https://github.com/afishhh/silpkg.git#584602bd4bdecccc71b00a786ae8f8ecf132c93f"
+version = "0.0.0"
+source = "git+https://github.com/afishhh/silpkg.git#3fcf23e4f19de15918f92a6cd9269a7259097c0a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2547,7 +2547,7 @@ dependencies = [
 [[package]]
 name = "silpkg"
 version = "0.0.0"
-source = "git+https://github.com/afishhh/silpkg.git#584602bd4bdecccc71b00a786ae8f8ecf132c93f"
+source = "git+https://github.com/afishhh/silpkg.git#3fcf23e4f19de15918f92a6cd9269a7259097c0a"
 dependencies = [
  "bitflags 2.4.2",
  "flate2",
