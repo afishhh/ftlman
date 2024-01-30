@@ -18,6 +18,10 @@ pub struct PathEdit<'a> {
     complete_relative: bool,
 }
 
+fn ends_with_separator(string: &str) -> bool {
+    string.chars().last().is_some_and(std::path::is_separator)
+}
+
 impl<'a> PathEdit<'a> {
     fn suggestions_for(&self, pref: &str) -> Vec<String> {
         if Path::new(pref).is_relative() && !self.complete_relative {
@@ -25,7 +29,7 @@ impl<'a> PathEdit<'a> {
         }
 
         let last_slash = pref.chars().rev().enumerate().find_map(|(i, c)| {
-            if c == '/' {
+            if std::path::is_separator(c) {
                 Some(pref.len() - i)
             } else {
                 None
@@ -34,7 +38,7 @@ impl<'a> PathEdit<'a> {
         let filename = last_slash.map(|idx| pref.char_range(idx..pref.len()));
         let basename = last_slash.map(|idx| pref.char_range(0..idx));
 
-        let opt = if pref.ends_with('/') {
+        let opt = if ends_with_separator(pref) {
             Some(pref)
         } else {
             basename
@@ -59,7 +63,7 @@ impl<'a> PathEdit<'a> {
                     })
                 })
             })
-            .filter(|p| pref.ends_with('/') || filename.is_some_and(|p2| p.starts_with(p2)))
+            .filter(|p| ends_with_separator(pref) || filename.is_some_and(|p2| p.starts_with(p2)))
             .filter(|result| (self.completion_filter)(&Path::new(dir).join(result)))
             .collect::<Vec<_>>();
             suggestions.sort();
@@ -157,7 +161,7 @@ impl Widget for PathEdit<'_> {
                         let idx = ui.memory(|x| x.data.get_temp::<usize>(memid));
                         idx.and_then(|idx| suggestions.get_mut(idx).map(std::mem::take))
                     } {
-                        let replaced_len = if pref.ends_with('/') {
+                        let replaced_len = if ends_with_separator(&pref) {
                             0
                         } else {
                             Path::new(&pref).file_name().map(|a| a.len()).unwrap_or(0)
