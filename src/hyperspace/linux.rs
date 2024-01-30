@@ -1,6 +1,6 @@
 use std::{io::Cursor, path::Path};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use lazy_static::lazy_static;
 use log::trace;
 use regex::{Regex, RegexBuilder};
@@ -41,7 +41,7 @@ impl Installer for LinuxInstaller {
                     Ok(Err(format!("Unrecognised FTL binary size: {}", x.len())))
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!("FTL binary not found"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Err("FTL binary not found".to_string())),
             Err(e) => Err(e)?,
         }
     }
