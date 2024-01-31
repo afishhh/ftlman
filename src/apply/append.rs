@@ -208,12 +208,12 @@ impl ElementFilter for SelectorFilter {
 }
 
 #[derive(Default)]
-struct ChildrenMatchingFilter<F: ElementFilter> {
+struct WithChildFilter<F: ElementFilter> {
     pub name: Option<String>,
     pub child_filter: F,
 }
 
-impl<F: ElementFilter> ElementFilter for ChildrenMatchingFilter<F> {
+impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
     fn filter_one(&self, element: &Element) -> bool {
         if self
             .name
@@ -231,7 +231,7 @@ impl<F: ElementFilter> ElementFilter for ChildrenMatchingFilter<F> {
             .children
             .iter()
             .filter_map(XMLNode::as_element)
-            .all(|child| self.child_filter.filter_one(child))
+            .any(|child| self.child_filter.filter_one(child))
     }
 }
 
@@ -356,7 +356,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     bail!("findWithChildLike 'child-type' attribute cannot be empty")
                 }
 
-                ChildrenMatchingFilter {
+                WithChildFilter {
                     name: search_type,
                     child_filter: SelectorFilter {
                         name: search_child_type,
