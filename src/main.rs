@@ -11,7 +11,11 @@ use std::{
 
 use anyhow::Result;
 use eframe::{
-    egui::{self, RichText, Sense, Ui, Visuals}, epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2}
+    egui::{self, RichText, Sense, Ui, Visuals},
+    epaint::{
+        text::{LayoutJob, TextWrapping},
+        FontId, Pos2, Rgba, Vec2,
+    },
 };
 use egui_dnd::DragDropItem;
 use hyperspace::HyperspaceRelease;
@@ -298,33 +302,6 @@ impl App {
 
         Ok(app)
     }
-}
-
-pub fn truncate_to_fit(ui: &mut Ui, font: &FontId, text: &str, desired_width: f32) -> String {
-    ui.fonts(|fonts| {
-        let mut truncated = String::with_capacity(text.len());
-        const TRUNCATION_SUFFIX: &str = "...";
-        let truncation_suffix_width: f32 = TRUNCATION_SUFFIX
-            .chars()
-            .map(|c| fonts.glyph_width(font, c))
-            .sum();
-        let mut current_width = 0.;
-
-        for chr in text.chars() {
-            let chr_width = fonts.glyph_width(font, chr);
-            if current_width + chr_width > desired_width - truncation_suffix_width {
-                if !truncated.is_empty() {
-                    truncated += TRUNCATION_SUFFIX;
-                }
-                break;
-            } else {
-                truncated.push(chr);
-                current_width += chr_width
-            }
-        }
-
-        truncated
-    })
 }
 
 impl eframe::App for App {
@@ -658,65 +635,27 @@ impl eframe::App for App {
                                         |ui, item, handle, _item_state| {
                                             ui.horizontal(|ui| {
                                                 handle.ui(ui, |ui| {
-                                                    let (resp, painter) = ui.allocate_painter(
-                                                        Vec2::new(10., 16.),
-                                                        egui::Sense {
-                                                            click: false,
-                                                            drag: false,
-                                                            focusable: false,
-                                                        },
+                                                    let label = ui.selectable_label(
+                                                        item.enabled,
+                                                        ui.fonts(|f| f.layout_job(LayoutJob {
+                                                            wrap: TextWrapping::truncate_at_width(ui.available_width()),
+                                                            ..LayoutJob::simple_singleline(
+                                                                item.filename().to_string(),
+                                                                FontId::default(),
+                                                                ui.visuals().strong_text_color()
+                                                            )
+                                                        }))
                                                     );
-                                                    const GAPH: f32 = 4.;
-                                                    const GAPV: f32 = 2.;
-                                                    const NUMH: usize = 2;
-                                                    const NUMV: usize = 3;
-                                                    let width = (resp.rect.width()
-                                                        - GAPH * (NUMH - 1) as f32)
-                                                        / 2.;
-                                                    let height = (resp.rect.height()
-                                                        - GAPV * (NUMV - 1) as f32)
-                                                        / NUMV as f32;
 
-                                                    for y in
-                                                        std::iter::successors(Some(0f32), |f| {
-                                                            Some(f + 1.)
-                                                        })
-                                                        .take(NUMV)
-                                                    {
-                                                        for x in
-                                                            std::iter::successors(Some(0f32), |f| {
-                                                                Some(f + 1.)
-                                                            })
-                                                            .take(NUMH)
-                                                        {
-                                                            let min = Vec2::new(
-                                                                (width + GAPH) * x,
-                                                                (height + GAPV) * y,
-                                                            );
-                                                            let max = min + (width, height).into();
-                                                            painter.add(RectShape::filled(
-                                                                Rect::from_min_max(
-                                                                    resp.rect.min + min,
-                                                                    resp.rect.min + max,
-                                                                ),
-                                                                Rounding::same(1.),
-                                                                ui.visuals().text_color(),
-                                                            ));
-                                                        }
+                                                    if label.hovered() {
+                                                        self.last_hovered_mod = Some(i);
+                                                        did_change_hovered_mod = true;
+                                                    }
+
+                                                    if label.clicked() {
+                                                        item.enabled = !item.enabled;
                                                     }
                                                 });
-
-                                                let font = FontId::default();
-                                                let truncated = truncate_to_fit(
-                                                    ui,
-                                                    &font,
-                                                    item.filename(),
-                                                    ui.available_width(),
-                                                );
-                                                let label = ui.add(egui::SelectableLabel::new(
-                                                    item.enabled,
-                                                    RichText::new(truncated).font(font).strong(),
-                                                ));
 
                                                 ui.with_layout(
                                                     egui::Layout::right_to_left(
@@ -726,31 +665,17 @@ impl eframe::App for App {
                                                         if let Some(title) =
                                                             item.title().unwrap_or(None)
                                                         {
-                                                            let font = FontId::default();
-                                                            let truncated = truncate_to_fit(
-                                                                ui,
-                                                                &font,
-                                                                title,
-                                                                ui.available_width(),
-                                                            );
-
-                                                            ui.label(
-                                                                RichText::new(truncated)
-                                                                    // Make sure we're using the same font
-                                                                    .font(font),
-                                                            );
+                                                            ui.label(ui.fonts(|f| f.layout_job(LayoutJob {
+                                                                wrap: TextWrapping::truncate_at_width(ui.available_width()),
+                                                                ..LayoutJob::simple_singleline(
+                                                                    title.to_string(),
+                                                                    FontId::default(),
+                                                                    ui.visuals().text_color()
+                                                                )
+                                                            })));
                                                         };
                                                     },
                                                 );
-
-                                                if label.hovered() {
-                                                    self.last_hovered_mod = Some(i);
-                                                    did_change_hovered_mod = true;
-                                                }
-
-                                                if label.clicked() {
-                                                    item.enabled = !item.enabled;
-                                                }
 
                                                 // HACK: yes
                                                 i += 1;
