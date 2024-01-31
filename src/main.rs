@@ -11,8 +11,7 @@ use std::{
 
 use anyhow::Result;
 use eframe::{
-    egui::{self, RichText, Ui, Visuals},
-    epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2},
+    egui::{self, RichText, Sense, Ui, Visuals}, epaint::{text::LayoutJob, FontId, Pos2, Rect, RectShape, Rgba, Rounding, Vec2}
 };
 use egui_dnd::DragDropItem;
 use hyperspace::HyperspaceRelease;
@@ -254,6 +253,9 @@ struct App {
     settings: Settings,
     settings_open: bool,
     visuals: Visuals,
+
+    // % of window width
+    vertical_divider_pos: f32,
 }
 
 impl App {
@@ -285,6 +287,8 @@ impl App {
             settings_path,
             settings,
             settings_open: false,
+
+            vertical_divider_pos: 0.50,
         };
 
         let settings = app.settings.clone();
@@ -508,11 +512,20 @@ impl eframe::App for App {
                 ui.separator();
 
                 ui.horizontal_top(|ui| {
+                    let viewport_width = ctx.input(|i| i.viewport().inner_rect.unwrap().width());
+                    let horizontal_item_spacing = ui.spacing().item_spacing.x;
                     let mut shared = self.shared.lock();
 
                     ui.vertical(|ui| {
-                        ui.set_min_width(400.);
-                        ui.set_max_width(ui.available_width() / 2.1);
+                        // Calculate how much space we should take up according to the target position
+                        // of the following separator. Right after this widget there is going to be
+                        // spacing applied before the separator that we have to account for too.
+                        // Also account for whatever horizontal space we've already taken up.
+                        // FIXME: Currently weird behaviour occurs when shrinking the left panel
+                        // starts to affect text.
+                        ui.set_max_width(
+                            self.vertical_divider_pos * viewport_width - horizontal_item_spacing - ui.next_widget_position().x
+                        );
 
                         ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
                             ui.horizontal(|ui| {
@@ -768,42 +781,49 @@ impl eframe::App for App {
                         });
                     });
 
-                    if ui.available_width() > 0. {
-                        ui.separator();
-
-                        ui.style_mut().wrap = Some(true);
-
-                        if let Some(idx) = self.last_hovered_mod {
-                            if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
-                                ui.vertical(|ui| {
-                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                        ui.label(
-                                            RichText::new(format!("v{}", metadata.version)).heading(),
-                                        );
-
-                                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui|
-                                            ui.label(RichText::new(&metadata.title).heading().strong())
-                                        );
-                                    });
-                                    ui.label(
-                                        RichText::new(format!("Authors: {}", metadata.author))
-                                            .strong(),
-                                    );
-                                    if let Some(url) = &metadata.thread_url {
-                                        // TODO: Make a context menu
-                                        ui.hyperlink_to(RichText::new(url.clone()), url);
-                                    }
-
-                                    egui::ScrollArea::vertical().show(ui, |ui| {
-                                        ui.monospace(&metadata.description);
-                                    });
-                                });
-                            } else {
-                                ui.monospace("No metadata available for this mod");
-                            }
-                        } else {
-                            ui.monospace("Hover over a mod and its description will appear here.");
+                    let response = ui.separator();
+                    if ui.interact(response.rect, ui.next_auto_id(), Sense::drag()).dragged() {
+                        if let Some(cursor_pos) = ctx.pointer_interact_pos() {
+                            let x = cursor_pos.x - response.rect.width() / 2.0;
+                            self.vertical_divider_pos =  (x / viewport_width).clamp(0.1, 0.9);
                         }
+                    }
+
+                    if let Some(idx) = self.last_hovered_mod {
+                        if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
+                            ui.vertical(|ui| {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                                    ui.label(
+                                        RichText::new(format!("v{}", metadata.version)).heading(),
+                                    );
+
+                                    ui.style_mut().wrap = Some(true);
+                                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui|
+                                        ui.label(RichText::new(&metadata.title).heading().strong())
+                                    );
+                                });
+
+                                ui.style_mut().wrap = Some(true);
+
+                                ui.label(
+                                    RichText::new(format!("Authors: {}", metadata.author))
+                                        .strong(),
+                                );
+
+                                if let Some(url) = &metadata.thread_url {
+                                    // TODO: Make a context menu
+                                    ui.hyperlink_to(RichText::new(url.clone()), url);
+                                }
+
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    ui.monospace(&metadata.description);
+                                });
+                            });
+                        } else {
+                            ui.monospace("No metadata available for this mod");
+                        }
+                    } else {
+                        ui.monospace("Hover over a mod and its description will appear here.");
                     }
                 })
             });
