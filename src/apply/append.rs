@@ -175,7 +175,7 @@ impl SelectorFilter {
         parent
             .get_child(("selector", "mod"))
             .map(Self::from_selector_element)
-            .unwrap_or_else(Default::default)
+            .unwrap_or_default()
     }
 }
 
@@ -235,20 +235,13 @@ impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
     }
 }
 
-// FIXME: This is terrible for performance, but should also be used rarely and on small subtress.
-fn index_subtree(node: &Element) -> HashMap<*const Element, u64> {
-    fn rec(out: &mut HashMap<*const Element, u64>, node: &Element, next: &mut u64) {
-        out.insert(node as *const Element, *next);
-        *next += 1;
+fn index_children(node: &Element) -> HashMap<*const Element, usize> {
+    let mut result = HashMap::new();
 
-        for child in node.children.iter().filter_map(XMLNode::as_element) {
-            rec(out, child, next);
-            *next += 1;
-        }
+    for (i, child) in node.children.iter().filter_map(XMLNode::as_element).enumerate() {
+        result.insert(child as *const Element, i);
     }
 
-    let mut result = HashMap::new();
-    rec(&mut result, node, &mut 0);
     result
 }
 
@@ -370,7 +363,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     bail!("findComposite element is missing a par child");
                 };
 
-                let index = index_subtree(context);
+                let index = index_children(context);
                 let mut vec = mod_par(context, par)?.unwrap();
 
                 vec.sort_by_key(|x| index.get(&(*x as *const Element)).unwrap());
