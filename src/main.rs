@@ -776,11 +776,13 @@ impl eframe::App for App {
                         if let Some(idx) = self.last_hovered_mod {
                             if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
                                 ui.vertical(|ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.label(RichText::new(&metadata.title).heading().strong());
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                                         ui.label(
-                                            RichText::new(format!("v{}", metadata.version))
-                                                .heading(),
+                                            RichText::new(format!("v{}", metadata.version)).heading(),
+                                        );
+
+                                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui|
+                                            ui.label(RichText::new(&metadata.title).heading().strong())
                                         );
                                     });
                                     ui.label(
