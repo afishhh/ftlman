@@ -237,18 +237,18 @@ impl<F: ElementFilter> ElementFilter for ChildrenMatchingFilter<F> {
 
 // FIXME: This is terrible for performance, but should also be used rarely and on small subtress.
 fn index_subtree(node: &Element) -> HashMap<*const Element, u64> {
-    fn rec(out: &mut HashMap<*const Element, u64>, node: &Element, mut next: u64) {
-        out.insert(node as *const Element, next);
-        next += 1;
+    fn rec(out: &mut HashMap<*const Element, u64>, node: &Element, next: &mut u64) {
+        out.insert(node as *const Element, *next);
+        *next += 1;
 
         for child in node.children.iter().filter_map(XMLNode::as_element) {
             rec(out, child, next);
-            next += 1;
+            *next += 1;
         }
     }
 
     let mut result = HashMap::new();
-    rec(&mut result, node, 0);
+    rec(&mut result, node, &mut 0);
     result
 }
 
