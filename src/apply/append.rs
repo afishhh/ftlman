@@ -133,13 +133,115 @@ macro_rules! get_attr {
     }};
 }
 
+trait ElementFilter {
+    fn filter_one(&self, element: &Element) -> bool;
+
+    fn filter_children<'a>(&self, context: &'a mut Element) -> Vec<&'a mut Element> {
+        context
+            .children
+            .iter_mut()
+            .filter_map(|x| x.as_mut_element().filter(|child| self.filter_one(child)))
+            .collect()
+    }
+}
+
+#[derive(Default)]
+struct SelectorFilter {
+    pub name: Option<String>,
+    pub attrs: Vec<(String, String)>,
+    pub value: Option<String>,
+}
+
+impl SelectorFilter {
+    fn from_selector_element(selector: &Element) -> Self {
+        let mut result = Self {
+            ..Default::default()
+        };
+
+        for (key, value) in &selector.attributes {
+            result.attrs.push((key.to_owned(), value.to_owned()));
+        }
+
+        let text = selector.get_text().unwrap_or(Cow::Borrowed(""));
+        let trimmed = text.trim();
+        if !trimmed.is_empty() {
+            result.value = Some(trimmed.to_string())
+        }
+
+        result
+    }
+
+    fn from_selector_parent(parent: &Element) -> Self {
+        parent
+            .get_child(("selector", "mod"))
+            .map(Self::from_selector_element)
+            .unwrap_or_else(Default::default)
+    }
+}
+
+impl ElementFilter for SelectorFilter {
+    fn filter_one(&self, element: &Element) -> bool {
+        if self
+            .name
+            .as_deref()
+            .is_some_and(|name| element.name != name)
+        {
+            return false;
+        }
+
+        for (key, value) in self.attrs.iter() {
+            if element.attributes.get(key) != Some(value) {
+                return false;
+            }
+        }
+
+        if self
+            .value
+            .as_deref()
+            .is_some_and(|value| value != element.get_text().unwrap_or(Cow::Borrowed("")).trim())
+        {
+            return false;
+        }
+
+        true
+    }
+}
+
+#[derive(Default)]
+struct ChildrenMatchingFilter<F: ElementFilter> {
+    pub name: Option<String>,
+    pub child_filter: F,
+}
+
+impl<F: ElementFilter> ElementFilter for ChildrenMatchingFilter<F> {
+    fn filter_one(&self, element: &Element) -> bool {
+        if self
+            .name
+            .as_deref()
+            .is_some_and(|name| element.name != name)
+        {
+            return false;
+        }
+
+        if element.children.is_empty() {
+            return false;
+        }
+
+        element
+            .children
+            .iter()
+            .filter_map(XMLNode::as_element)
+            .all(|child| self.child_filter.filter_one(child))
+    }
+}
+
 // FIXME: This is terrible for performance, but should also be used rarely and on small subtress.
 fn index_subtree(node: &Element) -> HashMap<*const Element, u64> {
     fn rec(out: &mut HashMap<*const Element, u64>, node: &Element, mut next: u64) {
         out.insert(node as *const Element, next);
         next += 1;
 
-        for child in node.children.iter().filter_map(|x| x.as_element()) {
+        for child in node.children.iter().filter_map(XMLNode::as_element) {
             rec(out, child, next);
             next += 1;
         }
@@ -160,8 +262,7 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
 
     let mut set = HashSet::<*mut Element>::new();
 
-    for child in node.children.iter().filter_map(|x| x.as_element()) {
-        // FIXME: What did I just do
+    for child in node.children.iter().filter_map(XMLNode::as_element) {
         let Some(candidates) = (match mod_par(context, child)? {
             Some(x) => Some(x),
             None => mod_find(context, child)?,
@@ -192,7 +293,7 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
 // FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if node.namespace.as_ref().is_some_and(|x| x == "mod") {
-        if !["findName", "findLike", "findComposite"].contains(&node.name.as_str()) {
+        if !["findName", "findLike", "findWithChildLike", "findComposite"].contains(&node.name.as_str()) {
             return Ok(None);
         }
 
@@ -222,22 +323,12 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     bail!("findName 'type' attribute cannot be empty")
                 }
 
-                context
-                    .children
-                    .iter_mut()
-                    .filter_map(|x| {
-                        x.as_mut_element().filter(|element| {
-                            element
-                                .attributes
-                                .get("name")
-                                .is_some_and(|x| x == &search_name)
-                                && search_type
-                                    .as_ref()
-                                    .map(|x| element.name == *x)
-                                    .unwrap_or(true)
-                        })
-                    })
-                    .collect()
+                SelectorFilter {
+                    name: search_type,
+                    attrs: vec![("name".to_string(), search_name)],
+                    value: None,
+                }
+                .filter_children(context)
             }
             "findLike" => {
                 let search_type = get_attr!(node, String, "type")?;
@@ -246,60 +337,36 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     bail!("findLike 'type' attribute cannot be empty")
                 }
 
-                let mut attrs = HashMap::new();
-                let mut search_text = None;
+                SelectorFilter {
+                    name: search_type,
+                    ..SelectorFilter::from_selector_parent(node)
+                }
+                .filter_children(context)
+            }
+            "findWithChildLike" => {
+                let search_type = get_attr!(node, String, "type")?;
 
-                if let Some(selector) = node.get_child(("selector".to_string(), "mod".to_string()))
-                {
-                    for (key, value) in &selector.attributes {
-                        if value.is_empty() {
-                            bail!("selector attributes cannot be empty");
-                        }
-
-                        attrs.insert(key.to_owned(), value.to_owned());
-                    }
-
-                    let text = selector.get_text().unwrap_or(Cow::Borrowed(""));
-                    search_text = if text.is_empty() {
-                        None
-                    } else {
-                        Some(text.trim().to_string())
-                    };
+                if search_type.as_ref().is_some_and(|x| x.is_empty()) {
+                    bail!("findWithChildLike 'type' attribute cannot be empty")
                 }
 
-                context
-                    .children
-                    .iter_mut()
-                    .filter_map(|x| {
-                        x.as_mut_element().filter(|element| {
-                            if let Some(ref tp) = search_type {
-                                if &node.name != tp {
-                                    return false;
-                                }
-                            }
+                let search_child_type = get_attr!(node, String, "child-type")?;
 
-                            for (key, value) in &attrs {
-                                if node.attributes.get(key) != Some(value) {
-                                    return false;
-                                }
-                            }
+                if search_child_type.as_ref().is_some_and(|x| x.is_empty()) {
+                    bail!("findWithChildLike 'child-type' attribute cannot be empty")
+                }
 
-                            if let Some(ref text) = search_text {
-                                if element.get_text().unwrap_or(Cow::Borrowed("")).trim() != text {
-                                    return false;
-                                }
-                            }
-
-                            true
-                        })
-                    })
-                    .collect()
+                ChildrenMatchingFilter {
+                    name: search_type,
+                    child_filter: SelectorFilter {
+                        name: search_child_type,
+                        ..SelectorFilter::from_selector_parent(node)
+                    },
+                }
+                .filter_children(context)
             }
             "findComposite" => {
-                let Some(par) = node.children.iter().find_map(|x| {
-                    x.as_element()
-                        .filter(|x| x.name == "par" && x.namespace.as_deref() == Some("mod"))
-                }) else {
+                let Some(par) = node.get_child(("par", "mod")) else {
                     bail!("findComposite element is missing a par child");
                 };
 
