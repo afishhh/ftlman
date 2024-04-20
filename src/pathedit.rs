@@ -135,7 +135,8 @@ impl Widget for PathEdit<'_> {
 
         if let Some((state, cursor)) = state
             .and_then(|x| {
-                x.ccursor_range()
+                x.cursor
+                    .char_range()
                     .and_then(|x| {
                         if x.primary == x.secondary {
                             Some(x.primary)
@@ -175,10 +176,12 @@ impl Widget for PathEdit<'_> {
                             ..cursor
                         };
                         let mut state = state;
-                        state.set_ccursor_range(Some(eframe::egui::text_edit::CCursorRange {
-                            primary: new_pos,
-                            secondary: new_pos,
-                        }));
+                        state
+                            .cursor
+                            .set_char_range(Some(eframe::egui::text::CCursorRange {
+                                primary: new_pos,
+                                secondary: new_pos,
+                            }));
                         state.store(ui.ctx(), text_edit_id);
                         changed = true;
                     }
@@ -217,7 +220,7 @@ impl Widget for PathEdit<'_> {
 
                 if !suggestions.is_empty() {
                     let cursor_pos =
-                        output.text_draw_pos + output.galley.pos_from_cursor(&cursor).max.to_vec2();
+                        output.galley_pos + output.galley.pos_from_cursor(&cursor).max.to_vec2();
 
                     let selected = {
                         let down = tab;

@@ -41,7 +41,9 @@ impl Installer for LinuxInstaller {
                     Ok(Err(format!("Unrecognised FTL binary size: {}", x.len())))
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Err("FTL binary not found".to_string())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                Ok(Err("FTL binary not found".to_string()))
+            }
             Err(e) => Err(e)?,
         }
     }

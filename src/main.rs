@@ -707,7 +707,7 @@ impl eframe::App for App {
                     });
 
                     let response = ui.separator();
-                    if ui.interact(response.rect, ui.next_auto_id(), Sense::drag()).dragged() {
+                    if ui.interact(response.rect, ui.auto_id_with("drag"), Sense::drag()).dragged() {
                         if let Some(cursor_pos) = ctx.pointer_interact_pos() {
                             let x = cursor_pos.x - response.rect.width() / 2.0;
                             self.vertical_divider_pos =  (x / viewport_width).clamp(0.1, 0.9);

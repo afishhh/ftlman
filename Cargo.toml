@@ -7,9 +7,9 @@ edition = "2021"
 env_logger = "0.11"
 log = "0.4"
 
-eframe = { version = "0.25", features = ["persistence"] }
+eframe = { version = "0.27", features = ["persistence"] }
 ureq = "2"
-egui_dnd = "0.6.0"
+egui_dnd = "0.8.0"
 dirs = "5"
 anyhow = "1.0"
 regex = "1"
@@ -38,4 +38,4 @@ xmltree = "0.10"
 
 # Speeds up testing considerably
 [profile.dev]
-opt-level = 3
+opt-level = 2

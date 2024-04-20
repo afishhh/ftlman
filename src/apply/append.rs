@@ -238,7 +238,12 @@ impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
 fn index_children(node: &Element) -> HashMap<*const Element, usize> {
     let mut result = HashMap::new();
 
-    for (i, child) in node.children.iter().filter_map(XMLNode::as_element).enumerate() {
+    for (i, child) in node
+        .children
+        .iter()
+        .filter_map(XMLNode::as_element)
+        .enumerate()
+    {
         result.insert(child as *const Element, i);
     }
 
@@ -286,7 +291,9 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
 // FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if node.namespace.as_ref().is_some_and(|x| x == "mod") {
-        if !["findName", "findLike", "findWithChildLike", "findComposite"].contains(&node.name.as_str()) {
+        if !["findName", "findLike", "findWithChildLike", "findComposite"]
+            .contains(&node.name.as_str())
+        {
             return Ok(None);
         }
 
