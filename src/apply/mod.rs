@@ -1,5 +1,8 @@
 use std::{
-    io::{Cursor, Read, Write}, path::{Path, PathBuf}, str::FromStr, sync::Arc
+    io::{Cursor, Read, Write},
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -35,6 +38,67 @@ pub enum ApplyStage {
         files_total: usize,
     },
     Repacking,
+}
+
+// TODO: Remove once str_from_utf16_endian is stabilised.
+fn read_utf16_pairs(
+    reader: &mut impl Read,
+    bytepair_mapper: impl Fn([u8; 2]) -> u16,
+) -> Result<Vec<u16>> {
+    let mut result = vec![];
+    let mut buf = vec![0; 0xFFFF];
+    let mut buf_next_start = 0;
+    loop {
+        let value = reader.read(&mut buf[buf_next_start..])?;
+        if value == 0 {
+            if buf_next_start != 0 {
+                bail!("UTF-16 decoding failed: partial bytepair");
+            }
+            break;
+        }
+        let mut it = buf[..value].chunks_exact(2);
+        for chunk in &mut it {
+            result.push(bytepair_mapper(chunk.try_into().unwrap()));
+        }
+        let rem = it.remainder();
+        match rem.len() {
+            0 => (),
+            1 => {
+                buf_next_start = rem.len();
+                buf[0] = rem[0];
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(result)
+}
+
+// Some modders helpfully save their files as UTF-16
+fn fixup_mod_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 'a>> {
+    let mut peek = [0; 2];
+    match reader.read_exact(&mut peek) {
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Ok(Box::new(Cursor::new(peek)) as Box<dyn Read>)
+        }
+        other => other?,
+    };
+
+    let utf16_pairs = if &peek == b"\xFF\xFE" {
+        trace!("Transcoding UTF-16 LE file into UTF-8");
+        read_utf16_pairs(&mut reader, u16::from_le_bytes)?
+    } else if &peek == b"\xFE\xFF" {
+        trace!("Transcoding UTF-16 BE file into UTF-8");
+        read_utf16_pairs(&mut reader, u16::from_be_bytes)?
+    } else {
+        return Ok(Box::new(std::io::Cursor::new(peek).chain(reader)));
+    };
+
+    let mut out = String::new();
+    for chr in char::decode_utf16(utf16_pairs) {
+        out.push(chr?);
+    }
+
+    Ok(Box::new(Cursor::new(out.into_bytes())))
 }
 
 pub fn apply_ftl(
@@ -94,10 +158,6 @@ pub fn apply_ftl(
                 .or_else(|| name.strip_suffix(".append.xml"))
             {
                 let real_name = format!("{real_stem}.xml");
-                let mut reader = handle
-                    .open(&name)
-                    .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
-
                 let original_text = {
                     let mut buf = Vec::new();
                     match pkg.open(&real_name) {
@@ -118,13 +178,11 @@ pub fn apply_ftl(
 
                 trace!("Patching {real_name} according to {name}");
 
-                let append_text = {
-                    let mut buf = String::new();
-                    reader
-                        .read_to_string(&mut buf)
-                        .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
-                    buf
-                };
+                let append_text =
+                    std::io::read_to_string(handle.open(&name).with_context(|| {
+                        format!("Failed to open {name} from mod {}", m.filename())
+                    })?)
+                    .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
                 // FIXME: this can be made quicker
                 let had_ftl_root = WRAPPER_TAG_REGEX
@@ -135,7 +193,12 @@ pub fn apply_ftl(
 
                 // FIXME: This is terrible
                 let mut append_fixed = "<wrapper xmlns:mod='mod' xmlns:mod-append='mod-append' xmlns:mod-overwrite='mod-overwrite'>".to_string();
-                append_fixed += &append::clean_xml(&append_without_root);
+                append_fixed += &append::clean_xml(
+                    append_without_root
+                        // Strip BOM
+                        .strip_prefix('\u{feff}')
+                        .unwrap_or(&append_without_root),
+                );
                 append_fixed += "</wrapper>";
 
                 // **AHEM** Some **people** decide to put XML files with mod namespaced tags into
@@ -158,14 +221,12 @@ pub fn apply_ftl(
                     debug_output_file_path = Some(base.join("out"));
                 }
 
-                let mut document = xmltree::Element::parse(std::io::Cursor::new(&original_fixed))
-                    .with_context(|| {
-                    format!("Could not parse XML document {original_fixed}")
-                })?;
+                let mut document = xmltree::Element::parse(Cursor::new(&original_fixed))
+                    .with_context(|| format!("Could not parse XML document {original_fixed}"))?;
 
                 append::patch(
                     &mut document,
-                    xmltree::Element::parse(std::io::Cursor::new(&append_fixed))
+                    xmltree::Element::parse(Cursor::new(&append_fixed))
                         .with_context(|| format!("Could not parse XML append document {}", name))?,
                 )
                 .with_context(|| format!("Could not patch XML file {}", name))?;
@@ -188,7 +249,7 @@ pub fn apply_ftl(
                     let mut out = vec![];
                     document
                         .write_with_config(
-                            &mut std::io::Cursor::new(&mut out),
+                            &mut Cursor::new(&mut out),
                             xmltree::EmitterConfig {
                                 write_document_declaration: false,
                                 ..Default::default()
@@ -250,11 +311,14 @@ pub fn apply_ftl(
                     trace!("Inserting {name}");
                 }
 
-                let mut reader = handle
+                let reader = handle
                     .open(&name)
                     .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
-                std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?)
-                    .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
+                std::io::copy(
+                    &mut fixup_mod_file(reader)?,
+                    &mut pkg.insert(name.clone(), INSERT_FLAGS)?,
+                )
+                .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
             }
         }
         trace!("Applied {}", m.filename());
