@@ -38,6 +38,7 @@ mod apply;
 mod cache;
 mod github;
 mod hyperspace;
+mod i18n;
 mod lazy;
 mod scan;
 
@@ -103,6 +104,8 @@ fn main() {
         })
         .parse_default_env()
         .init();
+
+    i18n::init();
 
     let args = cli::Args::parse();
     if let Some(command) = args.command {
@@ -348,13 +351,18 @@ impl eframe::App for App {
             ui.add_space(5.);
 
             ui.horizontal(|ui| {
-                ui.heading(format!("FTL Mod Manager v{VERSION}"));
+                ui.heading(l!("name",
+                    "version" => VERSION
+                ));
 
                 ui.with_layout(
                     egui::Layout::right_to_left(eframe::emath::Align::Center),
                     |ui| {
                         if ui
-                            .add_enabled(!self.settings_open, egui::Button::new("Settings"))
+                            .add_enabled(
+                                !self.settings_open,
+                                egui::Button::new(l!("settings-button")),
+                            )
                             .clicked()
                         {
                             self.settings_open = true;
@@ -369,16 +377,16 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Mods");
+                    ui.label(l!("mods-title"));
 
                     let mut lock = self.shared.lock();
                     let modifiable = !lock.locked && self.current_task.is_none();
 
                     ui.add_enabled_ui(modifiable, |ui| {
-                        if ui.button("Unselect all").clicked() {
+                        if ui.button(l!("mods-unselect-all")).clicked() {
                             lock.mods.iter_mut().for_each(|m| m.enabled = false);
                         }
-                        if ui.button("Select all").clicked() {
+                        if ui.button(l!("mods-select-all")).clicked() {
                             lock.mods.iter_mut().for_each(|m| m.enabled = true);
                         }
                     });
@@ -389,9 +397,9 @@ impl eframe::App for App {
                             let apply = ui
                                 .add_enabled(
                                     modifiable && self.settings.ftl_directory.is_some(),
-                                    egui::Button::new("Apply"),
+                                    egui::Button::new(l!("mods-apply-button")),
                                 )
-                                .on_hover_text_at_pointer("Apply mods to FTL");
+                                .on_hover_text_at_pointer(l!("mods-apply-tooltip"));
                             if apply.clicked() {
                                 let ctx = ctx.clone();
                                 let ftl_path = self.settings.ftl_directory.clone().unwrap();
@@ -410,8 +418,8 @@ impl eframe::App for App {
                             }
 
                             let scan = ui
-                                .add_enabled(modifiable, egui::Button::new("Scan"))
-                                .on_hover_text_at_pointer("Rescan mod folder");
+                                .add_enabled(modifiable, egui::Button::new(l!("mods-scan-button")))
+                                .on_hover_text_at_pointer(l!("mods-scan-tooltip"));
 
                             if scan.clicked() && !lock.locked {
                                 self.last_hovered_mod = None;
@@ -432,27 +440,30 @@ impl eframe::App for App {
                                                 ui.add(
                                                     egui::ProgressBar::new(
                                                         downloaded as f32 / total as f32,
-                                                    )
-                                                    .text(format!(
-                                                        "Downloading Hyperspace {version} ({dl_iec:.2}{dl_sfx}/{tot_iec:.2}{tot_sfx})")),
-                                                );
+                                                    ).text(l!(
+                                                        "status-hyperspace-download2",
+                                                        "version" => version,
+                                                        "done" => format!("{dl_iec:.2}{dl_sfx}"),
+                                                        "total" => format!("{tot_iec:.2}{tot_sfx}"),
+                                                )));
                                             } else {
-                                                ui.strong(format!(
-                                                    "Downloading Hyperspace {version}"
+                                                ui.strong(l!(
+                                                    "status-hyperspace-download",
+                                                    "version" => version
                                                 ));
                                             }
                                         }
                                         ApplyStage::InstallingHyperspace => {
                                             ui.spinner();
-                                            ui.strong("Installing Hyperspace");
+                                            ui.strong(l!("status-hyperspace-install"));
                                         }
                                         ApplyStage::Preparing => {
                                             ui.spinner();
-                                            ui.strong("Preparing");
+                                            ui.strong(l!("status-preparing"));
                                         }
                                         ApplyStage::Repacking => {
                                             ui.spinner();
-                                            ui.strong("Repacking archive");
+                                            ui.strong(l!("status-repacking"));
                                         }
                                         ApplyStage::Mod {
                                             mod_name,
@@ -463,15 +474,15 @@ impl eframe::App for App {
                                                 egui::ProgressBar::new(
                                                     *file_idx as f32 / *files_total as f32,
                                                 )
-                                                .text(format!(
-                                                    "Applying {mod_name}",
+                                                .text(l!("status-applying-mod",
+                                                    "mod" => mod_name
                                                 )),
                                             );
                                         }
                                     };
                                 } else {
                                     ui.spinner();
-                                    ui.strong("Scanning mod folder");
+                                    ui.strong(l!("status-scanning-mods"));
                                 }
                             }
                         },
@@ -518,18 +529,22 @@ impl eframe::App for App {
                         ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
                             ui.horizontal(|ui| {
                                 if self.settings.ftl_directory.is_none() || !self.settings.ftl_directory.as_ref().unwrap().exists() {
-                                    ui.label(RichText::new("Invalid FTL directory specified").color(ui.visuals().error_fg_color).strong());
+                                    ui.label(RichText::new(l!("invalid-ftl-directory")).color(ui.visuals().error_fg_color).strong());
                                     return;
                                 }
 
                                 let supported = hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
                                 if let Err(err) = supported {
-                                    ui.label(RichText::new(format!("Hyperspace installer support check failed: {err}")).color(ui.visuals().error_fg_color).strong());
+                                    ui.label(RichText::new(
+                                        l!("hyperspace-support-check-failed", "error" => err.to_string())
+                                    ).color(ui.visuals().error_fg_color).strong());
                                 } else if let Err(err) = supported.unwrap() {
-                                    ui.label(RichText::new(format!("Hyperspace installer not supported: {err}")).color(ui.visuals().warn_fg_color).strong());
+                                    ui.label(RichText::new(
+                                        l!("hyperspace-installer-not-supported", "error" => err.to_string())
+                                    ).color(ui.visuals().warn_fg_color).strong());
                                 } else {
                                     ui.label(
-                                        RichText::new("Hyperspace").font(FontId::default()).strong(),
+                                        RichText::new(l!("hyperspace")).font(FontId::default()).strong(),
                                     );
 
                                     let combobox =
@@ -586,7 +601,7 @@ impl eframe::App for App {
                                         Some(Err(err)) => {
                                             if error_popup(
                                                 ui,
-                                                "Failed to fetch hyperspace releases",
+                                                &l!("hyperspace-fetch-releases-failed"),
                                                 err,
                                             ) {
                                                 shared.hyperspace_releases.take();
@@ -594,7 +609,7 @@ impl eframe::App for App {
                                         }
                                         None => {
                                             combobox.show_ui(ui, |ui| {
-                                                ui.strong("Loading...");
+                                                ui.strong(l!("hyperspace-releases-loading"));
                                             });
                                         }
                                     };
@@ -614,7 +629,7 @@ impl eframe::App for App {
                                         egui::Layout::right_to_left(eframe::emath::Align::Center),
                                         |ui| {
                                             if shared.hyperspace_releases.ready().is_none() {
-                                                ui.label("Fetching hyperspace releases...");
+                                                ui.label(l!("hyperspace-fetching-releases"));
                                                 ui.spinner();
                                             }
                                         },
@@ -625,7 +640,7 @@ impl eframe::App for App {
                                             egui::Layout::right_to_left(
                                                 eframe::emath::Align::Center,
                                             ),
-                                            |ui| ui.checkbox(patch_hyperspace_ftl, "Patch Hyperspace.ftl")
+                                            |ui| ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl"))
                                         );
                                     }
                                 }
@@ -742,8 +757,10 @@ impl eframe::App for App {
                                 ui.style_mut().wrap = Some(true);
 
                                 ui.label(
-                                    RichText::new(format!("Authors: {}", metadata.author))
-                                        .strong(),
+                                    RichText::new(l!(
+                                        "mod-meta-authors",
+                                        "authors" => &metadata.author
+                                    )).strong(),
                                 );
 
                                 if let Some(url) = &metadata.thread_url {
@@ -756,24 +773,24 @@ impl eframe::App for App {
                                 });
                             });
                         } else {
-                            ui.monospace("No metadata available for this mod");
+                            ui.monospace(l!("mod-meta-none"));
                         }
                     } else {
-                        ui.monospace("Hover over a mod and its description will appear here.");
+                        ui.monospace(l!("mod-meta-hint"));
                     }
                 })
             });
         });
 
         if self.settings_open {
-            egui::Window::new("Settings")
+            egui::Window::new(l!("settings-title"))
                 .collapsible(false)
                 .auto_sized()
                 .open(&mut self.settings_open)
                 .show(ctx, |ui| {
                     let mut mod_dir_buf: String =
                         self.settings.mod_directory.to_str().unwrap().to_string();
-                    ui.label("Mod directory");
+                    ui.label(l!("settings-mod-dir"));
                     if PathEdit::new(&mut mod_dir_buf)
                         .id("pathedit mod dir")
                         .desired_width(320.)
@@ -788,17 +805,17 @@ impl eframe::App for App {
                     filters_changed |= ui
                         .checkbox(
                             &mut self.settings.dirs_are_mods,
-                            "Treat directories as mods",
+                            l!("settings-dirs-are-mods"),
                         )
-                        .changed();
-                    filters_changed |= ui
-                        .checkbox(&mut self.settings.zips_are_mods, "Treat zips as mods")
                         .changed();
                     filters_changed |= ui
                         .checkbox(
-                            &mut self.settings.ftl_is_zip,
-                            "Treat .ftl files as zipped mods",
+                            &mut self.settings.zips_are_mods,
+                            l!("settings-zips-are-mods"),
                         )
+                        .changed();
+                    filters_changed |= ui
+                        .checkbox(&mut self.settings.ftl_is_zip, l!("settings-ftls-is-zip"))
                         .changed();
 
                     if filters_changed {
@@ -812,7 +829,7 @@ impl eframe::App for App {
 
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
-                        ui.label("FTL data directory");
+                        ui.label(l!("settings-ftl-dir"));
                     });
 
                     let mut ftl_dir_buf = self
@@ -847,16 +864,12 @@ impl eframe::App for App {
 
                     ui.checkbox(
                         &mut self.settings.repack_ftl_data,
-                        "Repack FTL data archive",
+                        l!("settings-repack-archive"),
                     )
-                    .on_hover_text(concat!(
-                        "Turning this off will slightly speed up patching but\n",
-                        "will make the archive larger and may slow down startup.\n",
-                        "The impact mostly depends on the number of applied mods."
-                    ));
+                    .on_hover_text(l!("settings-repack-archive-tooltip"));
 
                     let mut visuals_changed = false;
-                    egui::ComboBox::from_label("Colorscheme")
+                    egui::ComboBox::from_label(l!("settings-colorscheme"))
                         .selected_text(format!("{}", &mut self.settings.theme.colors))
                         .show_ui(ui, |ui| {
                             visuals_changed |= ui
@@ -878,7 +891,7 @@ impl eframe::App for App {
                     visuals_changed |= ui
                         .add(
                             egui::Slider::new(&mut self.settings.theme.opacity, 0.2..=1.0)
-                                .text("Background opacity")
+                                .text(l!("settings-background-opacity"))
                                 .custom_formatter(|v, _| format!("{:.1}%", v * 100.))
                                 .custom_parser(|s| {
                                     if let Some(percentage) = s.strip_suffix('%') {

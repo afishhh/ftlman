@@ -37,6 +37,9 @@ quick-xml = { version = "0.34", features = ["serialize"] }
 # Used in append.rs
 xmltree = "0.10"
 
+# Localisation
+fluent = "0.16"
+
 # Speeds up testing considerably
 [profile.dev]
 opt-level = 2

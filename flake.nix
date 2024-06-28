@@ -15,7 +15,7 @@
         let
           inherit (fenix.packages.${system}.latest) toolchain;
           pkgs = nixpkgs.legacyPackages.${system};
-          runtimeLibs = "/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (with pkgs; [ libGL libGLU libxkbcommon ])}";
+          runtimeLibs = "/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (with pkgs; [ libGL libGLU libxkbcommon bzip2 ])}";
 
         in
         rec {
