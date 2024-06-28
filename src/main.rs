@@ -10,6 +10,7 @@ use std::{
 };
 
 use anyhow::Result;
+use clap::Parser;
 use eframe::{
     egui::{self, RichText, Sense, Ui, Visuals},
     epaint::{
@@ -27,6 +28,8 @@ use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 use zip::ZipArchive;
+
+mod cli;
 
 mod pathedit;
 use pathedit::PathEdit;
@@ -100,6 +103,14 @@ fn main() {
         })
         .parse_default_env()
         .init();
+
+    let args = cli::Args::parse();
+    if let Some(command) = args.command {
+        if let Err(error) = cli::main(command) {
+            error!("{error}");
+        }
+        return;
+    }
 
     if let Err(error) = eframe::run_native(
         "FTL Manager",
@@ -1002,17 +1013,17 @@ impl ModOrder {
 }
 
 #[derive(Clone)]
-enum ModSource {
+pub enum ModSource {
     Directory { path: PathBuf },
     Zip { path: PathBuf },
     // Used for Hyperspace.ftl
     InMemoryZip { filename: String, data: Vec<u8> },
 }
 
-trait ReadSeek: Read + Seek {}
+pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
-enum OpenModHandle<'a> {
+pub enum OpenModHandle<'a> {
     Directory {
         path: PathBuf,
     },
@@ -1181,9 +1192,13 @@ impl Mod {
     }
 
     fn new(source: ModSource) -> Mod {
+        Self::new_with_enabled(source, false)
+    }
+
+    fn new_with_enabled(source: ModSource, enabled: bool) -> Mod {
         Mod {
             source,
-            enabled: false,
+            enabled,
             cached_metadata: Default::default(),
         }
     }

@@ -1,8 +1,5 @@
 use std::{
-    io::{Cursor, Read, Write},
-    path::{Path, PathBuf},
-    str::FromStr,
-    sync::Arc,
+    io::{Cursor, Read, Write}, path::{Path, PathBuf}, str::FromStr, sync::Arc
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -24,6 +21,7 @@ lazy_static! {
         Regex::new("<mod(|-append|-overwrite):.+>").unwrap();
 }
 
+#[derive(Debug)]
 pub enum ApplyStage {
     DownloadingHyperspace {
         version: String,
@@ -39,17 +37,13 @@ pub enum ApplyStage {
     Repacking,
 }
 
-fn patch_ftl_data(
+pub fn apply_ftl(
     ftl_path: &Path,
     mods: Vec<Mod>,
-    state: Arc<Mutex<SharedState>>,
+    mut on_progress: impl FnMut(ApplyStage),
     repack: bool,
 ) -> Result<()> {
-    let mut lock = state.lock();
-
-    lock.apply_stage = Some(ApplyStage::Preparing);
-    lock.ctx.request_repaint();
-    drop(lock);
+    on_progress(ApplyStage::Preparing);
 
     let data_file = {
         const BACKUP_FILENAME: &str = "ftl.dat.vanilla";
@@ -89,15 +83,11 @@ fn patch_ftl_data(
                 continue;
             }
 
-            {
-                let mut lock = state.lock();
-                lock.apply_stage = Some(ApplyStage::Mod {
-                    mod_name: mod_name.clone(),
-                    file_idx: j,
-                    files_total: path_count,
-                });
-                lock.ctx.request_repaint();
-            }
+            on_progress(ApplyStage::Mod {
+                mod_name: mod_name.clone(),
+                file_idx: j,
+                files_total: path_count,
+            });
 
             if let Some(real_stem) = name
                 .strip_suffix(".xml.append")
@@ -271,12 +261,8 @@ fn patch_ftl_data(
     }
 
     trace!("Repacking");
-    {
-        let mut lock = state.lock();
-        lock.apply_stage = Some(ApplyStage::Repacking);
-        lock.ctx.request_repaint();
-    }
     if repack {
+        on_progress(ApplyStage::Repacking);
         pkg.repack().context("Failed to repack ftl.dat")?;
     }
     pkg.flush()?;
@@ -350,7 +336,16 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
         drop(lock);
     }
 
-    patch_ftl_data(&ftl_path, mods, state.clone(), settings.repack_ftl_data)?;
+    apply_ftl(
+        &ftl_path,
+        mods,
+        |stage| {
+            let mut lock = state.lock();
+            lock.apply_stage = Some(stage);
+            lock.ctx.request_repaint();
+        },
+        settings.repack_ftl_data,
+    )?;
 
     let mut lock = state.lock();
     lock.apply_stage = None;
