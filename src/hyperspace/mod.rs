@@ -98,6 +98,7 @@ pub trait Installer {
     fn disable(&self, ftl: &Path) -> Result<()>;
 }
 
+#[allow(dead_code)]
 struct UnsupportedOSInstaller;
 
 impl Installer for UnsupportedOSInstaller {
