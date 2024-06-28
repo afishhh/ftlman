@@ -40,3 +40,6 @@ xmltree = "0.10"
 # Speeds up testing considerably
 [profile.dev]
 opt-level = 2
+
+[workspace]
+members = ["compare_with_slipstream/normalize_xml"]
