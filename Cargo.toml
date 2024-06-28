@@ -22,17 +22,17 @@ poll-promise = { version = "0.3" }
 
 # Used to read/write SIL archives and mod files/dirs
 silpkg = { git = "https://github.com/afishhh/silpkg.git" }
-zip = "0.6.3"
+zip = "2"
 walkdir = "2"
 
 # Used in cache.rs
-base32 = "0.4"
+base32 = "0.5"
 tempfile = "3"
 
 # Used for persisting state and deserializing mod metadata
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-quick-xml = { version = "0.31", features = ["serialize"] }
+quick-xml = { version = "0.34", features = ["serialize"] }
 
 # Used in append.rs
 xmltree = "0.10"

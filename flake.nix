@@ -34,6 +34,8 @@
               libX11
               libXcursor
               libXrandr
+              libxcb
+              libxkbcommon
               libXi
               fontconfig
               openssl
@@ -45,8 +47,8 @@
               lockFile = ./Cargo.lock;
               outputHashes = {
                 # silpkg's internal macros crate
-                # buildRustPackage doesn't seem to deal with such subpackages seamlessly
-                "macros-0.0.0" = "sha256-3z553VbZRNpO8vtmZsBbqsW3IOLdrYcurHtX+Dml2I0=";
+                # for some reason cargo doesn't lock this
+                "silpkg-macros-0.0.0" = "sha256-EIz400bWOGtdtTp7F6xAlCfb1M2vfbdVyb86j/ICFAE=";
               };
             };
 
