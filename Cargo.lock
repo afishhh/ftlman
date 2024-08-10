@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "ftlman"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base32",
