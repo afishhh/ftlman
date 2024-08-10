@@ -65,7 +65,3 @@ You can also try out the program using `nix run`:
 ```command
 nix run github:afishhh/ftlman
 ```
-
-### Contributing
-
-I highly discourage anyone from opening or working on pull requests right now since I am not satisfied with the code quality of this project and may make significant changes at any moment.
