@@ -10,6 +10,6 @@ set -euo pipefail
 [[ -e data-ftlman ]] || mkdir data-ftlman
 [[ -e data-ftlman/ftl.dat ]] || cp ./ftl.dat data-ftlman
 
-cargo run -- patch ./data-ftlman "Multiverse Assets.zip" "Multiverse Data.zip"
+cargo run -- patch ./data-ftlman "$@"
 cargo run -- extract ./data-ftlman/ftl ./data-ftlman/ftl.dat
 cargo run --package=normalize_xml ./data-ftlman/ftl

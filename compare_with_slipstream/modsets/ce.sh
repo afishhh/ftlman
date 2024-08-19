@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+
+download_mod wget "CE Resource Pack" https://download2389.mediafire.com/sfv2bram4iagY6GsP0GEMTf6rdbZtfW9edhByd9Nbm9fYDA-etQwOL6OdXoEOye-hwYbd73J0hANzJ2amE_smcXPrYt5gtv7GBQot72W_R5EdpbmpGIr9-Vo_oacqqxcqokcNkuNTqcM88LCRPJAGZKpClP36GSvFhLvYhoJa6tOFw/4aluyoqgod23dob/CE+Resource+Pack+1.308.ftl
+
+download_mod wget "FTL Captains Edition" https://download2292.mediafire.com/qtakaw3fqhngp6RBZj_j2mtYGczfzaIFkBlrlU3qpbrjekWF0ZHMys0ZM37VpvpAW-oCA9zd1BemBZ4rHmN50RmEWk3htArr21u8i3mQV8QSxl4fT9dEROtcEfCra6Nsly1P4I7YFIyGgnn0ZIsiqLws4sAEltEh4BhR4W72Jn_0Jg/9pyjre6gp3cyv3n/FTL+Captains+Edition+1.308.ftl
