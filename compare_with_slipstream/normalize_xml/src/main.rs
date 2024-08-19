@@ -31,15 +31,16 @@ fn sort_attributes<'a>(start: &BytesStart<'a>) -> BytesStart<'a> {
 fn process_one(file: &Path) {
     if file.extension() == Some(OsStr::new("xml")) {
         println!("Normalising XML file {}", file.display());
-        let mut reader = quick_xml::Reader::from_file(file).unwrap();
+        let content = std::fs::read_to_string(file).unwrap().replace("\r\n", "\n");
+        let mut reader = quick_xml::Reader::from_str(&content);
         let mut output_buffer: std::io::Cursor<Vec<u8>> = Default::default();
-        let mut writer = quick_xml::Writer::new(&mut output_buffer);
+        let mut writer = quick_xml::Writer::new_with_indent(&mut output_buffer, b'\t', 1);
 
         let mut event_buffer = vec![];
         loop {
             match reader.read_event_into(&mut event_buffer).unwrap() {
                 Event::Text(content)
-                    if String::from_utf8(content.to_vec())
+                    if std::str::from_utf8(&content)
                         .unwrap()
                         .chars()
                         .all(|c| c.is_ascii_whitespace()) => {}
