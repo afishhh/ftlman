@@ -223,10 +223,6 @@ impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
             return false;
         }
 
-        if element.children.is_empty() {
-            return false;
-        }
-
         element
             .children
             .iter()
