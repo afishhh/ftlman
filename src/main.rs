@@ -125,7 +125,7 @@ fn main() {
 
             ..Default::default()
         },
-        Box::new(|cc| Box::new(App::new(cc).expect("Failed to set up application state"))),
+        Box::new(|cc| Ok(Box::new(App::new(cc).expect("Failed to set up application state")))),
     ) {
         error!("{error}");
     }
@@ -511,7 +511,7 @@ impl eframe::App for App {
                 ui.separator();
 
                 ui.horizontal_top(|ui| {
-                    let viewport_width = ctx.input(|i| i.viewport().inner_rect.unwrap().width());
+                    let viewport_width = ctx.screen_rect().width();
                     let horizontal_item_spacing = ui.spacing().item_spacing.x;
                     let mut shared = self.shared.lock();
 
@@ -748,13 +748,13 @@ impl eframe::App for App {
                                         RichText::new(format!("v{}", metadata.version)).heading(),
                                     );
 
-                                    ui.style_mut().wrap = Some(true);
+                                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                                     ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui|
                                         ui.label(RichText::new(&metadata.title).heading().strong())
                                     );
                                 });
 
-                                ui.style_mut().wrap = Some(true);
+                                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
 
                                 ui.label(
                                     RichText::new(l!(
