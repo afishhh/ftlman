@@ -6,6 +6,7 @@ use std::{
     fs::File,
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
+    process::ExitCode,
     sync::Arc,
 };
 
@@ -70,7 +71,7 @@ fn to_human_size_units(num: u64) -> (f64, &'static str) {
     (cur, UNITS.get(i).unwrap_or_else(|| UNITS.last().unwrap()))
 }
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::builder()
         .format(|f, record| {
             let module = record
@@ -111,8 +112,9 @@ fn main() {
     if let Some(command) = args.command {
         if let Err(error) = cli::main(command) {
             error!("{error}");
+            return ExitCode::FAILURE;
         }
-        return;
+        return ExitCode::SUCCESS;
     }
 
     if let Err(error) = eframe::run_native(
@@ -125,10 +127,16 @@ fn main() {
 
             ..Default::default()
         },
-        Box::new(|cc| Ok(Box::new(App::new(cc).expect("Failed to set up application state")))),
+        Box::new(|cc| {
+            Ok(Box::new(
+                App::new(cc).expect("Failed to set up application state"),
+            ))
+        }),
     ) {
         error!("{error}");
     }
+
+    ExitCode::SUCCESS
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
