@@ -40,7 +40,7 @@ settings-ftl-dir = FTL data directory
 settings-repack-archive = Repack FTL data archive
 settings-repack-archive-tooltip = 
     Turning this off will slightly speed up patching but
-    will make the archive larger and may slow down startup.
+    make the archive larger and potentially slow down startup.
     The impact mostly depends on the number of applied mods.
 settings-colorscheme = Colorscheme
 settings-background-opacity = Background opacity
