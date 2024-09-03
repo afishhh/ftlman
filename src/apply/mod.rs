@@ -167,10 +167,8 @@ pub fn apply_ftl(
                     match pkg.open(&real_name) {
                         Ok(mut x) => x.read_to_end(&mut buf).map(|_| ()),
                         Err(silpkg::sync::OpenError::NotFound) => {
-                            buf.extend_from_slice(
-                                br#"<?xml version="1.0" encoding="utf-8"?><FTL></FTL>"#,
-                            );
-                            Ok(())
+                            warn!("Ignoring .xml.append with non-existent original");
+                            continue;
                         }
                         Err(silpkg::sync::OpenError::Io(x)) => Err(x),
                     }
@@ -278,7 +276,7 @@ pub fn apply_ftl(
                                         .contains(&x.into_inner())
                                 }) {
                                     warn!(
-                                "Useless mod namespaced tag present in non-append xml file {name}."
+                                "Useless mod namespaced tag present in non-append xml file {name}"
                             );
                                 }
                                 element_stack.push(start.to_end().into_owned());
@@ -295,6 +293,10 @@ pub fn apply_ftl(
 
                     pkg.insert(name.clone(), INSERT_FLAGS)?
                         .write_all(writer.into_inner().get_ref())?;
+                } else if name.ends_with(".xml.rawappend") || name.ends_with(".rawappend.xml") {
+                    bail!(".xml.rawappend files are not supported yet")
+                } else if name.ends_with(".xml.rawclobber") || name.ends_with(".rawclobber.xml") {
+                    bail!(".xml.rawclobber files are not supported yet")
                 } else if !IGNORED_FILES_REGEX.is_match(&name) {
                     let reader = handle.open(&name).with_context(|| {
                         format!("Failed to open {name} from mod {}", m.filename())
