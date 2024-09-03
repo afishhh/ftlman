@@ -13,5 +13,6 @@ set -euo pipefail
 bash ./slipstream/modman-cli.sh --patch "$@"
 [ -n "${PATCHED_SLIPSTREAM_HASH:-}" ] &&
 	sha256sum -c <<<"$PATCHED_SLIPSTREAM_HASH  data-slipstream/ftl.dat"
+[[ -e data-slipstream/ftl ]] && rm -r ./data-slipstream/ftl
 bash ./slipstream/modman-cli.sh --extract-dats="$PWD/data-slipstream/ftl"
 cargo run --package=normalize_xml ./data-slipstream/ftl

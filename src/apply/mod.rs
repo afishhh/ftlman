@@ -1,18 +1,20 @@
 use std::{
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
-    str::FromStr,
     sync::Arc,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use eframe::egui::TextBuffer;
 use lazy_static::lazy_static;
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
 use zip::ZipArchive;
 
-use crate::{cache::CACHE, hyperspace, HyperspaceState, Mod, ModSource, Settings, SharedState};
+use crate::{
+    cache::CACHE, hyperspace, xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState,
+};
 
 mod append;
 
@@ -22,6 +24,8 @@ lazy_static! {
         Regex::new("(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap();
     static ref MOD_NAMESPACE_TAG_REGEX: Regex =
         Regex::new("<mod(|-append|-overwrite):.+>").unwrap();
+    static ref IGNORED_FILES_REGEX: Regex =
+        Regex::new("[.]DS_Store$|(?:^|/)thumbs[.]db$|(?:^|/)[.]dropbox$|(?:^|/)~|~$|(?:^|/)#.+#$").unwrap();
 }
 
 #[derive(Debug)]
@@ -191,85 +195,36 @@ pub fn apply_ftl(
                 let original_without_root = WRAPPER_TAG_REGEX.replace_all(&original_text, "");
                 let append_without_root = WRAPPER_TAG_REGEX.replace_all(&append_text, "");
 
-                // FIXME: This is terrible
-                let mut append_fixed = "<wrapper xmlns:mod='mod' xmlns:mod-append='mod-append' xmlns:mod-overwrite='mod-overwrite'>".to_string();
-                append_fixed += &append::clean_xml(
-                    append_without_root
-                        // Strip BOM
-                        .strip_prefix('\u{feff}')
-                        .unwrap_or(&append_without_root),
-                );
-                append_fixed += "</wrapper>";
+                let append_fixed = append_without_root
+                    // Strip BOM
+                    .strip_prefix('\u{feff}')
+                    .unwrap_or(&append_without_root);
 
-                // **AHEM** Some **people** decide to put XML files with mod namespaced tags into
-                // files with the .xml file extension.
-                // This obviously makes no freaking sense but will mess us up when we try to parse
-                // the previously inserted document here since it will contain unknown namespaces...
-                let mut original_fixed = "<xml xmlns:mod='mod' xmlns:mod-append='mod-append' xmlns:mod-overwrite='mod-overwrite'>".to_string();
-                original_fixed += &original_without_root;
-                original_fixed += "</xml>";
+                let original_fixed = format!("<FTL>{original_without_root}</FTL>");
 
-                let mut debug_output_file_path: Option<PathBuf> = None;
-
-                // FIXME: Make this a setting
-                #[cfg(debug_assertions)]
-                if MOD_NAMESPACE_TAG_REGEX.find(&append_without_root).is_some() {
-                    let base = PathBuf::from_str("/tmp/ftlmantest").unwrap().join(&name);
-                    std::fs::create_dir_all(&base).unwrap();
-                    std::fs::write(base.join("in"), &original_fixed).unwrap();
-                    std::fs::write(base.join("patch"), &append_fixed).unwrap();
-                    debug_output_file_path = Some(base.join("out"));
-                }
-
-                let mut document = xmltree::Element::parse(Cursor::new(&original_fixed))
-                    .with_context(|| format!("Could not parse XML document {original_fixed}"))?;
+                let mut document =
+                    xmltree::Element::parse_sloppy(Cursor::new(&original_fixed.as_str()))
+                        .with_context(|| format!("Could not parse XML document {name}"))?
+                        .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
 
                 append::patch(
                     &mut document,
-                    xmltree::Element::parse(Cursor::new(&append_fixed))
-                        .with_context(|| format!("Could not parse XML append document {}", name))?,
+                    xmltree::Element::parse_all_sloppy(Cursor::new(append_fixed.as_str()))
+                        .with_context(|| format!("Could not parse XML append document {name}"))?,
                 )
-                .with_context(|| format!("Could not patch XML file {}", name))?;
-
-                if let Some(path) = debug_output_file_path {
-                    document
-                        .write_with_config(
-                            &mut std::fs::File::create(path).unwrap(),
-                            xmltree::EmitterConfig {
-                                write_document_declaration: false,
-                                perform_indent: true,
-                                ..Default::default()
-                            },
-                        )
-                        .unwrap();
-                }
+                .with_context(|| format!("Could not patch XML file {name}"))?;
 
                 // FIXME: This is so dumb :crying:
                 let new_text = {
                     let mut out = vec![];
-                    document
-                        .write_with_config(
-                            &mut Cursor::new(&mut out),
-                            xmltree::EmitterConfig {
-                                write_document_declaration: false,
-                                ..Default::default()
-                            },
-                        )
-                        .unwrap();
-                    let buf = String::from_utf8(out)?;
-                    // NOTE: This becomes <xml> instead of <xml xmlns...> because we strip these
-                    //       extra attributes after patching
-                    let buf_without_root = buf
-                        .strip_prefix("<xml>")
-                        .unwrap()
-                        .strip_suffix("</xml>")
-                        .unwrap();
 
                     if had_ftl_root {
-                        format!("<FTL>{buf_without_root}</FTL>")
+                        document.write_with_indent(&mut Cursor::new(&mut out), b' ', 4)?;
                     } else {
-                        buf_without_root.to_string()
+                        document.write_children_with_indent(&mut Cursor::new(&mut out), b' ', 4)?
                     }
+
+                    String::from_utf8(out)?
                 };
 
                 if MOD_NAMESPACE_TAG_REGEX.find(&new_text).is_some() {
@@ -293,16 +248,6 @@ pub fn apply_ftl(
                         format!("Failed to insert modified {real_name} into ftl.dat")
                     })?;
             } else {
-                if name.ends_with(".xml") {
-                    #[cfg(debug_assertions)]
-                    if MOD_NAMESPACE_TAG_REGEX
-                        .find(&std::io::read_to_string(handle.open(&name)?)?)
-                        .is_some()
-                    {
-                        warn!("Useless mod namespaced tag present in non-append xml file {name}.");
-                    }
-                }
-
                 if pkg.contains(&name) {
                     trace!("Overwriting {name}");
                     pkg.remove(&name)
@@ -311,14 +256,55 @@ pub fn apply_ftl(
                     trace!("Inserting {name}");
                 }
 
-                let reader = handle
-                    .open(&name)
-                    .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
-                std::io::copy(
-                    &mut fixup_mod_file(reader)?,
-                    &mut pkg.insert(name.clone(), INSERT_FLAGS)?,
-                )
-                .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
+                if name.ends_with(".xml") {
+                    let mut reader = quick_xml::Reader::from_reader(std::io::BufReader::new(
+                        fixup_mod_file(handle.open(&name)?)?,
+                    ));
+                    reader.config_mut().check_end_names = false;
+                    let mut writer =
+                        quick_xml::Writer::new_with_indent(std::io::Cursor::new(vec![]), b' ', 4);
+                    let mut buf = vec![];
+                    let mut element_stack = vec![];
+                    loop {
+                        let event = reader.read_event_into(&mut buf)?;
+                        if matches!(event, quick_xml::events::Event::Eof) {
+                            break;
+                        }
+
+                        match event {
+                            quick_xml::events::Event::Start(ref start) => {
+                                if start.name().prefix().is_some_and(|x| {
+                                    [&b"mod"[..], &b"mod-append"[..], &b"mod-overwrite"[..]]
+                                        .contains(&x.into_inner())
+                                }) {
+                                    warn!(
+                                "Useless mod namespaced tag present in non-append xml file {name}."
+                            );
+                                }
+                                element_stack.push(start.to_end().into_owned());
+                                writer.write_event(event)?;
+                            }
+                            quick_xml::events::Event::End(_) => {
+                                writer.write_event(quick_xml::events::Event::End(
+                                    element_stack.pop().unwrap(),
+                                ))?;
+                            }
+                            event => writer.write_event(event)?,
+                        }
+                    }
+
+                    pkg.insert(name.clone(), INSERT_FLAGS)?
+                        .write_all(writer.into_inner().get_ref())?;
+                } else if !IGNORED_FILES_REGEX.is_match(&name) {
+                    let reader = handle.open(&name).with_context(|| {
+                        format!("Failed to open {name} from mod {}", m.filename())
+                    })?;
+                    std::io::copy(
+                        &mut fixup_mod_file(reader)?,
+                        &mut pkg.insert(name.clone(), INSERT_FLAGS)?,
+                    )
+                    .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
+                }
             }
         }
         trace!("Applied {}", m.filename());

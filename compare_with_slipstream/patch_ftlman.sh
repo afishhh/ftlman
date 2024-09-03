@@ -11,5 +11,6 @@ set -euo pipefail
 [[ -e data-ftlman/ftl.dat ]] || cp ./ftl.dat data-ftlman
 
 cargo run -- patch ./data-ftlman "$@"
+[[ -e data-ftlman/ftl ]] && rm -r ./data-ftlman/ftl
 cargo run -- extract ./data-ftlman/ftl ./data-ftlman/ftl.dat
 cargo run --package=normalize_xml ./data-ftlman/ftl

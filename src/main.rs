@@ -42,6 +42,7 @@ mod hyperspace;
 mod i18n;
 mod lazy;
 mod scan;
+mod xmltree;
 
 use apply::ApplyStage;
 use lazy::ResettableLazy;
@@ -111,7 +112,10 @@ fn main() -> ExitCode {
     let args = cli::Args::parse();
     if let Some(command) = args.command {
         if let Err(error) = cli::main(command) {
-            error!("{error}");
+            error!("{error}"); 
+            for (i ,error) in error.chain().enumerate() {
+                error!("  #{}: {error}", i + 1);
+            }
             return ExitCode::FAILURE;
         }
         return ExitCode::SUCCESS;

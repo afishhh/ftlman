@@ -1,14 +1,15 @@
 use std::{
-    borrow::Cow,
     collections::{HashMap, HashSet},
     fmt::Write,
     str::FromStr,
 };
 
+use crate::xmltree::{Element, Node};
 use anyhow::{anyhow, bail, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
-use xmltree::{Element, XMLNode};
+
+type XMLNode = Node;
 
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
@@ -17,22 +18,12 @@ lazy_static! {
     static ref XML_COMMENT_REGEX: Regex = Regex::new("<!--(?s:.*?)-->").unwrap();
 }
 
-// Sometimes our beloved mods (Multiverse) contain comments in the form
-// <!-- something something <!--  more things -->
-// which are rejected by xml-rs.
-// Since we don't care about comments we can just remove everything
-// that even resembles a comment.
-// Hopefully this doesn't break anything.
-pub fn clean_xml(xml: &str) -> Cow<'_, str> {
-    XML_COMMENT_REGEX.replace_all(xml, "")
-}
-
-pub fn patch(context: &mut Element, patch: Element) -> Result<()> {
-    for mut node in patch.children {
+pub fn patch(context: &mut Element, patch: Vec<XMLNode>) -> Result<()> {
+    for mut node in patch {
         match node {
-            XMLNode::Element(el) if el.namespace.as_deref() == Some("mod") => {
+            XMLNode::Element(el) if el.prefix.as_deref() == Some("mod") => {
                 let Some(matches) = mod_find(context, &el)? else {
-                    bail!("Unrecognised mod tag {}", el.name);
+                    bail!("Unrecognised mod find tag {}", el.name);
                 };
 
                 for element in matches {
@@ -58,11 +49,11 @@ fn cleanup(element: &mut Element) {
     const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-overwrite"];
 
     if element
-        .namespace
+        .prefix
         .as_ref()
         .is_some_and(|x| MOD_NAMESPACES.contains(&x.as_str()))
     {
-        element.namespace = None
+        element.prefix = None
     }
 
     if element
@@ -73,15 +64,15 @@ fn cleanup(element: &mut Element) {
         element.prefix = None
     }
 
-    if let Some(ns) = element.namespaces.as_mut() {
-        for mns in MOD_NAMESPACES {
-            ns.0.remove(*mns);
+    if let Some(ns) = element.prefix.as_ref() {
+        if MOD_NAMESPACES.contains(&ns.as_str()) {
+            element.prefix = None;
         }
     }
 
     for child in std::mem::take(&mut element.children) {
         match child {
-            XMLNode::Element(e) if e.namespace.as_deref() == Some(REMOVE_MARKER) => {}
+            XMLNode::Element(e) if e.prefix.as_deref() == Some(REMOVE_MARKER) => {}
             XMLNode::Element(mut e) => {
                 cleanup(&mut e);
                 element.children.push(XMLNode::Element(e))
@@ -162,7 +153,7 @@ impl SelectorFilter {
             result.attrs.push((key.to_owned(), value.to_owned()));
         }
 
-        let text = selector.get_text().unwrap_or(Cow::Borrowed(""));
+        let text = selector.get_text();
         let trimmed = text.trim();
         if !trimmed.is_empty() {
             result.value = Some(trimmed.to_string())
@@ -198,7 +189,7 @@ impl ElementFilter for SelectorFilter {
         if self
             .value
             .as_deref()
-            .is_some_and(|value| value != element.get_text().unwrap_or(Cow::Borrowed("")).trim())
+            .is_some_and(|value| value != element.get_text().trim())
         {
             return false;
         }
@@ -247,7 +238,7 @@ fn index_children(node: &Element) -> HashMap<*const Element, usize> {
 }
 
 fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
-    if node.name != "par" || node.namespace.as_deref() != Some("mod") {
+    if node.name != "par" || node.prefix.as_deref() != Some("mod") {
         return Ok(None);
     }
 
@@ -286,7 +277,7 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
 
 // FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
-    if node.namespace.as_ref().is_some_and(|x| x == "mod") {
+    if node.prefix.as_ref().is_some_and(|x| x == "mod") {
         if !["findName", "findLike", "findWithChildLike", "findComposite"]
             .contains(&node.name.as_str())
         {
@@ -412,7 +403,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
 
 fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
     for command in element.children.iter().filter_map(|x| x.as_element()) {
-        match command.namespace.as_deref() {
+        match command.prefix.as_deref() {
             Some("mod") => {
                 if let Some(matches) = mod_find(context, command)? {
                     for matched in matches {
@@ -447,34 +438,27 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                                 }
                             }
 
-                            context.children.push(XMLNode::Text(
-                                command
-                                    .get_text()
-                                    .map(|x| x.trim().to_string())
-                                    .unwrap_or_else(String::new),
-                            ))
+                            context
+                                .children
+                                .push(XMLNode::Text(command.get_text().trim().to_string()))
                         }
                         "removeTag" => {
-                            context.namespace = Some(REMOVE_MARKER.to_string());
+                            context.prefix = Some(REMOVE_MARKER.to_string());
                         }
                         _ => {
-                            bail!("Unrecognised mod tag {}", command.name)
+                            bail!("Unrecognised mod command tag {}", command.name)
                         }
                     }
                 }
             }
             Some("mod-append") => {
                 let mut new = command.clone();
-                new.namespace = None;
                 new.prefix = None;
-
-                // println!("appending {:?} to {:?}", new, context);
 
                 context.children.push(XMLNode::Element(new));
             }
             Some("mod-overwrite") => {
                 let mut new = command.clone();
-                new.namespace = None;
                 new.prefix = None;
 
                 if let Some(old) = context.get_mut_child(new.name.as_str()) {
