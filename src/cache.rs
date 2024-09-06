@@ -50,9 +50,7 @@ impl Cache {
         fun: impl FnOnce() -> Result<Vec<u8>>,
     ) -> Result<Vec<u8>> {
         self.read_or_write_internal(
-            self.root
-                .join(subdir)
-                .join(base32::encode(base32::Alphabet::Crockford, key.as_bytes())),
+            self.root.join(subdir).join(key),
             |p| p.try_exists().map_err(Into::into),
             fun,
         )

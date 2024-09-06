@@ -26,7 +26,6 @@ zip = "2"
 walkdir = "2"
 
 # Used in cache.rs
-base32 = "0.5"
 tempfile = "3"
 
 # Used for persisting state and deserializing mod metadata
