@@ -15,7 +15,7 @@
         let
           inherit (fenix.packages.${system}.latest) toolchain;
           pkgs = nixpkgs.legacyPackages.${system};
-          runtimeLibs = "/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (with pkgs; [ libGL libGLU libxkbcommon bzip2 wayland ])}";
+          runtimeLibs = "/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (with pkgs; [ libGL libGLU libxkbcommon bzip2 wayland fontconfig ])}";
         in
         rec {
           unwrapped = (pkgs.makeRustPlatform {

@@ -37,6 +37,7 @@ use pathedit::PathEdit;
 
 mod apply;
 mod cache;
+mod fonts;
 mod github;
 mod hyperspace;
 mod i18n;
@@ -291,6 +292,8 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
+        cc.egui_ctx.set_fonts(fonts::find_fonts());
+
         let settings_path = Settings::default_path();
         let settings = Settings::load(&settings_path).unwrap_or_default();
         if settings.mod_directory == Settings::default().mod_directory {
