@@ -23,7 +23,7 @@
             rustc = toolchain;
           }).buildRustPackage {
             pname = "ftlman-unwrapped";
-            version = "0.1.0";
+            version = "0.3.0";
 
             nativeBuildInputs = with pkgs; [
               pkg-config
