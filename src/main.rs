@@ -37,6 +37,7 @@ use pathedit::PathEdit;
 
 mod apply;
 mod cache;
+mod fonts;
 mod github;
 mod hyperspace;
 mod i18n;
@@ -133,6 +134,7 @@ fn main() -> ExitCode {
             ..Default::default()
         },
         Box::new(|cc| {
+            cc.egui_ctx.set_fonts(fonts::create_font_definitions());
             Ok(Box::new(
                 App::new(cc).expect("Failed to set up application state"),
             ))
