@@ -129,7 +129,9 @@ macro_rules! write_node {
                 $writer.write_event(Event::Comment(BytesText::new(comment)))?
             }
             Node::CData(cdata) => $writer.write_event(Event::CData(BytesCData::new(cdata)))?,
-            Node::Text(text) => $writer.write_event(Event::Text(BytesText::new(text)))?,
+            Node::Text(text) => $writer.write_event(Event::Text(BytesText::from_escaped(
+                quick_xml::escape::minimal_escape(text),
+            )))?,
             Node::ProcessingInstruction(target, content) => {
                 assert!(!target.contains(|c: char| c.is_ascii_whitespace()));
                 $writer.write_event(Event::PI(BytesPI::new(format!("{target} {content}"))))?
@@ -151,7 +153,7 @@ fn write<W: Write>(
     for (key, value) in element.attributes.iter() {
         start.push_attribute(Attribute {
             key: QName(key.as_bytes()),
-            value: Cow::Borrowed(quick_xml::escape::escape(value).as_bytes()),
+            value: Cow::Borrowed(quick_xml::escape::minimal_escape(value).as_bytes()),
         })
     }
 

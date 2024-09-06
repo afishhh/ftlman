@@ -44,6 +44,44 @@ pub enum ApplyStage {
     Repacking,
 }
 
+fn unwrap_rewrap_xml(
+    lower: String,
+    upper: String,
+    combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
+) -> Result<String> {
+    // FIXME: this can be made quicker
+    let had_ftl_root = WRAPPER_TAG_REGEX
+        .captures_iter(&lower)
+        .any(|x| x.get(2).is_some());
+    let lower_without_root = WRAPPER_TAG_REGEX.replace_all(&lower, "");
+    let upper_without_root = WRAPPER_TAG_REGEX.replace_all(&upper, "");
+
+    let lower_wrapped = format!("<FTL>{lower_without_root}</FTL>");
+
+    let mut lower_parsed = xmltree::Element::parse_sloppy(Cursor::new(&lower_wrapped.as_str()))
+        .context("Could not parse XML document")?
+        .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
+
+    combine(
+        &mut lower_parsed,
+        xmltree::Element::parse_all_sloppy(Cursor::new(upper_without_root.as_str()))
+            .context("Could not parse XML append document")?,
+    )
+    .context("Could not patch XML file")?;
+
+    Ok({
+        let mut out = vec![];
+
+        if had_ftl_root {
+            lower_parsed.write_with_indent(&mut Cursor::new(&mut out), b' ', 4)?;
+        } else {
+            lower_parsed.write_children_with_indent(&mut Cursor::new(&mut out), b' ', 4)?
+        }
+
+        String::from_utf8(out)?
+    })
+}
+
 // TODO: Remove once str_from_utf16_endian is stabilised.
 fn read_utf16_pairs(
     reader: &mut impl Read,
@@ -77,24 +115,40 @@ fn read_utf16_pairs(
     Ok(result)
 }
 
-// Some modders helpfully save their files as UTF-16
-fn fixup_mod_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 'a>> {
-    let mut peek = [0; 2];
-    match reader.read_exact(&mut peek) {
+// Some modders helpfully save their files as UTF-16 or with a UTF-8 BOM
+fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 'a>> {
+    let mut peek = [0; 3];
+    match reader.read_exact(&mut peek[..2]) {
         Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-            return Ok(Box::new(Cursor::new(peek)) as Box<dyn Read>)
+            return Ok(Box::new(Cursor::new(peek)))
         }
         other => other?,
     };
 
-    let utf16_pairs = if &peek == b"\xFF\xFE" {
+    let utf16_pairs = if &peek[..2] == b"\xFF\xFE" {
         trace!("Transcoding UTF-16 LE file into UTF-8");
         read_utf16_pairs(&mut reader, u16::from_le_bytes)?
-    } else if &peek == b"\xFE\xFF" {
+    } else if &peek[..2] == b"\xFE\xFF" {
         trace!("Transcoding UTF-16 BE file into UTF-8");
         read_utf16_pairs(&mut reader, u16::from_be_bytes)?
+    } else if &peek[..2] == b"\xef\xbb" {
+        match reader.read_exact(&mut peek[2..3]) {
+            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+                return Ok(Box::new(
+                    std::io::Cursor::new([peek[0], peek[1]]).chain(reader),
+                ))
+            }
+            other => other?,
+        };
+        return if peek[2] == b'\xbf' {
+            Ok(Box::new(reader))
+        } else {
+            Ok(Box::new(std::io::Cursor::new(peek).chain(reader)))
+        };
     } else {
-        return Ok(Box::new(std::io::Cursor::new(peek).chain(reader)));
+        return Ok(Box::new(
+            std::io::Cursor::new([peek[0], peek[1]]).chain(reader),
+        ));
     };
 
     let mut out = String::new();
@@ -157,17 +211,34 @@ pub fn apply_ftl(
                 files_total: path_count,
             });
 
-            if let Some(real_stem) = name
-                .strip_suffix(".xml.append")
-                .or_else(|| name.strip_suffix(".append.xml"))
-            {
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            enum XmlAppendType {
+                Append,
+                RawAppend,
+                RawClobber,
+            }
+
+            const XML_APPEND_SUFFIXES: &[(&str, XmlAppendType)] = &[
+                (".xml.append", XmlAppendType::Append),
+                (".append.xml", XmlAppendType::Append),
+                (".rawappend.xml", XmlAppendType::RawAppend),
+                (".xml.rawappend", XmlAppendType::RawAppend),
+                (".rawclobber.xml", XmlAppendType::RawClobber),
+                (".xml.rawclobber", XmlAppendType::RawClobber),
+            ];
+
+            let xml_append_type = XML_APPEND_SUFFIXES
+                .iter()
+                .find_map(|x| name.strip_suffix(x.0).map(|stem| (stem, x.1)));
+
+            if let Some((real_stem, operation)) = xml_append_type {
                 let real_name = format!("{real_stem}.xml");
                 let original_text = {
                     let mut buf = Vec::new();
                     match pkg.open(&real_name) {
                         Ok(mut x) => x.read_to_end(&mut buf).map(|_| ()),
                         Err(silpkg::sync::OpenError::NotFound) => {
-                            warn!("Ignoring .xml.append with non-existent original");
+                            warn!("Ignoring {name} with non-existent base file");
                             continue;
                         }
                         Err(silpkg::sync::OpenError::Io(x)) => Err(x),
@@ -186,48 +257,17 @@ pub fn apply_ftl(
                     })?)
                     .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
-                // FIXME: this can be made quicker
-                let had_ftl_root = WRAPPER_TAG_REGEX
-                    .captures_iter(&original_text)
-                    .any(|x| x.get(2).is_some());
-                let original_without_root = WRAPPER_TAG_REGEX.replace_all(&original_text, "");
-                let append_without_root = WRAPPER_TAG_REGEX.replace_all(&append_text, "");
-
-                let append_fixed = append_without_root
-                    // Strip BOM
-                    .strip_prefix('\u{feff}')
-                    .unwrap_or(&append_without_root);
-
-                let original_fixed = format!("<FTL>{original_without_root}</FTL>");
-
-                let mut document =
-                    xmltree::Element::parse_sloppy(Cursor::new(&original_fixed.as_str()))
-                        .with_context(|| format!("Could not parse XML document {name}"))?
-                        .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
-
-                append::patch(
-                    &mut document,
-                    xmltree::Element::parse_all_sloppy(Cursor::new(append_fixed.as_str()))
-                        .with_context(|| format!("Could not parse XML append document {name}"))?,
-                )
-                .with_context(|| format!("Could not patch XML file {name}"))?;
-
-                // FIXME: This is so dumb :crying:
-                let new_text = {
-                    let mut out = vec![];
-
-                    if had_ftl_root {
-                        document.write_with_indent(&mut Cursor::new(&mut out), b' ', 4)?;
-                    } else {
-                        document.write_children_with_indent(&mut Cursor::new(&mut out), b' ', 4)?
+                let new_text = match operation {
+                    XmlAppendType::Append => {
+                        unwrap_rewrap_xml(original_text, append_text, append::patch).with_context(
+                            || format!("While patching file {real_name} according to {name}"),
+                        )?
                     }
-
-                    String::from_utf8(out)?
+                    XmlAppendType::RawAppend => todo!(".xml.rawappend files are not supported yet"),
+                    XmlAppendType::RawClobber => {
+                        todo!(".xml.rawclobber files are not supported yet")
+                    }
                 };
-
-                if MOD_NAMESPACE_TAG_REGEX.find(&new_text).is_some() {
-                    bail!("Mod namespaced tag present in output XML. This is a bug in ftlman!");
-                }
 
                 match pkg.remove(&real_name) {
                     Ok(()) => {}
@@ -256,7 +296,7 @@ pub fn apply_ftl(
 
                 if name.ends_with(".xml") {
                     let mut reader = quick_xml::Reader::from_reader(std::io::BufReader::new(
-                        fixup_mod_file(handle.open(&name)?)?,
+                        fixup_text_file(handle.open(&name)?)?,
                     ));
                     reader.config_mut().check_end_names = false;
                     let mut writer =
@@ -293,18 +333,18 @@ pub fn apply_ftl(
 
                     pkg.insert(name.clone(), INSERT_FLAGS)?
                         .write_all(writer.into_inner().get_ref())?;
-                } else if name.ends_with(".xml.rawappend") || name.ends_with(".rawappend.xml") {
-                    bail!(".xml.rawappend files are not supported yet")
-                } else if name.ends_with(".xml.rawclobber") || name.ends_with(".rawclobber.xml") {
-                    bail!(".xml.rawclobber files are not supported yet")
                 } else if !IGNORED_FILES_REGEX.is_match(&name) {
-                    let reader = handle.open(&name).with_context(|| {
+                    let mut reader = handle.open(&name).with_context(|| {
                         format!("Failed to open {name} from mod {}", m.filename())
                     })?;
-                    std::io::copy(
-                        &mut fixup_mod_file(reader)?,
-                        &mut pkg.insert(name.clone(), INSERT_FLAGS)?,
-                    )
+                    if name.ends_with(".txt") {
+                        std::io::copy(
+                            &mut fixup_text_file(reader)?,
+                            &mut pkg.insert(name.clone(), INSERT_FLAGS)?,
+                        )
+                    } else {
+                        std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?)
+                    }
                     .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
                 }
             }
