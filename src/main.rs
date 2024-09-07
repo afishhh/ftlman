@@ -112,8 +112,8 @@ fn main() -> ExitCode {
     let args = cli::Args::parse();
     if let Some(command) = args.command {
         if let Err(error) = cli::main(command) {
-            error!("{error}"); 
-            for (i ,error) in error.chain().enumerate() {
+            error!("{error}");
+            for (i, error) in error.chain().enumerate() {
                 error!("  #{}: {error}", i + 1);
             }
             return ExitCode::FAILURE;
