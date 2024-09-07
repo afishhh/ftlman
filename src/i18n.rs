@@ -16,6 +16,7 @@ use log::{error, warn};
 
 const LOCALE_DEFINITIONS: &[(&str, &str)] = &[
     ("en", include_str!("../i18n/en.ftl")),
+    ("pl", include_str!("../i18n/pl.ftl")),
 ];
 const FALLBACK_LOCALE: &str = "en";
 
