@@ -134,6 +134,7 @@ fn main() -> ExitCode {
             ..Default::default()
         },
         Box::new(|cc| {
+            cc.egui_ctx.set_fonts(fonts::create_font_definitions());
             Ok(Box::new(
                 App::new(cc).expect("Failed to set up application state"),
             ))
@@ -292,8 +293,6 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
-        cc.egui_ctx.set_fonts(fonts::find_fonts());
-
         let settings_path = Settings::default_path();
         let settings = Settings::load(&settings_path).unwrap_or_default();
         if settings.mod_directory == Settings::default().mod_directory {
