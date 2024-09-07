@@ -18,31 +18,33 @@ mod backend {
     };
 
     pub fn find_system_sans_serif() -> Result<FontData> {
-        let sans_serif_path = unsafe {
+        unsafe {
             let config = FcInitLoadConfigAndFonts();
             if config.is_null() {
                 bail!("Failed to initialize fontconfig")
             }
 
+            const FC_PATTERN_CREATE_FAIL: &str = "Failed to create fontconfig pattern";
+
             let pattern = fontconfig_sys::FcPatternCreate();
             if pattern.is_null() {
-                bail!("Failed to create fontconfig pattern")
+                bail!(FC_PATTERN_CREATE_FAIL)
             }
 
             if FcPatternAddString(pattern, FC_FAMILY.as_ptr(), b"sans-serif".as_ptr()) == 0 {
-                bail!("Failed to create fontconfig pattern")
+                bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add family property")
             }
 
             if FcPatternAddString(pattern, FC_FONTFORMAT.as_ptr(), b"TrueType".as_ptr()) == 0 {
-                bail!("Failed to create fontconfig pattern")
+                bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add fontformat property")
             }
 
             if FcPatternAddInteger(pattern, FC_WEIGHT.as_ptr(), FC_WEIGHT_NORMAL) == 0 {
-                bail!("Failed to create fontconfig pattern")
+                bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add weight property")
             }
 
             if FcPatternAddString(pattern, FC_STYLE.as_ptr(), b"Regular".as_ptr()) == 0 {
-                bail!("Failed to create fontconfig pattern")
+                bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add style property")
             }
 
             if FcConfigSubstitute(config, pattern, FcMatchPattern) == 0 {
@@ -85,10 +87,8 @@ mod backend {
             FcPatternDestroy(prepared);
             FcFini();
 
-            owned_path
-        };
-
-        Ok(FontData::from_owned(std::fs::read(sans_serif_path)?))
+            Ok(FontData::from_owned(std::fs::read(owned_path)?))
+        }
     }
 }
 
