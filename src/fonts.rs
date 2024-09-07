@@ -337,6 +337,16 @@ mod backend {
     }
 }
 
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+mod backend {
+    use anyhow::{bail, Result};
+    use eframe::egui::FontData;
+
+    pub fn find_system_sans_serif() -> Result<FontData> {
+        bail!("Platform not supported")
+    }
+}
+
 pub fn create_font_definitions() -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
 
