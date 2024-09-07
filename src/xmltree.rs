@@ -33,6 +33,7 @@ macro_rules! mk_as {
     (@self $ty: ty) => { Self };
 }
 
+#[allow(dead_code)]
 impl Node {
     mk_as!(into_element Element -> Element);
     mk_as!(as_element Element -> &Element);
