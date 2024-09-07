@@ -220,7 +220,7 @@ mod backend {
             ))?;
 
             let mut gdi_interop = ComInterface::new();
-            wintry!((*factory).GetGdiInterop(&mut gdi_interop.0))?;
+            wintry!(factory.GetGdiInterop(&mut gdi_interop.0))?;
 
             let mut font_collection = ComInterface::new();
             wintry!(factory.GetSystemFontCollection(&mut font_collection.0, 0))?;
@@ -259,9 +259,9 @@ mod backend {
 
             info!("Determined system sans-serif font family to be {family_name}");
 
-            for font_index in 0..(*font_family).GetFontCount() {
+            for font_index in 0..font_family.GetFontCount() {
                 let mut font = ComInterface::new();
-                wintry!((*font_family).GetFont(font_index, &mut font.0))?;
+                wintry!(font_family.GetFont(font_index, &mut font.0))?;
 
                 if font.GetWeight() != DWRITE_FONT_WEIGHT_NORMAL {
                     continue;
@@ -294,21 +294,21 @@ mod backend {
                 ))?;
 
                 let mut loader = ComInterface::new();
-                wintry!((*files[0]).GetLoader(&mut loader.0))?;
+                wintry!(files[0].GetLoader(&mut loader.0))?;
 
                 let mut reference_key = std::ptr::null();
                 let mut reference_key_size = 0;
-                wintry!((*files[0]).GetReferenceKey(&mut reference_key, &mut reference_key_size))?;
+                wintry!(files[0].GetReferenceKey(&mut reference_key, &mut reference_key_size))?;
 
                 let mut stream = ComInterface::new();
-                wintry!((*loader).CreateStreamFromKey(
+                wintry!(loader.CreateStreamFromKey(
                     reference_key,
                     reference_key_size,
                     &mut stream.0,
                 ))?;
 
                 let mut size = 0;
-                wintry!((*stream).GetFileSize(&mut size))?;
+                wintry!(stream.GetFileSize(&mut size))?;
 
                 const BLOCK: u64 = 16384;
                 let mut output = vec![];
@@ -316,7 +316,7 @@ mod backend {
                 while (output.len() as u64) < size {
                     let mut data = std::ptr::null();
                     let frag_size = (size - output.len() as u64).min(BLOCK);
-                    wintry!((*stream).ReadFileFragment(
+                    wintry!(stream.ReadFileFragment(
                         &mut data,
                         output.len() as u64,
                         frag_size,
@@ -326,7 +326,7 @@ mod backend {
                         data as *const u8,
                         frag_size as usize,
                     ));
-                    (*stream).ReleaseFileFragment(context);
+                    stream.ReleaseFileFragment(context);
                 }
 
                 return Ok(FontData::from_owned(output));
