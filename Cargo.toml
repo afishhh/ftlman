@@ -36,6 +36,14 @@ quick-xml = { version = "0.36", features = ["serialize"] }
 # Localisation
 fluent = "0.16"
 
+# For loading system fonts on Linux
+[target.'cfg(target_os = "linux")'.dependencies]
+yeslogic-fontconfig-sys = "6"
+
+# For loading system fonts and system language detection on Windows
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["dwrite", "winnls", "winbase", "errhandlingapi", "std"] }
+
 # Speeds up testing considerably
 [profile.dev]
 opt-level = 2

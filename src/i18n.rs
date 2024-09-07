@@ -1,6 +1,5 @@
 use std::{
     borrow::Cow,
-    env::VarError,
     sync::{
         atomic::{AtomicPtr, Ordering},
         OnceLock,
@@ -27,7 +26,10 @@ struct Localiser {
 
 static LOCALISER: OnceLock<Localiser> = OnceLock::new();
 
-fn get_language_from_env() -> Option<String> {
+#[cfg(target_family = "unix")]
+fn get_system_language() -> Option<String> {
+    use std::env::VarError;
+
     const VAR_CHAIN: &[&str] = &["LC_MESSAGES", "LC_ALL", "LANG", "LANGUAGE"];
 
     VAR_CHAIN
@@ -49,6 +51,42 @@ fn get_language_from_env() -> Option<String> {
         })
 }
 
+#[cfg(target_family = "windows")]
+fn get_system_language() -> Option<String> {
+    let mut locale_name = unsafe {
+        let mut buffer = [0u16; 64];
+        let len =
+            winapi::um::winnls::GetUserDefaultLocaleName(buffer.as_mut_ptr(), buffer.len() as i32)
+                as usize;
+        match String::from_utf16(&buffer[..len]) {
+            Ok(ok) => ok,
+            Err(e) => {
+                log::warn!(
+                    "GetUserDefaultLocaleName returned invalid utf16 string {:?}: {e}",
+                    &buffer[..len]
+                );
+                return None;
+            }
+        }
+    };
+
+    match locale_name.split_once('-') {
+        Some(x) => {
+            locale_name.truncate(x.0.len());
+            Some(locale_name)
+        }
+        None => {
+            log::warn!("GetUserDefaultLocaleName returned a string without a '-': {locale_name:?}");
+            None
+        }
+    }
+}
+
+#[cfg(not(any(target_family = "windows", target_family = "unix")))]
+fn get_system_language() -> Option<String> {
+    None
+}
+
 pub fn get_locale_pointer(name: &str) -> Option<*mut &'static str> {
     LOCALE_DEFINITIONS
         .iter()
@@ -66,14 +104,12 @@ pub fn init() {
     LOCALISER
         .set(Localiser {
             current_locale: AtomicPtr::new(
-                get_language_from_env()
+                get_system_language()
                     .as_deref()
                     .and_then(|name| match get_locale_pointer(name) {
                         Some(value) => Some(value),
                         None => {
-                            warn!(
-                                "Failed to get locale for language {name} deduced from environment"
-                            );
+                            warn!("Failed to get locale for system language {name}");
                             None
                         }
                     })
@@ -103,11 +139,11 @@ lazy_static! {
 fn notify_missing(locale: &'static str, id: &str) -> (&'static str, bool) {
     let mut lock = MISSING_STRINGS.lock();
     if let Some(value) = lock.get(&(locale, id)) {
-        return (value, false);
+        (value, false)
     } else {
         let value = id.to_string().leak();
         lock.insert((locale, value), value);
-        return (value, true);
+        (value, true)
     }
 }
 
