@@ -127,6 +127,7 @@ fn main() -> ExitCode {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size(Vec2::new(620., 480.))
                 .with_min_inner_size(Vec2::new(620., 480.))
+                .with_transparent(true)
                 .with_resizable(true),
 
             ..Default::default()
