@@ -18,9 +18,9 @@ Adding support for other game stores is possible, but I only own the game on Ste
 - .rawclobber.xml/.xml.rawclobber files
 - Some ill-formed XML files may still be rejected by ftlman but accepted by Slipstream.
 
-These features are not particularly difficult to implement but I just don't have any mods that actually *use* these features so I can't test them. If you find a mod that requires this please [open an issue](https://github.com/afishhh/ftlman/issues/new).
+These features are not particularly difficult to implement but I just don't have any mods that actually *use* them so I can't test changes. If you find a mod that requires this please [open an issue](https://github.com/afishhh/ftlman/issues/new).
 
-If you a mod that fails to patch with ftlman but works with slipstream or one that works different under ftlman also [open an issue](https://github.com/afishhh/ftlman/issues/new).
+If you find a mod that fails to patch with ftlman but works with slipstream or one that works different under ftlman also [open an issue](https://github.com/afishhh/ftlman/issues/new).
 
 ### Installation
 
