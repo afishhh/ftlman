@@ -399,10 +399,10 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
             })?;
             let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
+            state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
             installer.install(&ftl_path, &mut zip)?;
             release.extract_hyperspace_ftl(&mut zip)?;
 
-            state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
             egui_ctx.request_repaint();
             drop(egui_ctx);
 
