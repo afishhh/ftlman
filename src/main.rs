@@ -1180,7 +1180,6 @@ impl ModSource {
 }
 
 impl<'a> OpenModHandle<'a> {
-    // TODO: Async IO
     pub fn open(&mut self, name: &str) -> Result<Box<dyn Read + '_>> {
         Ok(match self {
             OpenModHandle::Directory { path } => Box::new(std::fs::File::open(path.join(name))?),
