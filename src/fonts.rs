@@ -31,11 +31,21 @@ mod backend {
                 bail!(FC_PATTERN_CREATE_FAIL)
             }
 
-            if FcPatternAddString(pattern, FC_FAMILY.as_ptr(), b"sans-serif".as_ptr()) == 0 {
+            if FcPatternAddString(
+                pattern,
+                FC_FAMILY.as_ptr(),
+                c"sans-serif".as_ptr() as *const u8,
+            ) == 0
+            {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add family property")
             }
 
-            if FcPatternAddString(pattern, FC_FONTFORMAT.as_ptr(), b"TrueType".as_ptr()) == 0 {
+            if FcPatternAddString(
+                pattern,
+                FC_FONTFORMAT.as_ptr(),
+                c"TrueType".as_ptr() as *const u8,
+            ) == 0
+            {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add fontformat property")
             }
 
@@ -43,7 +53,8 @@ mod backend {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add weight property")
             }
 
-            if FcPatternAddString(pattern, FC_STYLE.as_ptr(), b"Regular".as_ptr()) == 0 {
+            if FcPatternAddString(pattern, FC_STYLE.as_ptr(), c"Regular".as_ptr() as *const u8) == 0
+            {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add style property")
             }
 
