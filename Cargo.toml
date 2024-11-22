@@ -36,6 +36,9 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 # Localisation
 fluent = "0.16"
 
+# This dependency could be removed but it's pretty small.
+open = "5.3.1"
+
 # For loading system fonts on Linux
 [target.'cfg(target_os = "linux")'.dependencies]
 yeslogic-fontconfig-sys = "6"

@@ -757,6 +757,7 @@ impl eframe::App for App {
                         .id("pathedit mod dir")
                         .desired_width(320.)
                         .completion_filter(|p| p.is_dir())
+                        .open_directory_button(true)
                         .show(ui)
                         .changed()
                     {

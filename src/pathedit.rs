@@ -4,8 +4,8 @@ use std::{hash::Hash, path::Path};
 
 use eframe::{
     egui::{
-        text_edit::TextEditState, Area, FontSelection, Frame, Id, Modifiers, Response, RichText, TextBuffer, TextEdit,
-        Ui, Widget,
+        self, text_edit::TextEditState, Align, Area, FontSelection, Frame, Id, Layout, Modifiers, Response, RichText,
+        TextBuffer, TextEdit, Ui, Widget,
     },
     epaint::FontId,
 };
@@ -18,6 +18,7 @@ pub struct PathEdit<'a> {
     desired_width: Option<f32>,
     completion_filter: Box<dyn Fn(&Path) -> bool>,
     complete_relative: bool,
+    open_directory_button: bool,
 }
 
 fn ends_with_separator(string: &str) -> bool {
@@ -82,6 +83,7 @@ impl<'a> PathEdit<'a> {
             desired_width: None,
             complete_relative: false,
             completion_filter: Box::new(|_| true),
+            open_directory_button: false,
         }
     }
 
@@ -95,6 +97,13 @@ impl<'a> PathEdit<'a> {
     pub fn id(self, value: impl Hash) -> Self {
         Self {
             id: Id::new(value),
+            ..self
+        }
+    }
+
+    pub fn open_directory_button(self, value: bool) -> Self {
+        Self {
+            open_directory_button: value,
             ..self
         }
     }
@@ -184,19 +193,38 @@ impl Widget for PathEdit<'_> {
             }
         }
 
-        let mut output = {
-            let mut edit = TextEdit::singleline(self.buffer)
-                .lock_focus(true)
-                .id(text_edit_id)
-                .font(FontSelection::Style(eframe::egui::TextStyle::Monospace));
+        // FIXME: Is there a simpler way to do this?
+        let mut output = ui
+            .scope(|ui| {
+                if let Some(width) = self.desired_width {
+                    ui.set_max_width(width);
+                }
 
-            if let Some(width) = self.desired_width {
-                edit = edit.desired_width(width);
-            }
+                // HACK: I hate immediate mode UI I hate immediate mode UI I hate immediate mode UI
+                ui.set_max_height(ui.text_style_height(&egui::TextStyle::Monospace) + 4.0);
 
-            edit
-        }
-        .show(ui);
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if self.open_directory_button {
+                        if ui.small_button("🗁").clicked() {
+                            let path = Path::new(self.buffer.as_str());
+                            if path.is_dir() {
+                                if let Err(e) = open::that_detached(path) {
+                                    log::error!("Failed to open {path:?}: {e}");
+                                }
+                            }
+                        }
+                    }
+
+                    TextEdit::singleline(self.buffer)
+                        .lock_focus(true)
+                        .id(text_edit_id)
+                        .desired_width(f32::INFINITY)
+                        .font(FontSelection::Style(eframe::egui::TextStyle::Monospace))
+                        .show(ui)
+                })
+                .inner
+            })
+            .inner;
 
         if changed {
             output.response.mark_changed();
