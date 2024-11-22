@@ -10,6 +10,8 @@ use eframe::{
     epaint::FontId,
 };
 
+use crate::l;
+
 pub struct PathEdit<'a> {
     buffer: &'a mut dyn TextBuffer,
     id: Id,
@@ -254,10 +256,7 @@ impl Widget for PathEdit<'_> {
 
                                     ui.add_space(5.0);
 
-                                    ui.label(
-                                        RichText::new("Use Tab and Shift+Tab to cycle suggestions")
-                                            .font(FontId::monospace(8.0)),
-                                    )
+                                    ui.label(RichText::new(l!("pathedit-tooltip")).font(FontId::monospace(8.0)))
                                 });
                         });
                 }

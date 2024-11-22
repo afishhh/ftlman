@@ -30,6 +30,8 @@ mod-meta-authors = Authors: {$authors}
 mod-meta-none = No metadata available for this mod
 mod-meta-hint = Hover over a mod and its description will appear here.
 
+pathedit-tooltip = Use Tab and Shift+Tab to cycle suggestions
+
 settings-button = Settings
 settings-title = {settings-button}
 settings-mod-dir = Mod directory
