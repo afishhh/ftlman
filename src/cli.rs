@@ -57,10 +57,8 @@ pub fn main(command: Command) -> Result<()> {
             true,
         ),
         Command::Extract(command) => {
-            let mut pkg = silpkg::sync::Pkg::parse(
-                File::open(command.dat_path).context("Failed to open data file")?,
-            )
-            .context("Failed to parse data file")?;
+            let mut pkg = silpkg::sync::Pkg::parse(File::open(command.dat_path).context("Failed to open data file")?)
+                .context("Failed to parse data file")?;
             for path in pkg.paths().cloned().collect::<Vec<_>>() {
                 let out = command.out_path.join(&path);
                 match std::fs::create_dir_all(out.parent().unwrap()) {

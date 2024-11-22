@@ -103,9 +103,7 @@ impl FromStr for ParOperation {
 
 macro_rules! get_attr {
     ($node: ident, $type: ty, $name: literal, $default: expr) => {{
-        get_attr!($node, $type, $name)
-            .transpose()
-            .unwrap_or(Ok($default))
+        get_attr!($node, $type, $name).transpose().unwrap_or(Ok($default))
     }};
     ($node: ident, $type: ty, $name: literal) => {{
         $node
@@ -145,9 +143,7 @@ struct SelectorFilter {
 
 impl SelectorFilter {
     fn from_selector_element(selector: &Element) -> Self {
-        let mut result = Self {
-            ..Default::default()
-        };
+        let mut result = Self { ..Default::default() };
 
         for (key, value) in &selector.attributes {
             result.attrs.push((key.to_owned(), value.to_owned()));
@@ -172,11 +168,7 @@ impl SelectorFilter {
 
 impl ElementFilter for SelectorFilter {
     fn filter_one(&self, element: &Element) -> bool {
-        if self
-            .name
-            .as_deref()
-            .is_some_and(|name| element.name != name)
-        {
+        if self.name.as_deref().is_some_and(|name| element.name != name) {
             return false;
         }
 
@@ -206,11 +198,7 @@ struct WithChildFilter<F: ElementFilter> {
 
 impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
     fn filter_one(&self, element: &Element) -> bool {
-        if self
-            .name
-            .as_deref()
-            .is_some_and(|name| element.name != name)
-        {
+        if self.name.as_deref().is_some_and(|name| element.name != name) {
             return false;
         }
 
@@ -225,12 +213,7 @@ impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
 fn index_children(node: &Element) -> HashMap<*const Element, usize> {
     let mut result = HashMap::new();
 
-    for (i, child) in node
-        .children
-        .iter()
-        .filter_map(XMLNode::as_element)
-        .enumerate()
-    {
+    for (i, child) in node.children.iter().filter_map(XMLNode::as_element).enumerate() {
         result.insert(child as *const Element, i);
     }
 
@@ -242,8 +225,8 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
         return Ok(None);
     }
 
-    let operation = get_attr!(node, ParOperation, "op")?
-        .ok_or_else(|| anyhow!("par node is missing an op attribute"))?;
+    let operation =
+        get_attr!(node, ParOperation, "op")?.ok_or_else(|| anyhow!("par node is missing an op attribute"))?;
 
     let mut set = HashSet::<*mut Element>::new();
 
@@ -278,20 +261,13 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
 // FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if node.prefix.as_ref().is_some_and(|x| x == "mod") {
-        if !["findName", "findLike", "findWithChildLike", "findComposite"]
-            .contains(&node.name.as_str())
-        {
+        if !["findName", "findLike", "findWithChildLike", "findComposite"].contains(&node.name.as_str()) {
             return Ok(None);
         }
 
         let search_reverse = get_attr!(node, bool, "reverse", true)?;
         let search_start = get_attr!(node, usize, "start", 0)?;
-        let search_limit = get_attr!(
-            node,
-            isize,
-            "limit",
-            if node.name == "findName" { 1 } else { -1 }
-        )?;
+        let search_limit = get_attr!(node, isize, "limit", if node.name == "findName" { 1 } else { -1 })?;
 
         if search_limit < -1 {
             bail!("{} 'limit' attribute must be >= -1", node.name)
@@ -383,10 +359,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
             .collect();
 
         if panic && matches.is_empty() {
-            let mut msg = format!(
-                "{} element has panic=true but no elements matched",
-                node.name
-            );
+            let mut msg = format!("{} element has panic=true but no elements matched", node.name);
 
             for (k, v) in node.attributes.iter() {
                 write!(msg, "\n\t{k}={v}").unwrap();
@@ -413,12 +386,9 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                     match command.name.as_str() {
                         "selector" | "par" => {}
                         "setAttributes" => {
-                            context.attributes.extend(
-                                command
-                                    .attributes
-                                    .iter()
-                                    .map(|(k, v)| (k.to_owned(), v.to_owned())),
-                            );
+                            context
+                                .attributes
+                                .extend(command.attributes.iter().map(|(k, v)| (k.to_owned(), v.to_owned())));
                         }
                         "removeAttributes" => {
                             for key in command.attributes.keys() {
@@ -431,9 +401,7 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                                 match node {
                                     XMLNode::Element(_)
                                     | XMLNode::Comment(_)
-                                    | XMLNode::ProcessingInstruction(_, _) => {
-                                        context.children.push(node)
-                                    }
+                                    | XMLNode::ProcessingInstruction(_, _) => context.children.push(node),
                                     XMLNode::CData(_) | XMLNode::Text(_) => {}
                                 }
                             }

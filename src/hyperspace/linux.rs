@@ -9,11 +9,10 @@ use zip::ZipArchive;
 use super::Installer;
 
 lazy_static! {
-    static ref LD_LIBRARY_PATH_REGEX: Regex =
-        RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#)
-            .multi_line(true)
-            .build()
-            .unwrap();
+    static ref LD_LIBRARY_PATH_REGEX: Regex = RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#)
+        .multi_line(true)
+        .build()
+        .unwrap();
     static ref LD_PRELOAD_REGEX: Regex = RegexBuilder::new("^export LD_PRELOAD=(.*?)\n")
         .multi_line(true)
         .build()
@@ -23,8 +22,7 @@ lazy_static! {
         .build()
         .unwrap();
     static ref HYPERSPACE_SO_REGEX: Regex = Regex::new(r#"^Hyperspace(\.\d+)*.amd64.so$"#).unwrap();
-    static ref ZIP_SO_REGEX: Regex =
-        Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap();
+    static ref ZIP_SO_REGEX: Regex = Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap();
 }
 
 pub struct LinuxInstaller;
@@ -41,9 +39,7 @@ impl Installer for LinuxInstaller {
                     Ok(Err(format!("Unrecognised FTL binary size: {}", x.len())))
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                Ok(Err("FTL binary not found".to_string()))
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Err("FTL binary not found".to_string())),
             Err(e) => Err(e)?,
         }
     }
@@ -71,8 +67,7 @@ impl Installer for LinuxInstaller {
         trace!("Patching FTL start script");
 
         let script_path = ftl.join("FTL");
-        let mut script =
-            std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
+        let mut script = std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
 
         let exec_range = EXEC_REGEX.find(&script).map(|m| m.range());
 
@@ -97,9 +92,7 @@ impl Installer for LinuxInstaller {
             let s = format!("export LD_PRELOAD={obj}\n");
             if let Some(m) = LD_PRELOAD_REGEX.captures(&script) {
                 let group = m.get(1).unwrap();
-                if HYPERSPACE_SO_REGEX
-                    .is_match(group.as_str().trim_matches(['\'', '\"'].as_slice()))
-                {
+                if HYPERSPACE_SO_REGEX.is_match(group.as_str().trim_matches(['\'', '\"'].as_slice())) {
                     script.replace_range(group.range(), obj);
                 } else {
                     trace!("   Already modified LD_PRELOAD export found, ignoring")
@@ -119,16 +112,12 @@ impl Installer for LinuxInstaller {
 
     fn disable(&self, ftl: &Path) -> Result<()> {
         let script_path = ftl.join("FTL");
-        let script =
-            std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
+        let script = std::fs::read_to_string(&script_path).context("Could not open FTL start script")?;
 
         // TODO: Only remove matches that match HYPERSPACE_SO_REGEX
         if LD_PRELOAD_REGEX.find(&script).is_some() {
-            std::fs::write(
-                script_path,
-                LD_PRELOAD_REGEX.replace_all(&script, "").as_bytes(),
-            )
-            .context("Failed to write FTL start script")?;
+            std::fs::write(script_path, LD_PRELOAD_REGEX.replace_all(&script, "").as_bytes())
+                .context("Failed to write FTL start script")?;
         }
 
         Ok(())

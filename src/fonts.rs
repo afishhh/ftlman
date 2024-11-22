@@ -31,31 +31,16 @@ mod backend {
                 bail!(FC_PATTERN_CREATE_FAIL)
             }
 
-            if FcPatternAddString(
-                pattern,
-                FC_FAMILY.as_ptr(),
-                c"sans-serif".as_ptr() as *const u8,
-            ) == 0
-            {
+            if FcPatternAddString(pattern, FC_FAMILY.as_ptr(), c"sans-serif".as_ptr() as *const u8) == 0 {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add family property")
             }
 
             let lang_cstring = CString::new(language).unwrap();
-            if FcPatternAddString(
-                pattern,
-                FC_LANG.as_ptr(),
-                lang_cstring.as_ptr() as *const u8,
-            ) == 0
-            {
+            if FcPatternAddString(pattern, FC_LANG.as_ptr(), lang_cstring.as_ptr() as *const u8) == 0 {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add lang property")
             }
 
-            if FcPatternAddString(
-                pattern,
-                FC_FONTFORMAT.as_ptr(),
-                c"TrueType".as_ptr() as *const u8,
-            ) == 0
-            {
+            if FcPatternAddString(pattern, FC_FONTFORMAT.as_ptr(), c"TrueType".as_ptr() as *const u8) == 0 {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add fontformat property")
             }
 
@@ -63,8 +48,7 @@ mod backend {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add weight property")
             }
 
-            if FcPatternAddString(pattern, FC_STYLE.as_ptr(), c"Regular".as_ptr() as *const u8) == 0
-            {
+            if FcPatternAddString(pattern, FC_STYLE.as_ptr(), c"Regular".as_ptr() as *const u8) == 0 {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add style property")
             }
 
@@ -80,9 +64,7 @@ mod backend {
 
             {
                 let mut name = MaybeUninit::uninit();
-                if FcPatternGetString(prepared, FC_FAMILY.as_ptr(), 0, name.as_mut_ptr())
-                    != FcResultMatch
-                {
+                if FcPatternGetString(prepared, FC_FAMILY.as_ptr(), 0, name.as_mut_ptr()) != FcResultMatch {
                     bail!("Fontconfig font match did not return a family")
                 }
 
@@ -93,15 +75,12 @@ mod backend {
             }
 
             let mut path = MaybeUninit::uninit();
-            if FcPatternGetString(prepared, FC_FILE.as_ptr(), 0, path.as_mut_ptr()) != FcResultMatch
-            {
+            if FcPatternGetString(prepared, FC_FILE.as_ptr(), 0, path.as_mut_ptr()) != FcResultMatch {
                 bail!("Fontconfig font match did not return a file")
             }
 
             let owned_path = PathBuf::from(OsString::from_vec(
-                CStr::from_ptr(path.assume_init() as *const _)
-                    .to_bytes()
-                    .to_vec(),
+                CStr::from_ptr(path.assume_init() as *const _).to_bytes().to_vec(),
             ));
 
             FcPatternDestroy(pattern);
@@ -181,8 +160,7 @@ mod backend {
         type Target = T;
 
         fn deref(&self) -> &Self::Target {
-            unsafe { self.0.as_ref() }
-                .unwrap_or_else(|| panic!("Uninitialized COM Interface accessed"))
+            unsafe { self.0.as_ref() }.unwrap_or_else(|| panic!("Uninitialized COM Interface accessed"))
         }
     }
 
@@ -209,19 +187,11 @@ mod backend {
 
     impl<T: Interface> Debug for ComInterface<T> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(
-                f,
-                "ComInterface<{}>@{:?}",
-                std::any::type_name::<T>(),
-                self.0
-            )
+            write!(f, "ComInterface<{}>@{:?}", std::any::type_name::<T>(), self.0)
         }
     }
 
-    fn get_localized_string(
-        strings: ComInterface<IDWriteLocalizedStrings>,
-        index: u32,
-    ) -> Result<String> {
+    fn get_localized_string(strings: ComInterface<IDWriteLocalizedStrings>, index: u32) -> Result<String> {
         unsafe {
             let mut length = 0;
             wintry!(strings.GetStringLength(index, &mut length))?;
@@ -265,9 +235,7 @@ mod backend {
             let non_client_metrics = non_client_metrics.assume_init();
 
             let mut font = ComInterface::new();
-            wintry!(
-                gdi_interop.CreateFontFromLOGFONT(&non_client_metrics.lfMessageFont, &mut font.0)
-            )?;
+            wintry!(gdi_interop.CreateFontFromLOGFONT(&non_client_metrics.lfMessageFont, &mut font.0))?;
 
             let mut font_family = ComInterface::new();
             wintry!(font.GetFontFamily(&mut font_family.0))?;
@@ -300,8 +268,7 @@ mod backend {
                 wintry!(font.CreateFontFace(&mut font_face.0))?;
 
                 let face_type = font_face.GetType();
-                if face_type != DWRITE_FONT_FACE_TYPE_TRUETYPE
-                    && face_type != DWRITE_FONT_FACE_TYPE_TRUETYPE_COLLECTION
+                if face_type != DWRITE_FONT_FACE_TYPE_TRUETYPE && face_type != DWRITE_FONT_FACE_TYPE_TRUETYPE_COLLECTION
                 {
                     continue;
                 }
@@ -309,10 +276,7 @@ mod backend {
                 let mut n_files = 0;
                 wintry!(font_face.GetFiles(&mut n_files, std::ptr::null_mut()))?;
                 let mut files = vec![ComInterface::<IDWriteFontFile>::new(); n_files as usize];
-                wintry!(font_face.GetFiles(
-                    &mut n_files,
-                    files.as_mut_ptr() as *mut *mut IDWriteFontFile
-                ))?;
+                wintry!(font_face.GetFiles(&mut n_files, files.as_mut_ptr() as *mut *mut IDWriteFontFile))?;
 
                 let mut loader = ComInterface::new();
                 wintry!(files[0].GetLoader(&mut loader.0))?;
@@ -322,11 +286,7 @@ mod backend {
                 wintry!(files[0].GetReferenceKey(&mut reference_key, &mut reference_key_size))?;
 
                 let mut stream = ComInterface::new();
-                wintry!(loader.CreateStreamFromKey(
-                    reference_key,
-                    reference_key_size,
-                    &mut stream.0,
-                ))?;
+                wintry!(loader.CreateStreamFromKey(reference_key, reference_key_size, &mut stream.0,))?;
 
                 let mut size = 0;
                 wintry!(stream.GetFileSize(&mut size))?;
@@ -337,16 +297,8 @@ mod backend {
                 while (output.len() as u64) < size {
                     let mut data = std::ptr::null();
                     let frag_size = (size - output.len() as u64).min(BLOCK);
-                    wintry!(stream.ReadFileFragment(
-                        &mut data,
-                        output.len() as u64,
-                        frag_size,
-                        &mut context,
-                    ))?;
-                    output.extend_from_slice(std::slice::from_raw_parts(
-                        data as *const u8,
-                        frag_size as usize,
-                    ));
+                    wintry!(stream.ReadFileFragment(&mut data, output.len() as u64, frag_size, &mut context,))?;
+                    output.extend_from_slice(std::slice::from_raw_parts(data as *const u8, frag_size as usize));
                     stream.ReleaseFileFragment(context);
                 }
 
@@ -391,10 +343,7 @@ pub fn create_font_definitions(language: &str) -> FontDefinitions {
         }
         Err(e) => {
             if e.backtrace().status() == BacktraceStatus::Captured {
-                warn!(
-                    "Failed to load system sans serif font: {e}\n{}",
-                    e.backtrace()
-                )
+                warn!("Failed to load system sans serif font: {e}\n{}", e.backtrace())
             } else {
                 warn!("Failed to load system sans serif font: {e}")
             }

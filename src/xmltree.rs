@@ -131,9 +131,7 @@ macro_rules! write_node {
     ($writer: ident, $node: expr, Element($element_name: ident) => $element: expr) => {
         match $node {
             Node::Element($element_name) => $element,
-            Node::Comment(comment) => {
-                $writer.write_event(Event::Comment(BytesText::new(comment)))?
-            }
+            Node::Comment(comment) => $writer.write_event(Event::Comment(BytesText::new(comment)))?,
             Node::CData(cdata) => $writer.write_event(Event::CData(BytesCData::new(cdata)))?,
             Node::Text(text) => $writer.write_event(Event::Text(BytesText::from_escaped(
                 quick_xml::escape::minimal_escape(text),
@@ -146,10 +144,7 @@ macro_rules! write_node {
     };
 }
 
-fn write<W: Write>(
-    writer: &mut quick_xml::Writer<W>,
-    element: &Element,
-) -> Result<(), quick_xml::Error> {
+fn write<W: Write>(writer: &mut quick_xml::Writer<W>, element: &Element) -> Result<(), quick_xml::Error> {
     let mut start = BytesStart::new(if let Some(prefix) = &element.prefix {
         Cow::<'_, str>::Owned(format!("{}:{}", prefix, element.name))
     } else {

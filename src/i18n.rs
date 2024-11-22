@@ -56,9 +56,7 @@ fn get_system_language() -> Option<String> {
 fn get_system_language() -> Option<String> {
     let mut locale_name = unsafe {
         let mut buffer = [0u16; 64];
-        let len =
-            winapi::um::winnls::GetUserDefaultLocaleName(buffer.as_mut_ptr(), buffer.len() as i32)
-                as usize;
+        let len = winapi::um::winnls::GetUserDefaultLocaleName(buffer.as_mut_ptr(), buffer.len() as i32) as usize;
         match String::from_utf16(&buffer[..len]) {
             Ok(ok) => ok,
             Err(e) => {
@@ -102,13 +100,7 @@ pub fn get_locale_pointer(name: &str) -> Option<*mut &'static str> {
 }
 
 pub fn current_language() -> &'static str {
-    unsafe {
-        *LOCALISER
-            .get()
-            .unwrap()
-            .current_locale
-            .load(Ordering::Acquire)
-    }
+    unsafe { *LOCALISER.get().unwrap().current_locale.load(Ordering::Acquire) }
 }
 
 pub fn init() {
@@ -143,8 +135,7 @@ pub fn init() {
 }
 
 lazy_static! {
-    static ref MISSING_STRINGS: Mutex<HashMap<(&'static str, &'static str), &'static str>> =
-        Mutex::new(HashMap::new());
+    static ref MISSING_STRINGS: Mutex<HashMap<(&'static str, &'static str), &'static str>> = Mutex::new(HashMap::new());
 }
 
 fn notify_missing(locale: &'static str, id: &str) -> (&'static str, bool) {
@@ -159,10 +150,7 @@ fn notify_missing(locale: &'static str, id: &str) -> (&'static str, bool) {
 }
 
 enum LookupResult {
-    Success(
-        &'static FluentBundle<FluentResource>,
-        FluentMessage<'static>,
-    ),
+    Success(&'static FluentBundle<FluentResource>, FluentMessage<'static>),
     // Contains id interned in MISSING_STRINGS and leaked for 'static
     Missing(&'static str),
 }

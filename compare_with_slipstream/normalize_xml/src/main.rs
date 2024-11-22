@@ -9,16 +9,12 @@ use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use regex::bytes::Regex;
 
 lazy_static! {
-    static ref XML_VER_REGEX: Regex =
-        Regex::new(r#"<[?]xml version="1.0" encoding="[uU][tT][fF]-8"[?]>"#).unwrap();
+    static ref XML_VER_REGEX: Regex = Regex::new(r#"<[?]xml version="1.0" encoding="[uU][tT][fF]-8"[?]>"#).unwrap();
 }
 const XML_VER: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>"#;
 
 fn sort_attributes<'a>(start: &BytesStart<'a>) -> BytesStart<'a> {
-    let mut attrs = start
-        .attributes()
-        .map(|attr| attr.unwrap())
-        .collect::<Vec<_>>();
+    let mut attrs = start.attributes().map(|attr| attr.unwrap()).collect::<Vec<_>>();
     attrs.sort_by_key(|x| x.key.local_name());
 
     let mut new = start.clone();
@@ -51,17 +47,11 @@ fn process_one(file: &Path) {
                 }
                 Event::Comment(..) => (),
                 Event::PI(..) => (),
-                Event::Start(start) => writer
-                    .write_event(Event::Start(sort_attributes(&start)))
-                    .unwrap(),
+                Event::Start(start) => writer.write_event(Event::Start(sort_attributes(&start))).unwrap(),
                 Event::Empty(start) => {
+                    writer.write_event(Event::Start(sort_attributes(&start))).unwrap();
                     writer
-                        .write_event(Event::Start(sort_attributes(&start)))
-                        .unwrap();
-                    writer
-                        .write_event(Event::End(BytesEnd::new(
-                            std::str::from_utf8(start.name().0).unwrap(),
-                        )))
+                        .write_event(Event::End(BytesEnd::new(std::str::from_utf8(start.name().0).unwrap())))
                         .unwrap();
                 }
                 Event::Eof => break,

@@ -4,8 +4,8 @@ use std::{hash::Hash, path::Path};
 
 use eframe::{
     egui::{
-        text_edit::TextEditState, Area, FontSelection, Frame, Id, Modifiers, Response, RichText,
-        TextBuffer, TextEdit, Ui, Widget,
+        text_edit::TextEditState, Area, FontSelection, Frame, Id, Modifiers, Response, RichText, TextBuffer, TextEdit,
+        Ui, Widget,
     },
     epaint::FontId,
 };
@@ -149,12 +149,7 @@ impl Widget for PathEdit<'_> {
             .filter(|_| ui.memory(|x| x.has_focus(text_edit_id)))
         {
             if enter {
-                let pref = self
-                    .buffer
-                    .as_str()
-                    .chars()
-                    .take(cursor.index)
-                    .collect::<String>();
+                let pref = self.buffer.as_str().chars().take(cursor.index).collect::<String>();
 
                 let mut suggestions = self.suggestions_for(&pref);
                 if !suggestions.is_empty() {
@@ -176,12 +171,10 @@ impl Widget for PathEdit<'_> {
                             ..cursor
                         };
                         let mut state = state;
-                        state
-                            .cursor
-                            .set_char_range(Some(eframe::egui::text::CCursorRange {
-                                primary: new_pos,
-                                secondary: new_pos,
-                            }));
+                        state.cursor.set_char_range(Some(eframe::egui::text::CCursorRange {
+                            primary: new_pos,
+                            secondary: new_pos,
+                        }));
                         state.store(ui.ctx(), text_edit_id);
                         changed = true;
                     }
@@ -219,8 +212,7 @@ impl Widget for PathEdit<'_> {
                 let suggestions = self.suggestions_for(&pref);
 
                 if !suggestions.is_empty() {
-                    let cursor_pos =
-                        output.galley_pos + output.galley.pos_from_cursor(&cursor).max.to_vec2();
+                    let cursor_pos = output.galley_pos + output.galley.pos_from_cursor(&cursor).max.to_vec2();
 
                     let selected = {
                         let down = tab;
@@ -252,16 +244,12 @@ impl Widget for PathEdit<'_> {
                                 .inner_margin(5.0)
                                 .show(ui, |ui| {
                                     let mut it = suggestions.iter().enumerate().skip(
-                                        selected.saturating_sub(
-                                            2 + 3usize.saturating_sub(suggestions.len() - selected),
-                                        ),
+                                        selected
+                                            .saturating_sub(2 + 3usize.saturating_sub(suggestions.len() - selected)),
                                     );
 
                                     for (i, value) in (&mut it).take(5) {
-                                        _ = ui.selectable_label(
-                                            i == selected,
-                                            RichText::new(value.as_str()).strong(),
-                                        );
+                                        _ = ui.selectable_label(i == selected, RichText::new(value.as_str()).strong());
                                     }
 
                                     ui.add_space(5.0);

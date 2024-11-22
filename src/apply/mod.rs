@@ -12,9 +12,7 @@ use parking_lot::Mutex;
 use regex::Regex;
 use zip::ZipArchive;
 
-use crate::{
-    cache::CACHE, hyperspace, xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState,
-};
+use crate::{cache::CACHE, hyperspace, xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState};
 
 mod append;
 
@@ -50,9 +48,7 @@ fn unwrap_rewrap_xml(
     combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
 ) -> Result<String> {
     // FIXME: this can be made quicker
-    let had_ftl_root = WRAPPER_TAG_REGEX
-        .captures_iter(&lower)
-        .any(|x| x.get(2).is_some());
+    let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(&lower).any(|x| x.get(2).is_some());
     let lower_without_root = WRAPPER_TAG_REGEX.replace_all(&lower, "");
     let upper_without_root = WRAPPER_TAG_REGEX.replace_all(&upper, "");
 
@@ -83,10 +79,7 @@ fn unwrap_rewrap_xml(
 }
 
 // TODO: Remove once str_from_utf16_endian is stabilised.
-fn read_utf16_pairs(
-    reader: &mut impl Read,
-    bytepair_mapper: impl Fn([u8; 2]) -> u16,
-) -> Result<Vec<u16>> {
+fn read_utf16_pairs(reader: &mut impl Read, bytepair_mapper: impl Fn([u8; 2]) -> u16) -> Result<Vec<u16>> {
     let mut result = vec![];
     let mut buf = vec![0; 0xFFFF];
     let mut buf_next_start = 0;
@@ -119,9 +112,7 @@ fn read_utf16_pairs(
 fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 'a>> {
     let mut peek = [0; 3];
     match reader.read_exact(&mut peek[..2]) {
-        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-            return Ok(Box::new(Cursor::new(peek)))
-        }
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(Box::new(Cursor::new(peek))),
         other => other?,
     };
 
@@ -134,9 +125,7 @@ fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 
     } else if &peek[..2] == b"\xef\xbb" {
         match reader.read_exact(&mut peek[2..3]) {
             Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(Box::new(
-                    std::io::Cursor::new([peek[0], peek[1]]).chain(reader),
-                ))
+                return Ok(Box::new(std::io::Cursor::new([peek[0], peek[1]]).chain(reader)))
             }
             other => other?,
         };
@@ -146,9 +135,7 @@ fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 
             Ok(Box::new(std::io::Cursor::new(peek).chain(reader)))
         };
     } else {
-        return Ok(Box::new(
-            std::io::Cursor::new([peek[0], peek[1]]).chain(reader),
-        ));
+        return Ok(Box::new(std::io::Cursor::new([peek[0], peek[1]]).chain(reader)));
     };
 
     let mut out = String::new();
@@ -159,12 +146,7 @@ fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 
     Ok(Box::new(Cursor::new(out.into_bytes())))
 }
 
-pub fn apply_ftl(
-    ftl_path: &Path,
-    mods: Vec<Mod>,
-    mut on_progress: impl FnMut(ApplyStage),
-    repack: bool,
-) -> Result<()> {
+pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(ApplyStage), repack: bool) -> Result<()> {
     on_progress(ApplyStage::Preparing);
 
     let data_file = {
@@ -244,25 +226,22 @@ pub fn apply_ftl(
                         Err(silpkg::sync::OpenError::Io(x)) => Err(x),
                     }
                     .with_context(|| format!("Failed to extract {real_name} from ftl.dat"))?;
-                    String::from_utf8(buf).with_context(|| {
-                        format!("Failed to decode {real_name} from ftl.dat as UTF-8")
-                    })?
+                    String::from_utf8(buf)
+                        .with_context(|| format!("Failed to decode {real_name} from ftl.dat as UTF-8"))?
                 };
 
                 trace!("Patching {real_name} according to {name}");
 
-                let append_text =
-                    std::io::read_to_string(handle.open(&name).with_context(|| {
-                        format!("Failed to open {name} from mod {}", m.filename())
-                    })?)
-                    .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
+                let append_text = std::io::read_to_string(
+                    handle
+                        .open(&name)
+                        .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?,
+                )
+                .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
                 let new_text = match operation {
-                    XmlAppendType::Append => {
-                        unwrap_rewrap_xml(original_text, append_text, append::patch).with_context(
-                            || format!("While patching file {real_name} according to {name}"),
-                        )?
-                    }
+                    XmlAppendType::Append => unwrap_rewrap_xml(original_text, append_text, append::patch)
+                        .with_context(|| format!("While patching file {real_name} according to {name}"))?,
                     XmlAppendType::RawAppend => todo!(".xml.rawappend files are not supported yet"),
                     XmlAppendType::RawClobber => {
                         todo!(".xml.rawclobber files are not supported yet")
@@ -272,19 +251,13 @@ pub fn apply_ftl(
                 match pkg.remove(&real_name) {
                     Ok(()) => {}
                     Err(silpkg::sync::RemoveError::NotFound) => {}
-                    Err(x) => {
-                        return Err(x).with_context(|| {
-                            format!("Failed to remove {real_name} from ftl.dat")
-                        })?
-                    }
+                    Err(x) => return Err(x).with_context(|| format!("Failed to remove {real_name} from ftl.dat"))?,
                 }
 
                 pkg.insert(real_name.clone(), INSERT_FLAGS)
                     .map_err(|x| anyhow!(x))
                     .and_then(|mut x| x.write_all(new_text.as_bytes()).map_err(Into::into))
-                    .with_context(|| {
-                        format!("Failed to insert modified {real_name} into ftl.dat")
-                    })?;
+                    .with_context(|| format!("Failed to insert modified {real_name} into ftl.dat"))?;
             } else {
                 if pkg.contains(&name) {
                     trace!("Overwriting {name}");
@@ -295,12 +268,10 @@ pub fn apply_ftl(
                 }
 
                 if name.ends_with(".xml") {
-                    let mut reader = quick_xml::Reader::from_reader(std::io::BufReader::new(
-                        fixup_text_file(handle.open(&name)?)?,
-                    ));
+                    let mut reader =
+                        quick_xml::Reader::from_reader(std::io::BufReader::new(fixup_text_file(handle.open(&name)?)?));
                     reader.config_mut().check_end_names = false;
-                    let mut writer =
-                        quick_xml::Writer::new_with_indent(std::io::Cursor::new(vec![]), b' ', 4);
+                    let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(vec![]), b' ', 4);
                     let mut buf = vec![];
                     let mut element_stack = vec![];
                     loop {
@@ -312,8 +283,7 @@ pub fn apply_ftl(
                         match event {
                             quick_xml::events::Event::Start(ref start) => {
                                 if start.name().prefix().is_some_and(|x| {
-                                    [&b"mod"[..], &b"mod-append"[..], &b"mod-overwrite"[..]]
-                                        .contains(&x.into_inner())
+                                    [&b"mod"[..], &b"mod-append"[..], &b"mod-overwrite"[..]].contains(&x.into_inner())
                                 }) {
                                     warn!("Useless mod namespaced tag present in non-append xml file {name}");
                                 }
@@ -321,9 +291,7 @@ pub fn apply_ftl(
                                 writer.write_event(event)?;
                             }
                             quick_xml::events::Event::End(_) => {
-                                writer.write_event(quick_xml::events::Event::End(
-                                    element_stack.pop().unwrap(),
-                                ))?;
+                                writer.write_event(quick_xml::events::Event::End(element_stack.pop().unwrap()))?;
                             }
                             event => writer.write_event(event)?,
                         }
@@ -332,9 +300,9 @@ pub fn apply_ftl(
                     pkg.insert(name.clone(), INSERT_FLAGS)?
                         .write_all(writer.into_inner().get_ref())?;
                 } else if !IGNORED_FILES_REGEX.is_match(&name) {
-                    let mut reader = handle.open(&name).with_context(|| {
-                        format!("Failed to open {name} from mod {}", m.filename())
-                    })?;
+                    let mut reader = handle
+                        .open(&name)
+                        .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
                     if name.ends_with(".txt") {
                         std::io::copy(
                             &mut fixup_text_file(reader)?,
@@ -385,9 +353,7 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
                 });
 
                 release.fetch_zip(|current, max| {
-                    let Some(ApplyStage::DownloadingHyperspace {
-                        ref mut progress, ..
-                    }) = state.lock().apply_stage
+                    let Some(ApplyStage::DownloadingHyperspace { ref mut progress, .. }) = state.lock().apply_stage
                     else {
                         unreachable!();
                     };

@@ -14,8 +14,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref HYPERSPACE_REPOSITORY: github::Repository =
-        github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace");
+    static ref HYPERSPACE_REPOSITORY: github::Repository = github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace");
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,9 +47,7 @@ impl HyperspaceRelease {
         };
 
         let response = AGENT.get(&download_url).call()?;
-        let content_length = response
-            .header("Content-Length")
-            .and_then(|x| x.parse::<u64>().ok());
+        let content_length = response.header("Content-Length").and_then(|x| x.parse::<u64>().ok());
         let mut reader = response.into_reader();
 
         const BUFFER_SIZE: usize = 4096;

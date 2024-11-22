@@ -136,9 +136,7 @@ fn main() -> ExitCode {
         Box::new(|cc| {
             cc.egui_ctx
                 .set_fonts(fonts::create_font_definitions(i18n::current_language()));
-            Ok(Box::new(
-                App::new(cc).expect("Failed to set up application state"),
-            ))
+            Ok(Box::new(App::new(cc).expect("Failed to set up application state")))
         }),
     ) {
         error!("{error}");
@@ -305,10 +303,7 @@ impl App {
             ctx: cc.egui_ctx.clone(),
             hyperspace: None,
             hyperspace_releases: ResettableLazy::new(|| {
-                Promise::spawn_thread(
-                    "fetch hyperspace releases",
-                    hyperspace::fetch_hyperspace_releases,
-                )
+                Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
             }),
             mods: vec![],
         }));
@@ -371,20 +366,14 @@ impl eframe::App for App {
                     "version" => VERSION
                 ));
 
-                ui.with_layout(
-                    egui::Layout::right_to_left(eframe::emath::Align::Center),
-                    |ui| {
-                        if ui
-                            .add_enabled(
-                                !self.settings_open,
-                                egui::Button::new(l!("settings-button")),
-                            )
-                            .clicked()
-                        {
-                            self.settings_open = true;
-                        }
-                    },
-                )
+                ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(!self.settings_open, egui::Button::new(l!("settings-button")))
+                        .clicked()
+                    {
+                        self.settings_open = true;
+                    }
+                })
             });
 
             ui.add_space(5.);
@@ -407,112 +396,91 @@ impl eframe::App for App {
                         }
                     });
 
-                    ui.with_layout(
-                        egui::Layout::right_to_left(eframe::emath::Align::Min),
-                        |ui| {
-                            let apply = ui
-                                .add_enabled(
-                                    modifiable && self.settings.ftl_directory.is_some(),
-                                    egui::Button::new(l!("mods-apply-button")),
-                                )
-                                .on_hover_text_at_pointer(l!("mods-apply-tooltip"));
-                            if apply.clicked() {
-                                let ctx = ctx.clone();
-                                let ftl_path = self.settings.ftl_directory.clone().unwrap();
-                                let shared = self.shared.clone();
-                                let settings = self.settings.clone();
-                                self.current_task =
-                                    CurrentTask::Apply(Promise::spawn_thread("task", move || {
-                                        let result = apply::apply(
-                                            ftl_path,
-                                            shared,
-                                            settings
-                                        );
-                                        ctx.request_repaint();
-                                        result
-                                    }));
-                            }
+                    ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Min), |ui| {
+                        let apply = ui
+                            .add_enabled(
+                                modifiable && self.settings.ftl_directory.is_some(),
+                                egui::Button::new(l!("mods-apply-button")),
+                            )
+                            .on_hover_text_at_pointer(l!("mods-apply-tooltip"));
+                        if apply.clicked() {
+                            let ctx = ctx.clone();
+                            let ftl_path = self.settings.ftl_directory.clone().unwrap();
+                            let shared = self.shared.clone();
+                            let settings = self.settings.clone();
+                            self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
+                                let result = apply::apply(ftl_path, shared, settings);
+                                ctx.request_repaint();
+                                result
+                            }));
+                        }
 
-                            let scan = ui
-                                .add_enabled(modifiable, egui::Button::new(l!("mods-scan-button")))
-                                .on_hover_text_at_pointer(l!("mods-scan-tooltip"));
+                        let scan = ui
+                            .add_enabled(modifiable, egui::Button::new(l!("mods-scan-button")))
+                            .on_hover_text_at_pointer(l!("mods-scan-tooltip"));
 
-                            if scan.clicked() && !lock.locked {
-                                self.last_hovered_mod = None;
-                                let settings = self.settings.clone();
-                                let shared = self.shared.clone();
-                                self.current_task = CurrentTask::Scan(Promise::spawn_thread("task", move ||
-                                    scan::scan(settings, shared, false),
-                                ));
-                            }
+                        if scan.clicked() && !lock.locked {
+                            self.last_hovered_mod = None;
+                            let settings = self.settings.clone();
+                            let shared = self.shared.clone();
+                            self.current_task =
+                                CurrentTask::Scan(Promise::spawn_thread("task", move || scan::scan(settings, shared, false)));
+                        }
 
-                            if lock.locked {
-                                if let Some(stage) = &lock.apply_stage {
-                                    match stage {
-                                        ApplyStage::DownloadingHyperspace { version, progress } => {
-                                            if let Some((downloaded, total)) = *progress {
-                                                let (dl_iec, dl_sfx) = to_human_size_units(downloaded);
-                                                let (tot_iec, tot_sfx) = to_human_size_units(total);
-                                                ui.add(
-                                                    egui::ProgressBar::new(
-                                                        downloaded as f32 / total as f32,
-                                                    ).text(l!(
-                                                        "status-hyperspace-download2",
-                                                        "version" => version,
-                                                        "done" => format!("{dl_iec:.2}{dl_sfx}"),
-                                                        "total" => format!("{tot_iec:.2}{tot_sfx}"),
-                                                )));
-                                            } else {
-                                                ui.strong(l!(
-                                                    "status-hyperspace-download",
-                                                    "version" => version
-                                                ));
-                                            }
+                        if lock.locked {
+                            if let Some(stage) = &lock.apply_stage {
+                                match stage {
+                                    ApplyStage::DownloadingHyperspace { version, progress } => {
+                                        if let Some((downloaded, total)) = *progress {
+                                            let (dl_iec, dl_sfx) = to_human_size_units(downloaded);
+                                            let (tot_iec, tot_sfx) = to_human_size_units(total);
+                                            ui.add(egui::ProgressBar::new(downloaded as f32 / total as f32).text(l!(
+                                                    "status-hyperspace-download2",
+                                                    "version" => version,
+                                                    "done" => format!("{dl_iec:.2}{dl_sfx}"),
+                                                    "total" => format!("{tot_iec:.2}{tot_sfx}"),
+                                            )));
+                                        } else {
+                                            ui.strong(l!(
+                                                "status-hyperspace-download",
+                                                "version" => version
+                                            ));
                                         }
-                                        ApplyStage::InstallingHyperspace => {
-                                            ui.spinner();
-                                            ui.strong(l!("status-hyperspace-install"));
-                                        }
-                                        ApplyStage::Preparing => {
-                                            ui.spinner();
-                                            ui.strong(l!("status-preparing"));
-                                        }
-                                        ApplyStage::Repacking => {
-                                            ui.spinner();
-                                            ui.strong(l!("status-repacking"));
-                                        }
-                                        ApplyStage::Mod {
-                                            mod_name,
-                                            file_idx,
-                                            files_total,
-                                        } => {
-                                            ui.add(
-                                                egui::ProgressBar::new(
-                                                    *file_idx as f32 / *files_total as f32,
-                                                )
-                                                .text(l!("status-applying-mod",
-                                                    "mod" => mod_name
-                                                )),
-                                            );
-                                        }
-                                    };
-                                } else {
-                                    ui.spinner();
-                                    ui.strong(l!("status-scanning-mods"));
-                                }
+                                    }
+                                    ApplyStage::InstallingHyperspace => {
+                                        ui.spinner();
+                                        ui.strong(l!("status-hyperspace-install"));
+                                    }
+                                    ApplyStage::Preparing => {
+                                        ui.spinner();
+                                        ui.strong(l!("status-preparing"));
+                                    }
+                                    ApplyStage::Repacking => {
+                                        ui.spinner();
+                                        ui.strong(l!("status-repacking"));
+                                    }
+                                    ApplyStage::Mod {
+                                        mod_name,
+                                        file_idx,
+                                        files_total,
+                                    } => {
+                                        ui.add(egui::ProgressBar::new(*file_idx as f32 / *files_total as f32).text(
+                                            l!("status-applying-mod",
+                                                "mod" => mod_name
+                                            ),
+                                        ));
+                                    }
+                                };
+                            } else {
+                                ui.spinner();
+                                ui.strong(l!("status-scanning-mods"));
                             }
-                        },
-                    );
+                        }
+                    });
 
                     if let Some((title, error)) = match &self.current_task {
-                        CurrentTask::Scan(p) => p
-                            .ready()
-                            .and_then(|x| x.as_ref().err())
-                            .map(|x| ("Could not scan mod folder", x)),
-                        CurrentTask::Apply(p) => p
-                            .ready()
-                            .and_then(|x| x.as_ref().err())
-                            .map(|x| ("Could not apply mods", x)),
+                        CurrentTask::Scan(p) => p.ready().and_then(|x| x.as_ref().err()).map(|x| ("Could not scan mod folder", x)),
+                        CurrentTask::Apply(p) => p.ready().and_then(|x| x.as_ref().err()).map(|x| ("Could not apply mods", x)),
                         CurrentTask::None => None,
                     } {
                         lock.apply_stage = None;
@@ -539,39 +507,38 @@ impl eframe::App for App {
                         // FIXME: Currently weird behaviour occurs when shrinking the left panel
                         // starts to affect text.
                         ui.set_max_width(
-                            self.vertical_divider_pos * viewport_width - horizontal_item_spacing - ui.next_widget_position().x
+                            self.vertical_divider_pos * viewport_width - horizontal_item_spacing - ui.next_widget_position().x,
                         );
 
                         ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
                             ui.horizontal(|ui| {
                                 if self.settings.ftl_directory.is_none() || !self.settings.ftl_directory.as_ref().unwrap().exists() {
-                                    ui.label(RichText::new(l!("invalid-ftl-directory")).color(ui.visuals().error_fg_color).strong());
+                                    ui.label(
+                                        RichText::new(l!("invalid-ftl-directory"))
+                                            .color(ui.visuals().error_fg_color)
+                                            .strong(),
+                                    );
                                     return;
                                 }
 
                                 let supported = hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
                                 if let Err(err) = supported {
-                                    ui.label(RichText::new(
-                                        l!("hyperspace-support-check-failed", "error" => err.to_string())
-                                    ).color(ui.visuals().error_fg_color).strong());
-                                } else if let Err(err) = supported.unwrap() {
-                                    ui.label(RichText::new(
-                                        l!("hyperspace-installer-not-supported", "error" => err.to_string())
-                                    ).color(ui.visuals().warn_fg_color).strong());
-                                } else {
                                     ui.label(
-                                        RichText::new(l!("hyperspace")).font(FontId::default()).strong(),
+                                        RichText::new(l!("hyperspace-support-check-failed", "error" => err.to_string()))
+                                            .color(ui.visuals().error_fg_color)
+                                            .strong(),
                                     );
+                                } else if let Err(err) = supported.unwrap() {
+                                    ui.label(
+                                        RichText::new(l!("hyperspace-installer-not-supported", "error" => err.to_string()))
+                                            .color(ui.visuals().warn_fg_color)
+                                            .strong(),
+                                    );
+                                } else {
+                                    ui.label(RichText::new(l!("hyperspace")).font(FontId::default()).strong());
 
-                                    let combobox =
-                                        egui::ComboBox::new("hyperspace select combobox", "")
-                                            .selected_text(
-                                                shared
-                                                    .hyperspace
-                                                    .as_ref()
-                                                    .map(|x| x.release.name())
-                                                    .unwrap_or("None"),
-                                            );
+                                    let combobox = egui::ComboBox::new("hyperspace select combobox", "")
+                                        .selected_text(shared.hyperspace.as_ref().map(|x| x.release.name()).unwrap_or("None"));
 
                                     let mut clicked = None;
                                     match shared.hyperspace_releases.ready() {
@@ -583,21 +550,16 @@ impl eframe::App for App {
 
                                                 for release in releases.iter() {
                                                     let response = ui.selectable_label(
-                                                        shared.hyperspace.as_ref().is_some_and(|x| {
-                                                            x.release.id() == release.id()
-                                                        }),
+                                                        shared.hyperspace.as_ref().is_some_and(|x| x.release.id() == release.id()),
                                                         release.name(),
                                                     );
                                                     let desc_pos = Pos2::new(
-                                                        ui.min_rect().max.x
-                                                            + ui.spacing().window_margin.left,
-                                                        ui.min_rect().min.y
-                                                            - ui.spacing().window_margin.top,
+                                                        ui.min_rect().max.x + ui.spacing().window_margin.left,
+                                                        ui.min_rect().min.y - ui.spacing().window_margin.top,
                                                     );
 
                                                     if response.clicked() {
-                                                        clicked =
-                                                            Some(Some(release.to_owned()));
+                                                        clicked = Some(Some(release.to_owned()));
                                                     } else if response.hovered() {
                                                         egui::Window::new("hyperspace version tooltip")
                                                             .fixed_pos(desc_pos)
@@ -605,9 +567,7 @@ impl eframe::App for App {
                                                             .resizable(false)
                                                             .show(ctx, |ui| {
                                                                 // FIXME: this doesn't work
-                                                                ui.set_max_height(
-                                                                    ui.available_height() * 0.5,
-                                                                );
+                                                                ui.set_max_height(ui.available_height() * 0.5);
                                                                 ui.monospace(release.description())
                                                             });
                                                     }
@@ -615,11 +575,7 @@ impl eframe::App for App {
                                             });
                                         }
                                         Some(Err(err)) => {
-                                            if error_popup(
-                                                ui,
-                                                &l!("hyperspace-fetch-releases-failed"),
-                                                err,
-                                            ) {
+                                            if error_popup(ui, &l!("hyperspace-fetch-releases-failed"), err) {
                                                 shared.hyperspace_releases.take();
                                             }
                                         }
@@ -641,23 +597,21 @@ impl eframe::App for App {
                                         }
                                     }
 
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(eframe::emath::Align::Center),
-                                        |ui| {
-                                            if shared.hyperspace_releases.ready().is_none() {
-                                                ui.label(l!("hyperspace-fetching-releases"));
-                                                ui.spinner();
-                                            }
-                                        },
-                                    );
+                                    ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
+                                        if shared.hyperspace_releases.ready().is_none() {
+                                            ui.label(l!("hyperspace-fetching-releases"));
+                                            ui.spinner();
+                                        }
+                                    });
 
-                                    if let Some(HyperspaceState { ref mut patch_hyperspace_ftl, .. }) = shared.hyperspace {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(
-                                                eframe::emath::Align::Center,
-                                            ),
-                                            |ui| ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl"))
-                                        );
+                                    if let Some(HyperspaceState {
+                                        ref mut patch_hyperspace_ftl,
+                                        ..
+                                    }) = shared.hyperspace
+                                    {
+                                        ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
+                                            ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl"))
+                                        });
                                     }
                                 }
                             });
@@ -679,14 +633,16 @@ impl eframe::App for App {
                                                 handle.ui(ui, |ui| {
                                                     let label = ui.selectable_label(
                                                         item.enabled,
-                                                        ui.fonts(|f| f.layout_job(LayoutJob {
-                                                            wrap: TextWrapping::truncate_at_width(ui.available_width()),
-                                                            ..LayoutJob::simple_singleline(
-                                                                item.filename().to_string(),
-                                                                FontId::default(),
-                                                                ui.visuals().strong_text_color()
-                                                            )
-                                                        }))
+                                                        ui.fonts(|f| {
+                                                            f.layout_job(LayoutJob {
+                                                                wrap: TextWrapping::truncate_at_width(ui.available_width()),
+                                                                ..LayoutJob::simple_singleline(
+                                                                    item.filename().to_string(),
+                                                                    FontId::default(),
+                                                                    ui.visuals().strong_text_color(),
+                                                                )
+                                                            })
+                                                        }),
                                                     );
 
                                                     if label.hovered() {
@@ -699,25 +655,20 @@ impl eframe::App for App {
                                                     }
                                                 });
 
-                                                ui.with_layout(
-                                                    egui::Layout::right_to_left(
-                                                        eframe::emath::Align::Center,
-                                                    ),
-                                                    |ui| {
-                                                        if let Some(title) =
-                                                            item.title().unwrap_or(None)
-                                                        {
-                                                            ui.label(ui.fonts(|f| f.layout_job(LayoutJob {
+                                                ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
+                                                    if let Some(title) = item.title().unwrap_or(None) {
+                                                        ui.label(ui.fonts(|f| {
+                                                            f.layout_job(LayoutJob {
                                                                 wrap: TextWrapping::truncate_at_width(ui.available_width()),
                                                                 ..LayoutJob::simple_singleline(
                                                                     title.to_string(),
                                                                     FontId::default(),
-                                                                    ui.visuals().text_color()
+                                                                    ui.visuals().text_color(),
                                                                 )
-                                                            })));
-                                                        };
-                                                    },
-                                                );
+                                                            })
+                                                        }));
+                                                    };
+                                                });
 
                                                 // HACK: yes
                                                 i += 1;
@@ -725,26 +676,22 @@ impl eframe::App for App {
                                         },
                                     );
 
-                                        if let Some(update) = dnd_response.final_update() {
-                                            egui_dnd::utils::shift_vec(
-                                                row_range.start + update.from,
-                                                row_range.start + update.to,
-                                                &mut shared.mods,
-                                            );
-                                            if !did_change_hovered_mod
-                                                && self.last_hovered_mod
-                                                    == Some(row_range.start + update.from)
-                                            {
-                                                self.last_hovered_mod =
-                                                    Some(if update.from >= update.to {
-                                                        row_range.start + update.to
-                                                    } else {
-                                                        row_range.start + update.to - 1
-                                                    });
-                                            }
+                                    if let Some(update) = dnd_response.final_update() {
+                                        egui_dnd::utils::shift_vec(
+                                            row_range.start + update.from,
+                                            row_range.start + update.to,
+                                            &mut shared.mods,
+                                        );
+                                        if !did_change_hovered_mod && self.last_hovered_mod == Some(row_range.start + update.from) {
+                                            self.last_hovered_mod = Some(if update.from >= update.to {
+                                                row_range.start + update.to
+                                            } else {
+                                                row_range.start + update.to - 1
+                                            });
                                         }
-                                    },
-                                );
+                                    }
+                                },
+                            );
                         });
                     });
 
@@ -752,7 +699,7 @@ impl eframe::App for App {
                     if ui.interact(response.rect, ui.auto_id_with("drag"), Sense::drag()).dragged() {
                         if let Some(cursor_pos) = ctx.pointer_interact_pos() {
                             let x = cursor_pos.x - response.rect.width() / 2.0;
-                            self.vertical_divider_pos =  (x / viewport_width).clamp(0.1, 0.9);
+                            self.vertical_divider_pos = (x / viewport_width).clamp(0.1, 0.9);
                         }
                     }
 
@@ -760,14 +707,12 @@ impl eframe::App for App {
                         if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
                             ui.vertical(|ui| {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                                    ui.label(
-                                        RichText::new(format!("v{}", metadata.version)).heading(),
-                                    );
+                                    ui.label(RichText::new(format!("v{}", metadata.version)).heading());
 
                                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
-                                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui|
+                                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
                                         ui.label(RichText::new(&metadata.title).heading().strong())
-                                    );
+                                    });
                                 });
 
                                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
@@ -776,7 +721,8 @@ impl eframe::App for App {
                                     RichText::new(l!(
                                         "mod-meta-authors",
                                         "authors" => &metadata.author
-                                    )).strong(),
+                                    ))
+                                    .strong(),
                                 );
 
                                 if let Some(url) = &metadata.thread_url {
@@ -804,8 +750,7 @@ impl eframe::App for App {
                 .auto_sized()
                 .open(&mut self.settings_open)
                 .show(ctx, |ui| {
-                    let mut mod_dir_buf: String =
-                        self.settings.mod_directory.to_str().unwrap().to_string();
+                    let mut mod_dir_buf: String = self.settings.mod_directory.to_str().unwrap().to_string();
                     ui.label(l!("settings-mod-dir"));
                     if PathEdit::new(&mut mod_dir_buf)
                         .id("pathedit mod dir")
@@ -819,16 +764,10 @@ impl eframe::App for App {
 
                     let mut filters_changed = false;
                     filters_changed |= ui
-                        .checkbox(
-                            &mut self.settings.dirs_are_mods,
-                            l!("settings-dirs-are-mods"),
-                        )
+                        .checkbox(&mut self.settings.dirs_are_mods, l!("settings-dirs-are-mods"))
                         .changed();
                     filters_changed |= ui
-                        .checkbox(
-                            &mut self.settings.zips_are_mods,
-                            l!("settings-zips-are-mods"),
-                        )
+                        .checkbox(&mut self.settings.zips_are_mods, l!("settings-zips-are-mods"))
                         .changed();
                     filters_changed |= ui
                         .checkbox(&mut self.settings.ftl_is_zip, l!("settings-ftls-is-zip"))
@@ -838,9 +777,7 @@ impl eframe::App for App {
                         let settings = self.settings.clone();
                         let shared = self.shared.clone();
                         self.current_task =
-                            CurrentTask::Scan(Promise::spawn_thread("task", || {
-                                scan::scan(settings, shared, false)
-                            }));
+                            CurrentTask::Scan(Promise::spawn_thread("task", || scan::scan(settings, shared, false)));
                     }
 
                     ui.horizontal(|ui| {
@@ -878,11 +815,8 @@ impl eframe::App for App {
                         }
                     }
 
-                    ui.checkbox(
-                        &mut self.settings.repack_ftl_data,
-                        l!("settings-repack-archive"),
-                    )
-                    .on_hover_text(l!("settings-repack-archive-tooltip"));
+                    ui.checkbox(&mut self.settings.repack_ftl_data, l!("settings-repack-archive"))
+                        .on_hover_text(l!("settings-repack-archive-tooltip"));
 
                     let mut visuals_changed = false;
                     egui::ComboBox::from_label(l!("settings-colorscheme"))
@@ -935,12 +869,7 @@ fn error_popup(ui: &mut Ui, title: &str, error: &anyhow::Error) -> bool {
         .show(ui.ctx(), |ui| {
             let mut job = LayoutJob::default();
 
-            let msg_font = ui
-                .style()
-                .text_styles
-                .get(&egui::TextStyle::Body)
-                .unwrap()
-                .clone();
+            let msg_font = ui.style().text_styles.get(&egui::TextStyle::Body).unwrap().clone();
             let msg_color = Rgba::from_srgba_unmultiplied(255, 100, 0, 255);
             for (i, err) in error.chain().enumerate() {
                 if i != 0 {
@@ -959,9 +888,7 @@ fn error_popup(ui: &mut Ui, title: &str, error: &anyhow::Error) -> bool {
         });
 
     ui.memory_mut(|mem| {
-        let was_open: &mut bool = mem
-            .data
-            .get_temp_mut_or_default("error popup was open".into());
+        let was_open: &mut bool = mem.data.get_temp_mut_or_default("error popup was open".into());
         if !*was_open && open {
             let mut it = error.chain().enumerate();
             let (_, err) = it.next().unwrap();
@@ -1064,9 +991,7 @@ pub enum OpenModHandle<'a> {
 impl ModSource {
     pub fn filename(&self) -> &str {
         match self {
-            ModSource::Directory { path } | ModSource::Zip { path } => {
-                path.file_name().unwrap().to_str().unwrap()
-            }
+            ModSource::Directory { path } | ModSource::Zip { path } => path.file_name().unwrap().to_str().unwrap(),
             ModSource::InMemoryZip { filename, .. } => filename,
         }
     }
@@ -1079,9 +1004,9 @@ impl ModSource {
                 None
             }
         } else if path.is_file()
-            && path.extension().is_some_and(|x| {
-                (settings.zips_are_mods && x == "zip") || (settings.ftl_is_zip && x == "ftl")
-            })
+            && path
+                .extension()
+                .is_some_and(|x| (settings.zips_are_mods && x == "zip") || (settings.ftl_is_zip && x == "ftl"))
         {
             Some(ModSource::Zip { path })
         } else {
@@ -1116,11 +1041,7 @@ impl ModSource {
             Self::Zip { path } => {
                 let mut out = vec![];
                 let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
-                for name in archive
-                    .file_names()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>()
-                {
+                for name in archive.file_names().map(|s| s.to_string()).collect::<Vec<String>>() {
                     if !name.ends_with('/') {
                         out.push(
                             archive
@@ -1140,11 +1061,7 @@ impl ModSource {
                 let mut out = vec![];
                 let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))?;
 
-                for name in archive
-                    .file_names()
-                    .map(|s| s.to_string())
-                    .collect::<Vec<String>>()
-                {
+                for name in archive.file_names().map(|s| s.to_string()).collect::<Vec<String>>() {
                     if !name.ends_with('/') {
                         out.push(
                             archive
@@ -1167,9 +1084,7 @@ impl ModSource {
         Ok(match self {
             Self::Directory { path } => OpenModHandle::Directory { path: path.clone() },
             Self::Zip { path } => OpenModHandle::Zip {
-                archive: zip::ZipArchive::new(
-                    Box::new(std::fs::File::open(path)?) as Box<dyn ReadSeek + Send + Sync>
-                )?,
+                archive: zip::ZipArchive::new(Box::new(std::fs::File::open(path)?) as Box<dyn ReadSeek + Send + Sync>)?,
             },
             Self::InMemoryZip { data, .. } => OpenModHandle::Zip {
                 archive: zip::ZipArchive::new(
@@ -1190,13 +1105,11 @@ impl<'a> OpenModHandle<'a> {
 
     pub fn open_if_exists(&mut self, name: &str) -> Result<Option<Box<dyn Read + '_>>> {
         Ok(Some(match self {
-            OpenModHandle::Directory { path } => {
-                Box::new(match std::fs::File::open(path.join(name)) {
-                    Ok(handle) => handle,
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-                    Err(e) => return Err(e.into()),
-                })
-            }
+            OpenModHandle::Directory { path } => Box::new(match std::fs::File::open(path.join(name)) {
+                Ok(handle) => handle,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(e) => return Err(e.into()),
+            }),
             OpenModHandle::Zip { archive } => Box::new(match archive.by_name(name) {
                 Ok(handle) => handle,
                 Err(zip::result::ZipError::FileNotFound) => return Ok(None),
@@ -1235,17 +1148,12 @@ impl Mod {
         self.cached_metadata
             .get_or_try_init(|| {
                 Ok(Some({
-                    let mut metadata: Metadata =
-                        quick_xml::de::from_reader(std::io::BufReader::new(
-                            match self
-                                .source
-                                .open()?
-                                .open_if_exists("mod-appendix/metadata.xml")?
-                            {
-                                Some(handle) => handle,
-                                None => return Ok(None),
-                            },
-                        ))?;
+                    let mut metadata: Metadata = quick_xml::de::from_reader(std::io::BufReader::new(
+                        match self.source.open()?.open_if_exists("mod-appendix/metadata.xml")? {
+                            Some(handle) => handle,
+                            None => return Ok(None),
+                        },
+                    ))?;
 
                     metadata.title = metadata.title.trim().to_string();
                     if let Some(url) = metadata.thread_url {
