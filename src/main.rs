@@ -134,7 +134,8 @@ fn main() -> ExitCode {
             ..Default::default()
         },
         Box::new(|cc| {
-            cc.egui_ctx.set_fonts(fonts::create_font_definitions());
+            cc.egui_ctx
+                .set_fonts(fonts::create_font_definitions(i18n::current_language()));
             Ok(Box::new(
                 App::new(cc).expect("Failed to set up application state"),
             ))

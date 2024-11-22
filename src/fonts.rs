@@ -11,13 +11,13 @@ mod backend {
     use fontconfig_sys::*;
     use log::info;
     use std::{
-        ffi::{CStr, OsString},
+        ffi::{CStr, CString, OsString},
         mem::MaybeUninit,
         os::unix::ffi::OsStringExt,
         path::PathBuf,
     };
 
-    pub fn find_system_sans_serif() -> Result<FontData> {
+    pub fn find_system_sans_serif(language: &str) -> Result<FontData> {
         unsafe {
             let config = FcInitLoadConfigAndFonts();
             if config.is_null() {
@@ -40,6 +40,16 @@ mod backend {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add family property")
             }
 
+            let lang_cstring = CString::new(language).unwrap();
+            if FcPatternAddString(
+                pattern,
+                FC_LANG.as_ptr(),
+                lang_cstring.as_ptr() as *const u8,
+            ) == 0
+            {
+                bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add lang property")
+            }
+
             if FcPatternAddString(
                 pattern,
                 FC_FONTFORMAT.as_ptr(),
@@ -58,7 +68,7 @@ mod backend {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add style property")
             }
 
-            if FcConfigSubstitute(config, pattern, FcMatchPattern) == 0 {
+            if FcConfigSubstitute(config, pattern, FcMatchFont) == 0 {
                 bail!("Failed to execute fontconfig substitutions")
             }
 
@@ -221,7 +231,7 @@ mod backend {
         }
     }
 
-    pub fn find_system_sans_serif() -> Result<FontData> {
+    pub fn find_system_sans_serif(_language: &str) -> Result<FontData> {
         unsafe {
             let mut factory = ComInterface::<IDWriteFactory>::new();
             wintry!(DWriteCreateFactory(
@@ -358,10 +368,10 @@ mod backend {
     }
 }
 
-pub fn create_font_definitions() -> FontDefinitions {
+pub fn create_font_definitions(language: &str) -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
 
-    match backend::find_system_sans_serif() {
+    match backend::find_system_sans_serif(language) {
         Ok(data) => {
             let name = "System Sans Serif";
 

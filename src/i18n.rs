@@ -101,6 +101,16 @@ pub fn get_locale_pointer(name: &str) -> Option<*mut &'static str> {
         .next()
 }
 
+pub fn current_language() -> &'static str {
+    unsafe {
+        *LOCALISER
+            .get()
+            .unwrap()
+            .current_locale
+            .load(Ordering::Acquire)
+    }
+}
+
 pub fn init() {
     LOCALISER
         .set(Localiser {
