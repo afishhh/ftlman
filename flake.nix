@@ -65,6 +65,6 @@
             makeWrapper ${unwrapped}/bin/ftlman $out/bin/ftlman --suffix LD_LIBRARY_PATH : ${runtimeLibs}
           '';
         };
-        devShells.default = self.packages.${system}.unwrapped;
+      devShells.default = self.packages.${system}.unwrapped;
     });
 }

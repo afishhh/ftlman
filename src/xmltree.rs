@@ -59,7 +59,12 @@ macro_rules! decode_inner {
         decode_inner!(@slice $x.into_inner())
     };
     (@slice $x: expr) => {
-        String::from_utf8($x.to_vec()).map_err(quick_xml::Error::from)
+        String::from_utf8($x.to_vec())
+            .map_err(|e|
+                quick_xml::errors::Error::from(
+                    quick_xml::encoding::EncodingError::from(e.utf8_error())
+                )
+            )
     };
 }
 

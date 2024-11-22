@@ -664,7 +664,7 @@ impl eframe::App for App {
 
                             // TODO: Separate this into a separate widget
                             egui::ScrollArea::vertical()
-                                .id_source("mod scroll area")
+                                .id_salt("mod scroll area")
                                 .show_rows(
                                     ui,
                                     /* TODO calculate this instead */ 16.,
@@ -1188,7 +1188,7 @@ impl<'a> OpenModHandle<'a> {
         })
     }
 
-    pub fn open_nf_aware(&mut self, name: &str) -> Result<Option<Box<dyn Read + '_>>> {
+    pub fn open_if_exists(&mut self, name: &str) -> Result<Option<Box<dyn Read + '_>>> {
         Ok(Some(match self {
             OpenModHandle::Directory { path } => {
                 Box::new(match std::fs::File::open(path.join(name)) {
@@ -1240,7 +1240,7 @@ impl Mod {
                             match self
                                 .source
                                 .open()?
-                                .open_nf_aware("mod-appendix/metadata.xml")?
+                                .open_if_exists("mod-appendix/metadata.xml")?
                             {
                                 Some(handle) => handle,
                                 None => return Ok(None),

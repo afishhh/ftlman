@@ -315,9 +315,7 @@ pub fn apply_ftl(
                                     [&b"mod"[..], &b"mod-append"[..], &b"mod-overwrite"[..]]
                                         .contains(&x.into_inner())
                                 }) {
-                                    warn!(
-                                "Useless mod namespaced tag present in non-append xml file {name}"
-                            );
+                                    warn!("Useless mod namespaced tag present in non-append xml file {name}");
                                 }
                                 element_stack.push(start.to_end().into_owned());
                                 writer.write_event(event)?;
