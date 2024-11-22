@@ -618,23 +618,20 @@ impl eframe::App for App {
                                         }
                                     }
 
+                                    if shared.hyperspace_releases.ready().is_none() {
+                                        ui.label(l!("hyperspace-fetching-releases"));
+                                        ui.spinner();
+                                    }
+
                                     ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
-                                        if shared.hyperspace_releases.ready().is_none() {
-                                            ui.label(l!("hyperspace-fetching-releases"));
-                                            ui.spinner();
+                                        if let Some(HyperspaceState {
+                                            ref mut patch_hyperspace_ftl,
+                                            ..
+                                        }) = shared.hyperspace
+                                        {
+                                            ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl"));
                                         }
                                     });
-
-                                    if let Some(HyperspaceState {
-                                        ref mut patch_hyperspace_ftl,
-                                        ..
-                                    }) = shared.hyperspace
-                                    {
-                                        ui.with_layout(
-                                            egui::Layout::right_to_left(eframe::emath::Align::Center),
-                                            |ui| ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl")),
-                                        );
-                                    }
                                 }
                             });
 
