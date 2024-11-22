@@ -423,8 +423,9 @@ impl eframe::App for App {
                             self.last_hovered_mod = None;
                             let settings = self.settings.clone();
                             let shared = self.shared.clone();
-                            self.current_task =
-                                CurrentTask::Scan(Promise::spawn_thread("task", move || scan::scan(settings, shared, false)));
+                            self.current_task = CurrentTask::Scan(Promise::spawn_thread("task", move || {
+                                scan::scan(settings, shared, false)
+                            }));
                         }
 
                         if lock.locked {
@@ -479,8 +480,14 @@ impl eframe::App for App {
                     });
 
                     if let Some((title, error)) = match &self.current_task {
-                        CurrentTask::Scan(p) => p.ready().and_then(|x| x.as_ref().err()).map(|x| ("Could not scan mod folder", x)),
-                        CurrentTask::Apply(p) => p.ready().and_then(|x| x.as_ref().err()).map(|x| ("Could not apply mods", x)),
+                        CurrentTask::Scan(p) => p
+                            .ready()
+                            .and_then(|x| x.as_ref().err())
+                            .map(|x| ("Could not scan mod folder", x)),
+                        CurrentTask::Apply(p) => p
+                            .ready()
+                            .and_then(|x| x.as_ref().err())
+                            .map(|x| ("Could not apply mods", x)),
                         CurrentTask::None => None,
                     } {
                         lock.apply_stage = None;
@@ -507,12 +514,16 @@ impl eframe::App for App {
                         // FIXME: Currently weird behaviour occurs when shrinking the left panel
                         // starts to affect text.
                         ui.set_max_width(
-                            self.vertical_divider_pos * viewport_width - horizontal_item_spacing - ui.next_widget_position().x,
+                            self.vertical_divider_pos * viewport_width
+                                - horizontal_item_spacing
+                                - ui.next_widget_position().x,
                         );
 
                         ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
                             ui.horizontal(|ui| {
-                                if self.settings.ftl_directory.is_none() || !self.settings.ftl_directory.as_ref().unwrap().exists() {
+                                if self.settings.ftl_directory.is_none()
+                                    || !self.settings.ftl_directory.as_ref().unwrap().exists()
+                                {
                                     ui.label(
                                         RichText::new(l!("invalid-ftl-directory"))
                                             .color(ui.visuals().error_fg_color)
@@ -521,24 +532,30 @@ impl eframe::App for App {
                                     return;
                                 }
 
-                                let supported = hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
+                                let supported =
+                                    hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
                                 if let Err(err) = supported {
                                     ui.label(
-                                        RichText::new(l!("hyperspace-support-check-failed", "error" => err.to_string()))
-                                            .color(ui.visuals().error_fg_color)
-                                            .strong(),
+                                        RichText::new(
+                                            l!("hyperspace-support-check-failed", "error" => err.to_string()),
+                                        )
+                                        .color(ui.visuals().error_fg_color)
+                                        .strong(),
                                     );
                                 } else if let Err(err) = supported.unwrap() {
                                     ui.label(
-                                        RichText::new(l!("hyperspace-installer-not-supported", "error" => err.to_string()))
-                                            .color(ui.visuals().warn_fg_color)
-                                            .strong(),
+                                        RichText::new(
+                                            l!("hyperspace-installer-not-supported", "error" => err.to_string()),
+                                        )
+                                        .color(ui.visuals().warn_fg_color)
+                                        .strong(),
                                     );
                                 } else {
                                     ui.label(RichText::new(l!("hyperspace")).font(FontId::default()).strong());
 
-                                    let combobox = egui::ComboBox::new("hyperspace select combobox", "")
-                                        .selected_text(shared.hyperspace.as_ref().map(|x| x.release.name()).unwrap_or("None"));
+                                    let combobox = egui::ComboBox::new("hyperspace select combobox", "").selected_text(
+                                        shared.hyperspace.as_ref().map(|x| x.release.name()).unwrap_or("None"),
+                                    );
 
                                     let mut clicked = None;
                                     match shared.hyperspace_releases.ready() {
@@ -550,7 +567,10 @@ impl eframe::App for App {
 
                                                 for release in releases.iter() {
                                                     let response = ui.selectable_label(
-                                                        shared.hyperspace.as_ref().is_some_and(|x| x.release.id() == release.id()),
+                                                        shared
+                                                            .hyperspace
+                                                            .as_ref()
+                                                            .is_some_and(|x| x.release.id() == release.id()),
                                                         release.name(),
                                                     );
                                                     let desc_pos = Pos2::new(
@@ -610,26 +630,24 @@ impl eframe::App for App {
                                         ..
                                     }) = shared.hyperspace
                                     {
-                                        ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
-                                            ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl"))
-                                        });
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(eframe::emath::Align::Center),
+                                            |ui| ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl")),
+                                        );
                                     }
                                 }
                             });
 
-
                             // TODO: Separate this into a separate widget
-                            egui::ScrollArea::vertical()
-                                .id_salt("mod scroll area")
-                                .show_rows(
-                                    ui,
-                                    ui.text_style_height(&egui::TextStyle::Body),
-                                    shared.mods.len(),
-                                    |ui, row_range| {
-                                        let mut i = row_range.start;
-                                        let mut did_change_hovered_mod = false;
-                                        let dnd_response = egui_dnd::dnd(ui, "mod list dnd").show(
-                                            shared.mods[row_range.clone()].iter_mut(),
+                            egui::ScrollArea::vertical().id_salt("mod scroll area").show_rows(
+                                ui,
+                                ui.text_style_height(&egui::TextStyle::Body),
+                                shared.mods.len(),
+                                |ui, row_range| {
+                                    let mut i = row_range.start;
+                                    let mut did_change_hovered_mod = false;
+                                    let dnd_response = egui_dnd::dnd(ui, "mod list dnd").show(
+                                        shared.mods[row_range.clone()].iter_mut(),
                                         |ui, item, handle, _item_state| {
                                             ui.horizontal(|ui| {
                                                 handle.ui(ui, |ui| {
@@ -637,7 +655,9 @@ impl eframe::App for App {
                                                         item.enabled,
                                                         ui.fonts(|f| {
                                                             f.layout_job(LayoutJob {
-                                                                wrap: TextWrapping::truncate_at_width(ui.available_width()),
+                                                                wrap: TextWrapping::truncate_at_width(
+                                                                    ui.available_width(),
+                                                                ),
                                                                 ..LayoutJob::simple_singleline(
                                                                     item.filename().to_string(),
                                                                     FontId::default(),
@@ -657,20 +677,25 @@ impl eframe::App for App {
                                                     }
                                                 });
 
-                                                ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
-                                                    if let Some(title) = item.title().unwrap_or(None) {
-                                                        ui.label(ui.fonts(|f| {
-                                                            f.layout_job(LayoutJob {
-                                                                wrap: TextWrapping::truncate_at_width(ui.available_width()),
-                                                                ..LayoutJob::simple_singleline(
-                                                                    title.to_string(),
-                                                                    FontId::default(),
-                                                                    ui.visuals().text_color(),
-                                                                )
-                                                            })
-                                                        }));
-                                                    };
-                                                });
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(eframe::emath::Align::Center),
+                                                    |ui| {
+                                                        if let Some(title) = item.title().unwrap_or(None) {
+                                                            ui.label(ui.fonts(|f| {
+                                                                f.layout_job(LayoutJob {
+                                                                    wrap: TextWrapping::truncate_at_width(
+                                                                        ui.available_width(),
+                                                                    ),
+                                                                    ..LayoutJob::simple_singleline(
+                                                                        title.to_string(),
+                                                                        FontId::default(),
+                                                                        ui.visuals().text_color(),
+                                                                    )
+                                                                })
+                                                            }));
+                                                        };
+                                                    },
+                                                );
 
                                                 i += 1;
                                             });
@@ -683,7 +708,9 @@ impl eframe::App for App {
                                             row_range.start + update.to,
                                             &mut shared.mods,
                                         );
-                                        if !did_change_hovered_mod && self.last_hovered_mod == Some(row_range.start + update.from) {
+                                        if !did_change_hovered_mod
+                                            && self.last_hovered_mod == Some(row_range.start + update.from)
+                                        {
                                             self.last_hovered_mod = Some(if update.from >= update.to {
                                                 row_range.start + update.to
                                             } else {
@@ -697,7 +724,10 @@ impl eframe::App for App {
                     });
 
                     let response = ui.separator();
-                    if ui.interact(response.rect, ui.auto_id_with("drag"), Sense::drag()).dragged() {
+                    if ui
+                        .interact(response.rect, ui.auto_id_with("drag"), Sense::drag())
+                        .dragged()
+                    {
                         if let Some(cursor_pos) = ctx.pointer_interact_pos() {
                             let x = cursor_pos.x - response.rect.width() / 2.0;
                             self.vertical_divider_pos = (x / viewport_width).clamp(0.1, 0.9);
