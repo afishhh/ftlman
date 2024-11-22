@@ -561,15 +561,16 @@ impl eframe::App for App {
                                                     if response.clicked() {
                                                         clicked = Some(Some(release.to_owned()));
                                                     } else if response.hovered() {
+                                                        // TODO: A scroll area here?
+                                                        //       How do we distinguish users wanting to scroll
+                                                        //       the combobox vs the description?
+                                                        //       Making the description persist when the mouse
+                                                        //       mouse of the combobox could possibly be an option.
                                                         egui::Window::new("hyperspace version tooltip")
                                                             .fixed_pos(desc_pos)
                                                             .title_bar(false)
                                                             .resizable(false)
-                                                            .show(ctx, |ui| {
-                                                                // FIXME: this doesn't work
-                                                                ui.set_max_height(ui.available_height() * 0.5);
-                                                                ui.monospace(release.description())
-                                                            });
+                                                            .show(ctx, |ui| ui.monospace(release.description()));
                                                     }
                                                 }
                                             });
@@ -616,12 +617,13 @@ impl eframe::App for App {
                                 }
                             });
 
+
                             // TODO: Separate this into a separate widget
                             egui::ScrollArea::vertical()
                                 .id_salt("mod scroll area")
                                 .show_rows(
                                     ui,
-                                    /* TODO calculate this instead */ 16.,
+                                    ui.text_style_height(&egui::TextStyle::Body),
                                     shared.mods.len(),
                                     |ui, row_range| {
                                         let mut i = row_range.start;
@@ -670,7 +672,6 @@ impl eframe::App for App {
                                                     };
                                                 });
 
-                                                // HACK: yes
                                                 i += 1;
                                             });
                                         },
