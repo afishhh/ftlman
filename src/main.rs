@@ -2,12 +2,12 @@
 
 use std::{
     collections::HashMap,
-    fmt::Display,
+    fmt::{Debug, Display},
     fs::File,
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::Arc,
+    sync::{atomic::AtomicU64, Arc},
 };
 
 use anyhow::{Context, Result};
@@ -38,6 +38,7 @@ use pathedit::PathEdit;
 
 mod apply;
 mod cache;
+mod findftl;
 mod fonts;
 mod github;
 mod hyperspace;
@@ -221,6 +222,17 @@ impl Settings {
         serde_json::ser::to_writer(File::create(path)?, self)?;
         Ok(())
     }
+
+    // On Linux + Steam the files we're interested in are located in <FTL>/data but users
+    // might unknowingly enter <FTL>, try to detect this situation and fix it automatically.
+    // This will also fix paths acquired through automatic detection of an FTL installation.
+    fn fix_ftl_directrory(&mut self) {
+        if let Some(path) = self.ftl_directory.as_mut() {
+            if path.join("data/ftl.dat").exists() {
+                path.push("data")
+            }
+        }
+    }
 }
 
 impl Default for Settings {
@@ -278,6 +290,35 @@ impl CurrentTask {
     }
 }
 
+static ERROR_IDX: AtomicU64 = AtomicU64::new(0);
+
+struct ErrorPopup {
+    id: egui::Id,
+    title: String,
+    error_chain: Vec<String>,
+}
+
+impl ErrorPopup {
+    #[must_use]
+    pub fn new(title: String, error: &anyhow::Error) -> Self {
+        Self {
+            id: egui::Id::new((
+                "error popup",
+                ERROR_IDX.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            )),
+            title,
+            error_chain: error.chain().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn create_and_log(title: String, error: &anyhow::Error) -> Self {
+        let new = Self::new(title, error);
+        new.log();
+        new
+    }
+}
+
 struct App {
     last_hovered_mod: Option<usize>,
     shared: Arc<Mutex<SharedState>>,
@@ -288,6 +329,8 @@ struct App {
     settings_open: bool,
     visuals: Visuals,
 
+    error_popups: Vec<ErrorPopup>,
+
     // % of window width
     vertical_divider_pos: f32,
 }
@@ -295,9 +338,23 @@ struct App {
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
         let settings_path = Settings::default_path();
-        let settings = Settings::load(&settings_path).unwrap_or_default();
+        let mut settings = Settings::load(&settings_path).unwrap_or_default();
+        let mut error_popups = Vec::new();
         if settings.mod_directory == Settings::default().mod_directory {
             std::fs::create_dir_all(&settings.mod_directory)?;
+        }
+        if settings.ftl_directory.is_none() {
+            match findftl::find_steam_ftl() {
+                Ok(Some(path)) => {
+                    settings.ftl_directory = Some(path);
+                    settings.fix_ftl_directrory();
+                }
+                Ok(None) => {}
+                Err(err) => error_popups.push(ErrorPopup::create_and_log(
+                    l!("findftl-failed-title").into_owned(),
+                    &err.context("An error occurred while trying to detect ftl game directory"),
+                )),
+            }
         }
         let shared = Arc::new(Mutex::new(SharedState {
             locked: false,
@@ -318,6 +375,8 @@ impl App {
             settings_path,
             settings,
             settings_open: false,
+
+            error_popups,
 
             vertical_divider_pos: 0.50,
         };
@@ -493,11 +552,11 @@ impl eframe::App for App {
                         CurrentTask::None => None,
                     } {
                         lock.apply_stage = None;
-                        if error_popup(ui, title, error) {
-                            self.current_task = CurrentTask::None;
-                            // TODO: Make this cleaner
-                            lock.locked = false;
-                        }
+                        self.error_popups
+                            .push(ErrorPopup::create_and_log(title.to_string(), error));
+                        self.current_task = CurrentTask::None;
+                        // TODO: Make this cleaner
+                        lock.locked = false;
                     }
                 });
 
@@ -592,15 +651,20 @@ impl eframe::App for App {
                                                             .fixed_pos(desc_pos)
                                                             .title_bar(false)
                                                             .resizable(false)
-                                                            .show(ctx, |ui| ui.monospace(release.description()));
+                                                            .show(ctx, |ui| {
+                                                                ui.monospace(format!("{:?}", release.version()));
+                                                                ui.monospace(release.description())
+                                                            });
                                                     }
                                                 }
                                             });
                                         }
                                         Some(Err(err)) => {
-                                            if error_popup(ui, &l!("hyperspace-fetch-releases-failed"), err) {
-                                                shared.hyperspace_releases.take();
-                                            }
+                                            self.error_popups.push(ErrorPopup::create_and_log(
+                                                l!("hyperspace-fetch-releases-failed").to_string(),
+                                                err,
+                                            ));
+                                            shared.hyperspace_releases.take();
                                         }
                                         None => {
                                             combobox.show_ui(ui, |ui| {
@@ -772,6 +836,8 @@ impl eframe::App for App {
                     }
                 })
             });
+
+            self.error_popups.retain(|popup| popup.render(ui, popup.id));
         });
 
         if self.settings_open {
@@ -836,14 +902,8 @@ impl eframe::App for App {
                         }
                     }
 
-                    // On Linux + Steam the files we're interested in are located in <FTL>/data but users
-                    // might unknowingly enter <FTL>, try to detect this situation and fix it automatically.
                     if ftl_dir_pathedit.lost_focus() {
-                        if let Some(path) = self.settings.ftl_directory.as_mut() {
-                            if path.join("data/ftl.dat").exists() {
-                                path.push("data")
-                            }
-                        }
+                        self.settings.fix_ftl_directrory();
                     }
 
                     ui.checkbox(&mut self.settings.repack_ftl_data, l!("settings-repack-archive"))
@@ -892,46 +952,45 @@ impl eframe::App for App {
     }
 }
 
-fn error_popup(ui: &mut Ui, title: &str, error: &anyhow::Error) -> bool {
-    let mut open = true;
-    egui::Window::new(title)
-        .auto_sized()
-        .open(&mut open)
-        .show(ui.ctx(), |ui| {
-            let mut job = LayoutJob::default();
+impl ErrorPopup {
+    fn render(&self, ui: &mut Ui, id: egui::Id) -> bool {
+        let mut open = true;
+        egui::Window::new(&self.title)
+            .auto_sized()
+            .id(id)
+            .open(&mut open)
+            .show(ui.ctx(), |ui| {
+                let mut job = LayoutJob::default();
 
-            let msg_font = ui.style().text_styles.get(&egui::TextStyle::Body).unwrap().clone();
-            let msg_color = Rgba::from_srgba_unmultiplied(255, 100, 0, 255);
-            for (i, err) in error.chain().enumerate() {
-                if i != 0 {
-                    job.append("\n", 0.0, egui::TextFormat::default());
+                let msg_font = ui.style().text_styles.get(&egui::TextStyle::Body).unwrap().clone();
+                let msg_color = Rgba::from_srgba_unmultiplied(255, 100, 0, 255);
+                for (i, err) in self.error_chain.iter().enumerate() {
+                    if i != 0 {
+                        job.append("\n", 0.0, egui::TextFormat::default());
+                    }
+                    job.append(&i.to_string(), 0.0, egui::TextFormat::default());
+                    job.append(
+                        &err.to_string(),
+                        10.,
+                        egui::TextFormat::simple(msg_font.clone(), msg_color.into()),
+                    );
                 }
-                job.append(&i.to_string(), 0.0, egui::TextFormat::default());
-                job.append(
-                    &err.to_string(),
-                    10.,
-                    egui::TextFormat::simple(msg_font.clone(), msg_color.into()),
-                );
-            }
 
-            let galley = ui.fonts(|x| x.layout_job(job));
-            ui.label(galley);
-        });
+                let galley = ui.fonts(|x| x.layout_job(job));
+                ui.label(galley);
+            });
 
-    ui.memory_mut(|mem| {
-        let was_open: &mut bool = mem.data.get_temp_mut_or_default("error popup was open".into());
-        if !*was_open && open {
-            let mut it = error.chain().enumerate();
-            let (_, err) = it.next().unwrap();
-            error!("{err}");
-            for (i, err) in it {
-                error!("#{i} {err}")
-            }
+        open
+    }
+
+    fn log(&self) {
+        let mut it = self.error_chain.iter().enumerate();
+        let (_, err) = it.next().unwrap();
+        error!("{err}");
+        for (i, err) in it {
+            error!("#{i} {err}")
         }
-        *was_open = open;
-    });
-
-    !open
+    }
 }
 
 impl SharedState {
@@ -1220,4 +1279,5 @@ struct Metadata {
 #[derive(Clone)]
 struct HsMetadata {
     required_hyperspace: Option<semver::VersionReq>,
+    overwrites_hyperspace_xml: bool,
 }
