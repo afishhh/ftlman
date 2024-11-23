@@ -651,10 +651,7 @@ impl eframe::App for App {
                                                             .fixed_pos(desc_pos)
                                                             .title_bar(false)
                                                             .resizable(false)
-                                                            .show(ctx, |ui| {
-                                                                ui.monospace(format!("{:?}", release.version()));
-                                                                ui.monospace(release.description())
-                                                            });
+                                                            .show(ctx, |ui| ui.monospace(release.description()));
                                                     }
                                                 }
                                             });
