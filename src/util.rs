@@ -22,17 +22,34 @@ impl Serialize for SloppyVersion {
     }
 }
 
+lazy_static! {
+    // Allows for missing components
+    static ref SIMPLE_SLOPPY_VERSION_REGEX: Regex =
+        Regex::new(r"^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?$").unwrap();
+}
+
 impl<'de> Deserialize<'de> for SloppyVersion {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
         struct Visitor;
+
         impl Visitor {
             fn try_parse_semver(v: &str) -> Option<SloppyVersion> {
-                semver::Version::parse(v).ok().map(SloppyVersion::Semver)
+                let v = v.trim();
+                if let Some(m) = SIMPLE_SLOPPY_VERSION_REGEX.captures(v) {
+                    Some(SloppyVersion::Semver(semver::Version::new(
+                        m.get(1).unwrap().as_str().parse().ok()?,
+                        m.get(2).map(|m| m.as_str().parse().ok()).unwrap_or(Some(0u64))?,
+                        m.get(3).map(|m| m.as_str().parse().ok()).unwrap_or(Some(0u64))?,
+                    )))
+                } else {
+                    semver::Version::parse(v).ok().map(SloppyVersion::Semver)
+                }
             }
         }
+
         impl serde::de::Visitor<'_> for Visitor {
             type Value = SloppyVersion;
 
@@ -69,7 +86,7 @@ impl Display for SloppyVersion {
 
 lazy_static! {
     // Present at the bottom of https://semver.org
-    static ref SEMVER_REGEX: Regex = Regex::new(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$").unwrap();
+    static ref SEMVER_REGEX: Regex = Regex::new(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?").unwrap();
 }
 
 pub fn find_semver_in_string(string: &str) -> Option<semver::Version> {
