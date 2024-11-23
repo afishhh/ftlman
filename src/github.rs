@@ -69,3 +69,9 @@ pub struct ReleaseAsset {
     pub label: Option<String>,
     pub content_type: String,
 }
+
+impl Release {
+    pub fn find_semver_in_metadata(&self) -> Option<semver::Version> {
+        crate::util::find_semver_in_string(&self.tag_name).or_else(|| crate::util::find_semver_in_string(&self.name))
+    }
+}

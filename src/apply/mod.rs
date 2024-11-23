@@ -373,14 +373,13 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
             if patch_hyperspace_ftl {
                 mods.insert(
                     0,
-                    Mod {
-                        source: ModSource::InMemoryZip {
+                    Mod::new_with_enabled(
+                        ModSource::InMemoryZip {
                             filename: "hyperspace.ftl".to_string(),
                             data: release.extract_hyperspace_ftl(&mut zip)?,
                         },
-                        enabled: true,
-                        cached_metadata: Default::default(),
-                    },
+                        true,
+                    ),
                 );
             }
         } else {

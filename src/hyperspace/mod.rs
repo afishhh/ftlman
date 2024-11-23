@@ -17,9 +17,53 @@ lazy_static! {
     static ref HYPERSPACE_REPOSITORY: github::Repository = github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace");
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct HyperspaceRelease {
     release: Release,
+    version: Option<semver::Version>,
+}
+
+// For backwards compatiblity this has to handle the case of `version` being absent.
+// I wish there was an easier way to do this with serde.
+//
+// But for now this trick will suffice:
+// serde_json will serialize a None as a field with the value of "null",
+// serde_json will also only call a `default` handler if the field is actually absent.
+// This means that we can just use an Option<Option<T>> where it will be:
+// - `Some(Some(T))` if the field is present
+// - `None` if the field is present with a null
+// - `Some(None)`` if the field is absent
+// by setting the `default` handler to a source of `Some(None)`s.
+// I hate this but it works, doesn't rely on serde_json::Value and is pretty simple.
+impl<'de> Deserialize<'de> for HyperspaceRelease {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Inner {
+            release: Release,
+            #[serde(default = "make_some_none")]
+            version: Option<Option<semver::Version>>,
+        }
+
+        fn make_some_none<T>() -> Option<Option<T>> {
+            Some(None)
+        }
+
+        let inner = Inner::deserialize(deserializer)?;
+
+        let version = match inner.version {
+            Some(Some(version)) => Some(version),
+            Some(None) => inner.release.find_semver_in_metadata(),
+            None => None,
+        };
+
+        Ok(HyperspaceRelease {
+            release: inner.release,
+            version,
+        })
+    }
 }
 
 impl HyperspaceRelease {
@@ -33,6 +77,10 @@ impl HyperspaceRelease {
 
     pub fn description(&self) -> &str {
         &self.release.body
+    }
+
+    pub fn version(&self) -> Option<&semver::Version> {
+        self.version.as_ref()
     }
 
     pub fn fetch_zip(&self, progress_callback: impl Fn(u64, u64)) -> Result<Vec<u8>> {
@@ -85,7 +133,10 @@ pub fn fetch_hyperspace_releases() -> Result<Vec<HyperspaceRelease>> {
     Ok(HYPERSPACE_REPOSITORY
         .releases()?
         .into_iter()
-        .map(|release| HyperspaceRelease { release })
+        .map(|release| HyperspaceRelease {
+            version: release.find_semver_in_metadata(),
+            release,
+        })
         .collect())
 }
 

@@ -15,11 +15,6 @@ pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> 
 
     let old = std::mem::take(&mut lock.mods)
         .into_iter()
-        .map(|m| Mod {
-            source: m.source.clone(),
-            enabled: m.enabled,
-            cached_metadata: Default::default(),
-        })
         .map(|m| (m.filename().to_string(), m))
         .collect::<HashMap<String, Mod>>();
 

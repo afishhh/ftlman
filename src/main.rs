@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
 use eframe::{
     egui::{self, RichText, Sense, Ui, Visuals},
@@ -27,6 +27,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
+use util::SloppyVersion;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
@@ -43,6 +44,7 @@ mod hyperspace;
 mod i18n;
 mod lazy;
 mod scan;
+mod util;
 mod xmltree;
 
 use apply::ApplyStage;
@@ -954,6 +956,7 @@ struct Mod {
     source: ModSource,
     enabled: bool,
     cached_metadata: OnceCell<Option<Metadata>>,
+    cached_hs_metadata: OnceCell<Option<HsMetadata>>,
 }
 
 impl DragDropItem for &mut Mod {
@@ -1170,6 +1173,7 @@ impl Mod {
             source,
             enabled,
             cached_metadata: Default::default(),
+            cached_hs_metadata: Default::default(),
         }
     }
 
@@ -1182,14 +1186,18 @@ impl Mod {
                             Some(handle) => handle,
                             None => return Ok(None),
                         },
-                    ))?;
+                    ))
+                    .with_context(|| format!("Failed to deserialize mod metadata for {}", self.filename()))?;
 
                     metadata.title = metadata.title.trim().to_string();
                     if let Some(url) = metadata.thread_url {
                         metadata.thread_url = Some(url.trim().to_string());
                     }
                     metadata.author = metadata.author.trim().to_string();
-                    metadata.version = metadata.version.trim().to_string();
+                    metadata.version = match metadata.version {
+                        SloppyVersion::Semver(v) => SloppyVersion::Semver(v),
+                        SloppyVersion::Invalid(s) => SloppyVersion::Invalid(s.trim().to_string()),
+                    };
                     metadata.description = metadata.description.trim().to_string();
 
                     metadata
@@ -1205,6 +1213,11 @@ struct Metadata {
     #[serde(rename = "threadUrl")]
     thread_url: Option<String>,
     author: String,
-    version: String,
+    version: SloppyVersion,
     description: String,
+}
+
+#[derive(Clone)]
+struct HsMetadata {
+    required_hyperspace: Option<semver::VersionReq>,
 }

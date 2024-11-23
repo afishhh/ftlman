@@ -36,6 +36,9 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 # Localisation
 fluent = "0.16"
 
+# Used for dependency checking
+semver = { version = "1", features = ["serde"] }
+
 # This dependency could be removed but it's pretty small.
 open = "5.3.1"
 
