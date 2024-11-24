@@ -40,10 +40,6 @@ mod backend {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add lang property")
             }
 
-            if FcPatternAddString(pattern, FC_FONTFORMAT.as_ptr(), c"TrueType".as_ptr() as *const u8) == 0 {
-                bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add fontformat property")
-            }
-
             if FcPatternAddInteger(pattern, FC_WEIGHT.as_ptr(), FC_WEIGHT_NORMAL) == 0 {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add weight property")
             }
@@ -52,19 +48,42 @@ mod backend {
                 bail!("{FC_PATTERN_CREATE_FAIL}: Failed to add style property")
             }
 
-            if FcConfigSubstitute(config, pattern, FcMatchFont) == 0 {
+            if FcConfigSubstitute(config, pattern, FcMatchPattern) == 0 {
                 bail!("Failed to execute fontconfig substitutions")
             }
 
-            let mut result = MaybeUninit::uninit();
-            let prepared = FcFontMatch(config, pattern, result.as_mut_ptr());
+            FcDefaultSubstitute(pattern);
+
+            let mut result = MaybeUninit::<FcResult>::uninit();
+            let font_set = FcFontSort(config, pattern, 0, std::ptr::null_mut(), result.as_mut_ptr());
+
             if result.assume_init() != FcResultMatch {
-                bail!("Failed to match font with fontconfig: {result:?}")
+                bail!("Failed to sort fonts with fontconfig: {result:?}")
             }
+
+            let fonts =
+                std::slice::from_raw_parts((*font_set).fonts as *const *mut FcPattern, (*font_set).nfont as usize);
+
+            let mut found = None;
+            for font in fonts.iter().copied() {
+                let mut lang = MaybeUninit::uninit();
+                if FcPatternGetLangSet(font, FC_LANG.as_ptr(), 0, lang.as_mut_ptr()) != FcResultMatch {
+                    bail!("Fontconfig font match did not return a language")
+                }
+
+                if FcLangSetHasLang(lang.assume_init(), lang_cstring.as_ptr() as *const u8) == FcLangEqual {
+                    found = Some(font);
+                    break;
+                }
+            }
+
+            let Some(found) = found else {
+                bail!("Failed to find a language-apprioriate font in fontconfig fontset");
+            };
 
             {
                 let mut name = MaybeUninit::uninit();
-                if FcPatternGetString(prepared, FC_FAMILY.as_ptr(), 0, name.as_mut_ptr()) != FcResultMatch {
+                if FcPatternGetString(found, FC_FAMILY.as_ptr(), 0, name.as_mut_ptr()) != FcResultMatch {
                     bail!("Fontconfig font match did not return a family")
                 }
 
@@ -75,7 +94,7 @@ mod backend {
             }
 
             let mut path = MaybeUninit::uninit();
-            if FcPatternGetString(prepared, FC_FILE.as_ptr(), 0, path.as_mut_ptr()) != FcResultMatch {
+            if FcPatternGetString(found, FC_FILE.as_ptr(), 0, path.as_mut_ptr()) != FcResultMatch {
                 bail!("Fontconfig font match did not return a file")
             }
 
@@ -84,7 +103,7 @@ mod backend {
             ));
 
             FcPatternDestroy(pattern);
-            FcPatternDestroy(prepared);
+            FcFontSetDestroy(font_set);
             FcFini();
 
             Ok(FontData::from_owned(std::fs::read(owned_path)?))
