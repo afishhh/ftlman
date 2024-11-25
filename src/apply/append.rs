@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::xmltree::{Element, Node};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use lazy_static::lazy_static;
 use regex::Regex;
 
@@ -46,7 +46,7 @@ pub fn patch(context: &mut Element, patch: Vec<XMLNode>) -> Result<()> {
 }
 
 fn cleanup(element: &mut Element) {
-    const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-overwrite"];
+    const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-prepend", "mod-overwrite"];
 
     if element
         .prefix
@@ -105,6 +105,15 @@ macro_rules! get_attr {
     ($node: ident, $type: ty, $name: literal, $default: expr) => {{
         get_attr!($node, $type, $name).transpose().unwrap_or(Ok($default))
     }};
+    ($node: ident, StringFilter($is_regex: expr), $name: literal) => {
+        // FIXME: Hope LLVM optimises the maps away? Is that far fetched?
+        //        If it doesn't the wrapping can be moved into the inner macro.
+        if $is_regex {
+            get_attr!($node, Regex, $name).map(|x| x.map(StringFilter::Regex))
+        } else {
+            get_attr!($node, String, $name).map(|x| x.map(StringFilter::Fixed))
+        }
+    };
     ($node: ident, $type: ty, $name: literal) => {{
         $node
             .attributes
@@ -134,19 +143,41 @@ trait ElementFilter {
     }
 }
 
+enum StringFilter {
+    Fixed(String),
+    Regex(Regex),
+}
+
+impl StringFilter {
+    fn parse(pattern: &str, is_regex: bool) -> Result<Self> {
+        Ok(if is_regex {
+            Self::Regex(pattern.parse()?)
+        } else {
+            Self::Fixed(pattern.to_string())
+        })
+    }
+
+    fn is_match(&self, value: &str) -> bool {
+        match self {
+            StringFilter::Fixed(text) => value == text,
+            StringFilter::Regex(regex) => regex.find(value).is_some_and(|m| m.len() == value.len()),
+        }
+    }
+}
+
 #[derive(Default)]
 struct SelectorFilter {
-    pub name: Option<String>,
-    pub attrs: Vec<(String, String)>,
+    pub name: Option<StringFilter>,
+    pub attrs: Vec<(String, StringFilter)>,
     pub value: Option<String>,
 }
 
 impl SelectorFilter {
-    fn from_selector_element(selector: &Element) -> Self {
+    fn from_selector_element(selector: &Element, regex: bool) -> Result<Self> {
         let mut result = Self { ..Default::default() };
 
         for (key, value) in &selector.attributes {
-            result.attrs.push((key.to_owned(), value.to_owned()));
+            result.attrs.push((key.to_owned(), StringFilter::parse(value, regex)?));
         }
 
         let text = selector.get_text();
@@ -155,25 +186,26 @@ impl SelectorFilter {
             result.value = Some(trimmed.to_string())
         }
 
-        result
+        Ok(result)
     }
 
-    fn from_selector_parent(parent: &Element) -> Self {
-        parent
-            .get_child(("selector", "mod"))
-            .map(Self::from_selector_element)
-            .unwrap_or_default()
+    fn from_selector_parent(parent: &Element, regex: bool) -> Result<Self> {
+        if let Some(child) = parent.get_child(("selector", "mod")) {
+            Self::from_selector_element(child, regex)
+        } else {
+            Ok(Self::default())
+        }
     }
 }
 
 impl ElementFilter for SelectorFilter {
     fn filter_one(&self, element: &Element) -> bool {
-        if self.name.as_deref().is_some_and(|name| element.name != name) {
+        if self.name.as_ref().is_some_and(|filter| !filter.is_match(&element.name)) {
             return false;
         }
 
         for (key, value) in self.attrs.iter() {
-            if element.attributes.get(key) != Some(value) {
+            if element.attributes.get(key).is_none_or(|x| !value.is_match(x)) {
                 return false;
             }
         }
@@ -192,13 +224,13 @@ impl ElementFilter for SelectorFilter {
 
 #[derive(Default)]
 struct WithChildFilter<F: ElementFilter> {
-    pub name: Option<String>,
+    pub name: Option<StringFilter>,
     pub child_filter: F,
 }
 
 impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
     fn filter_one(&self, element: &Element) -> bool {
-        if self.name.as_deref().is_some_and(|name| element.name != name) {
+        if self.name.as_ref().is_some_and(|filter| !filter.is_match(&element.name)) {
             return false;
         }
 
@@ -228,9 +260,22 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
     let operation =
         get_attr!(node, ParOperation, "op")?.ok_or_else(|| anyhow!("par node is missing an op attribute"))?;
 
-    let mut set = HashSet::<*mut Element>::new();
+    let mut it = node.children.iter().filter_map(XMLNode::as_element);
 
-    for child in node.children.iter().filter_map(XMLNode::as_element) {
+    let Some(first_child) = it.next() else {
+        return Ok(Some(Vec::new()));
+    };
+
+    let Some(initial) = (match mod_par(context, first_child)? {
+        Some(x) => Some(x),
+        None => mod_find(context, first_child)?,
+    }) else {
+        bail!("par node contains an invalid child");
+    };
+
+    let mut set: HashSet<*mut Element> = initial.into_iter().map(|x| x as *mut Element).collect();
+
+    for child in it {
         let Some(candidates) = (match mod_par(context, child)? {
             Some(x) => Some(x),
             None => mod_find(context, child)?,
@@ -258,7 +303,6 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
     Ok(Some(set.into_iter().map(|x| unsafe { &mut *x }).collect()))
 }
 
-// FIXME: The code duplication here is actually atrocious
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if node.prefix.as_ref().is_some_and(|x| x == "mod") {
         if !["findName", "findLike", "findWithChildLike", "findComposite"].contains(&node.name.as_str()) {
@@ -277,14 +321,13 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
 
         let mut matches: Vec<&'a mut Element> = match node.name.as_str() {
             "findName" => {
-                let Some(search_name) = get_attr!(node, String, "name")? else {
+                let search_regex = get_attr!(node, bool, "regex", false)?;
+
+                let Some(search_name) = get_attr!(node, StringFilter(search_regex), "name")? else {
                     bail!("findName requires a name attribute");
                 };
-                let search_type = get_attr!(node, String, "type")?;
 
-                if search_type.as_ref().is_some_and(|x| x.is_empty()) {
-                    bail!("findName 'type' attribute cannot be empty")
-                }
+                let search_type = get_attr!(node, StringFilter(search_regex), "type")?;
 
                 SelectorFilter {
                     name: search_type,
@@ -294,36 +337,30 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                 .filter_children(context)
             }
             "findLike" => {
-                let search_type = get_attr!(node, String, "type")?;
+                let search_regex = get_attr!(node, bool, "regex", false)?;
 
-                if search_type.as_ref().is_some_and(|x| x.is_empty()) {
-                    bail!("findLike 'type' attribute cannot be empty")
-                }
+                let search_type = get_attr!(node, StringFilter(search_regex), "type")?;
 
                 SelectorFilter {
                     name: search_type,
-                    ..SelectorFilter::from_selector_parent(node)
+                    ..SelectorFilter::from_selector_parent(node, search_regex)
+                        .context("Failed to parse selector element")?
                 }
                 .filter_children(context)
             }
             "findWithChildLike" => {
-                let search_type = get_attr!(node, String, "type")?;
+                let search_regex = get_attr!(node, bool, "regex", false)?;
 
-                if search_type.as_ref().is_some_and(|x| x.is_empty()) {
-                    bail!("findWithChildLike 'type' attribute cannot be empty")
-                }
+                let search_type = get_attr!(node, StringFilter(search_regex), "type")?;
 
-                let search_child_type = get_attr!(node, String, "child-type")?;
-
-                if search_child_type.as_ref().is_some_and(|x| x.is_empty()) {
-                    bail!("findWithChildLike 'child-type' attribute cannot be empty")
-                }
+                let search_child_type = get_attr!(node, StringFilter(search_regex), "child-type")?;
 
                 WithChildFilter {
                     name: search_type,
                     child_filter: SelectorFilter {
                         name: search_child_type,
-                        ..SelectorFilter::from_selector_parent(node)
+                        ..SelectorFilter::from_selector_parent(node, search_regex)
+                            .context("Failed to parse selector element")?
                     },
                 }
                 .filter_children(context)
@@ -418,6 +455,13 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                         }
                     }
                 }
+            }
+            Some("mod-prepend") => {
+                let mut new = command.clone();
+                new.prefix = None;
+
+                // FIXME: Linked list? Benchmarks needed.
+                context.children.insert(0, XMLNode::Element(new));
             }
             Some("mod-append") => {
                 let mut new = command.clone();

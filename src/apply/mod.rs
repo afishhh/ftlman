@@ -146,6 +146,13 @@ fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 
     Ok(Box::new(Cursor::new(out.into_bytes())))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum XmlAppendType {
+    Append,
+    RawAppend,
+    RawClobber,
+}
+
 pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(ApplyStage), repack: bool) -> Result<()> {
     on_progress(ApplyStage::Preparing);
 
@@ -193,13 +200,6 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 files_total: path_count,
             });
 
-            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-            enum XmlAppendType {
-                Append,
-                RawAppend,
-                RawClobber,
-            }
-
             const XML_APPEND_SUFFIXES: &[(&str, XmlAppendType)] = &[
                 (".xml.append", XmlAppendType::Append),
                 (".append.xml", XmlAppendType::Append),
@@ -216,18 +216,15 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
             if let Some((real_stem, operation)) = xml_append_type {
                 let real_name = format!("{real_stem}.xml");
                 let original_text = {
-                    let mut buf = Vec::new();
                     match pkg.open(&real_name) {
-                        Ok(mut x) => x.read_to_end(&mut buf).map(|_| ()),
+                        Ok(x) => std::io::read_to_string(x),
                         Err(silpkg::sync::OpenError::NotFound) => {
                             warn!("Ignoring {name} with non-existent base file");
                             continue;
                         }
                         Err(silpkg::sync::OpenError::Io(x)) => Err(x),
                     }
-                    .with_context(|| format!("Failed to extract {real_name} from ftl.dat"))?;
-                    String::from_utf8(buf)
-                        .with_context(|| format!("Failed to decode {real_name} from ftl.dat as UTF-8"))?
+                    .with_context(|| format!("Failed to extract {real_name} from ftl.dat"))?
                 };
 
                 trace!("Patching {real_name} according to {name}");
@@ -242,9 +239,9 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 let new_text = match operation {
                     XmlAppendType::Append => unwrap_rewrap_xml(original_text, append_text, append::patch)
                         .with_context(|| format!("While patching file {real_name} according to {name}"))?,
-                    XmlAppendType::RawAppend => todo!(".xml.rawappend files are not supported yet"),
+                    XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
                     XmlAppendType::RawClobber => {
-                        todo!(".xml.rawclobber files are not supported yet")
+                        bail!(".xml.rawclobber files are not supported yet")
                     }
                 };
 
