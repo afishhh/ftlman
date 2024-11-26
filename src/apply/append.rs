@@ -479,7 +479,8 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                     context.children.push(XMLNode::Element(new));
                 }
             }
-            _ => bail!("Unrecognised mod command namespace {}", command.name),
+            Some(other) => bail!("Unrecognised mod command namespace: {:?}", other),
+            None => bail!("Mod command is missing a namespace"),
         }
     }
 
