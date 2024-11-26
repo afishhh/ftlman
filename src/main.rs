@@ -346,23 +346,6 @@ impl ErrorPopup {
         new
     }
 
-    fn render_parts<S: AsRef<str>, R>(
-        ui: &mut Ui,
-        title: &str,
-        chain: impl Iterator<Item = S> + ExactSizeIterator,
-        extra: impl FnOnce(&mut Ui) -> R,
-    ) -> Option<Option<R>> {
-        let mut open = true;
-        egui::Window::new(title)
-            .auto_sized()
-            .open(&mut open)
-            .show(ui.ctx(), |ui| {
-                render_error_chain(ui, chain);
-                extra(ui)
-            })
-            .map(|r| r.inner)
-    }
-
     fn render(&self, ui: &mut Ui) -> bool {
         let mut open = true;
         egui::Window::new(&self.title)
