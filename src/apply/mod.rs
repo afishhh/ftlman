@@ -43,8 +43,8 @@ pub enum ApplyStage {
 }
 
 fn unwrap_rewrap_xml(
-    lower: String,
-    upper: String,
+    lower: &str,
+    upper: &str,
     combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
 ) -> Result<String> {
     // FIXME: this can be made quicker
@@ -62,8 +62,7 @@ fn unwrap_rewrap_xml(
         &mut lower_parsed,
         xmltree::Element::parse_all_sloppy(Cursor::new(upper_without_root.as_str()))
             .context("Could not parse XML append document")?,
-    )
-    .context("Could not patch XML file")?;
+    )?;
 
     Ok({
         let mut out = vec![];
@@ -147,10 +146,37 @@ fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum XmlAppendType {
+pub enum XmlAppendType {
     Append,
     RawAppend,
     RawClobber,
+}
+
+impl XmlAppendType {
+    pub fn from_filename(name: &str) -> Option<(&str, XmlAppendType)> {
+        const XML_APPEND_SUFFIXES: &[(&str, XmlAppendType)] = &[
+            (".xml.append", XmlAppendType::Append),
+            (".append.xml", XmlAppendType::Append),
+            (".rawappend.xml", XmlAppendType::RawAppend),
+            (".xml.rawappend", XmlAppendType::RawAppend),
+            (".rawclobber.xml", XmlAppendType::RawClobber),
+            (".xml.rawclobber", XmlAppendType::RawClobber),
+        ];
+
+        XML_APPEND_SUFFIXES
+            .iter()
+            .find_map(|x| name.strip_suffix(x.0).map(|stem| (stem, x.1)))
+    }
+}
+
+pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<String> {
+    Ok(match kind {
+        XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
+        XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
+        XmlAppendType::RawClobber => {
+            bail!(".xml.rawclobber files are not supported yet")
+        }
+    })
 }
 
 pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(ApplyStage), repack: bool) -> Result<()> {
@@ -200,18 +226,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 files_total: path_count,
             });
 
-            const XML_APPEND_SUFFIXES: &[(&str, XmlAppendType)] = &[
-                (".xml.append", XmlAppendType::Append),
-                (".append.xml", XmlAppendType::Append),
-                (".rawappend.xml", XmlAppendType::RawAppend),
-                (".xml.rawappend", XmlAppendType::RawAppend),
-                (".rawclobber.xml", XmlAppendType::RawClobber),
-                (".xml.rawclobber", XmlAppendType::RawClobber),
-            ];
-
-            let xml_append_type = XML_APPEND_SUFFIXES
-                .iter()
-                .find_map(|x| name.strip_suffix(x.0).map(|stem| (stem, x.1)));
+            let xml_append_type = XmlAppendType::from_filename(&name);
 
             if let Some((real_stem, operation)) = xml_append_type {
                 let real_name = format!("{real_stem}.xml");
@@ -236,14 +251,8 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 )
                 .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
-                let new_text = match operation {
-                    XmlAppendType::Append => unwrap_rewrap_xml(original_text, append_text, append::patch)
-                        .with_context(|| format!("While patching file {real_name} according to {name}"))?,
-                    XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
-                    XmlAppendType::RawClobber => {
-                        bail!(".xml.rawclobber files are not supported yet")
-                    }
-                };
+                let new_text = apply_one(&original_text, &append_text, operation)
+                    .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
 
                 match pkg.remove(&real_name) {
                     Ok(()) => {}
