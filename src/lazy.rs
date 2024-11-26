@@ -15,6 +15,10 @@ impl<T, F: Fn() -> T> ResettableLazy<T, F> {
 }
 
 impl<T, F: Fn() -> T> ResettableLazy<T, F> {
+    pub fn set(&mut self, value: T) {
+        *self.value.get_mut() = Some(value);
+    }
+
     pub fn take(&mut self) -> Option<T> {
         std::mem::take(self.value.get_mut())
     }

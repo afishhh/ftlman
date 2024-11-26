@@ -78,4 +78,12 @@ impl Cache {
             fun,
         )
     }
+
+    pub fn read(&self, subpath: &str) -> Result<Option<Vec<u8>>> {
+        match std::fs::read(self.root.join(subpath)) {
+            Ok(data) => Ok(Some(data)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
 }

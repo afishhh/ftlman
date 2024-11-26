@@ -22,7 +22,7 @@ use eframe::{
 use egui_dnd::DragDropItem;
 use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
-use log::{debug, error};
+use log::{debug, error, warn};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
@@ -271,6 +271,8 @@ pub struct SharedState {
     ctx: egui::Context,
     hyperspace: Option<HyperspaceState>,
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
+    ignore_releases_fetch_error: bool,
+
     mods: Vec<Mod>,
 }
 
@@ -291,6 +293,33 @@ impl CurrentTask {
 }
 
 static ERROR_IDX: AtomicU64 = AtomicU64::new(0);
+
+fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl Iterator<Item = S> + ExactSizeIterator) {
+    let mut job = LayoutJob::default();
+    job.wrap = egui::text::TextWrapping::from_wrap_mode_and_width(egui::TextWrapMode::Wrap, ui.available_width());
+
+    let is_single_error = it.len() == 1;
+
+    let msg_font = ui.style().text_styles.get(&egui::TextStyle::Body).unwrap().clone();
+    let msg_color = Rgba::from_srgba_unmultiplied(255, 100, 0, 255);
+    for (i, err) in it.enumerate() {
+        if i != 0 {
+            job.append("\n", 0.0, egui::TextFormat::default());
+        }
+        // No need for numbering chainged errors if this is just a single error
+        if !is_single_error {
+            job.append(&(i + 1).to_string(), 0.0, egui::TextFormat::default());
+        }
+        job.append(
+            &err.as_ref(),
+            10.,
+            egui::TextFormat::simple(msg_font.clone(), msg_color.into()),
+        );
+    }
+
+    let galley = ui.fonts(|x| x.layout_job(job));
+    ui.label(galley);
+}
 
 struct ErrorPopup {
     id: egui::Id,
@@ -316,6 +345,43 @@ impl ErrorPopup {
         let new = Self::new(title, error);
         new.log();
         new
+    }
+
+    fn render_parts<S: AsRef<str>, R>(
+        ui: &mut Ui,
+        title: &str,
+        chain: impl Iterator<Item = S> + ExactSizeIterator,
+        extra: impl FnOnce(&mut Ui) -> R,
+    ) -> Option<Option<R>> {
+        let mut open = true;
+        egui::Window::new(title)
+            .auto_sized()
+            .open(&mut open)
+            .show(ui.ctx(), |ui| {
+                render_error_chain(ui, chain);
+                extra(ui)
+            })
+            .map(|r| r.inner)
+    }
+
+    fn render(&self, ui: &mut Ui) -> bool {
+        let mut open = true;
+        egui::Window::new(&self.title)
+            .resizable(true)
+            .id(self.id)
+            .open(&mut open)
+            .show(ui.ctx(), |ui| render_error_chain(ui, self.error_chain.iter()));
+
+        open
+    }
+
+    fn log(&self) {
+        let mut it = self.error_chain.iter().enumerate();
+        let (_, err) = it.next().unwrap();
+        error!("{err}");
+        for (i, err) in it {
+            error!("#{i} {err}")
+        }
     }
 }
 
@@ -364,6 +430,7 @@ impl App {
             hyperspace_releases: ResettableLazy::new(|| {
                 Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
             }),
+            ignore_releases_fetch_error: false,
             mods: vec![],
         }));
         let mut app = App {
@@ -657,11 +724,58 @@ impl eframe::App for App {
                                             });
                                         }
                                         Some(Err(err)) => {
-                                            self.error_popups.push(ErrorPopup::create_and_log(
-                                                l!("hyperspace-fetch-releases-failed").to_string(),
-                                                err,
-                                            ));
-                                            shared.hyperspace_releases.take();
+                                            // TODO: move stuff out of `shared`
+                                            let error_chain =
+                                                err.chain().map(|x| x.to_string()).collect::<Vec<String>>();
+                                            if shared.ignore_releases_fetch_error {
+                                                let name = shared.hyperspace.as_ref().map(|n| n.release.name());
+                                                if let Some(name) = name {
+                                                    ui.label(name);
+                                                } else {
+                                                    ui.label(
+                                                        egui::RichText::new("Unavailable")
+                                                            .color(ui.style().visuals.error_fg_color)
+                                                    );
+                                                }
+                                            } else {
+                                                egui::Window::new(l!("hyperspace-fetch-releases-failed"))
+                                                    .auto_sized()
+                                                    .show(ctx, |ui| {
+                                                        // HACK: w h a t ???
+                                                        ui.set_width(ui.available_width() / 2.0);
+
+                                                        render_error_chain(ui, error_chain.iter());
+
+                                                        ui.with_layout(
+                                                            egui::Layout::left_to_right(egui::Align::Min),
+                                                            |ui| {
+                                                                if ui.button("Dismiss").clicked() {
+                                                                    shared.ignore_releases_fetch_error = true;
+                                                                    if let Some(cached) =
+                                                                        hyperspace::get_cached_hyperspace_releases()
+                                                                            .unwrap_or_else(|e| {
+                                                                                error!("Failed to read cached hyperspace releases: {e}");
+                                                                                None
+                                                                            })
+                                                                    {
+                                                                        shared.hyperspace_releases.set(Promise::from_ready(Ok(cached)))
+                                                                    }
+                                                                    ctx.request_repaint();
+                                                                }
+
+                                                                ui.with_layout(
+                                                                    egui::Layout::right_to_left(egui::Align::Min),
+                                                                    |ui| {
+                                                                        if ui.button("Retry").clicked() {
+                                                                            shared.hyperspace_releases.take();
+                                                                            ctx.request_repaint();
+                                                                        }
+                                                                    },
+                                                                );
+                                                            },
+                                                        );
+                                                    });
+                                            }
                                         }
                                         None => {
                                             combobox.show_ui(ui, |ui| {
@@ -834,7 +948,7 @@ impl eframe::App for App {
                 })
             });
 
-            self.error_popups.retain(|popup| popup.render(ui, popup.id));
+            self.error_popups.retain(|popup| popup.render(ui));
         });
 
         if self.settings_open {
@@ -946,47 +1060,7 @@ impl eframe::App for App {
                     }
                 });
         }
-    }
-}
 
-impl ErrorPopup {
-    fn render(&self, ui: &mut Ui, id: egui::Id) -> bool {
-        let mut open = true;
-        egui::Window::new(&self.title)
-            .auto_sized()
-            .id(id)
-            .open(&mut open)
-            .show(ui.ctx(), |ui| {
-                let mut job = LayoutJob::default();
-
-                let msg_font = ui.style().text_styles.get(&egui::TextStyle::Body).unwrap().clone();
-                let msg_color = Rgba::from_srgba_unmultiplied(255, 100, 0, 255);
-                for (i, err) in self.error_chain.iter().enumerate() {
-                    if i != 0 {
-                        job.append("\n", 0.0, egui::TextFormat::default());
-                    }
-                    job.append(&i.to_string(), 0.0, egui::TextFormat::default());
-                    job.append(
-                        &err.to_string(),
-                        10.,
-                        egui::TextFormat::simple(msg_font.clone(), msg_color.into()),
-                    );
-                }
-
-                let galley = ui.fonts(|x| x.layout_job(job));
-                ui.label(galley);
-            });
-
-        open
-    }
-
-    fn log(&self) {
-        let mut it = self.error_chain.iter().enumerate();
-        let (_, err) = it.next().unwrap();
-        error!("{err}");
-        for (i, err) in it {
-            error!("#{i} {err}")
-        }
     }
 }
 

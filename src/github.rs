@@ -29,6 +29,13 @@ impl Repository {
         format!("github/{}/{}", self.owner, self.name)
     }
 
+    pub fn cached_releases(&self) -> Result<Option<Vec<Release>>> {
+        CACHE
+            .read(&format!("{}/releases", self.cache_subdir()))?
+            .map(|data| serde_json::from_slice(&data).context("Could not parse cached github API response"))
+            .transpose()
+    }
+
     pub fn releases(&self) -> Result<Vec<Release>> {
         let bytes = CACHE.read_or_create_with_ttl(
             &format!("{}/releases", self.cache_subdir()),

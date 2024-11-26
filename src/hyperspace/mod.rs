@@ -140,6 +140,21 @@ pub fn fetch_hyperspace_releases() -> Result<Vec<HyperspaceRelease>> {
         .collect())
 }
 
+pub fn get_cached_hyperspace_releases() -> Result<Option<Vec<HyperspaceRelease>>> {
+    Ok(Some(
+        match HYPERSPACE_REPOSITORY.cached_releases() {
+            Ok(Some(releases)) => releases,
+            Ok(None) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+        .into_iter()
+        .map(|release| HyperspaceRelease {
+            version: release.find_semver_in_metadata(),
+            release,
+        })
+        .collect(),
+    ))
+}
 pub trait Installer {
     fn supported(&self, ftl: &Path) -> Result<Result<&dyn Installer, String>>;
     fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()>;
