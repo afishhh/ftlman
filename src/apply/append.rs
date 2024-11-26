@@ -169,7 +169,7 @@ impl StringFilter {
 struct SelectorFilter {
     pub name: Option<StringFilter>,
     pub attrs: Vec<(String, StringFilter)>,
-    pub value: Option<String>,
+    pub value: Option<StringFilter>,
 }
 
 impl SelectorFilter {
@@ -183,7 +183,7 @@ impl SelectorFilter {
         let text = selector.get_text();
         let trimmed = text.trim();
         if !trimmed.is_empty() {
-            result.value = Some(trimmed.to_string())
+            result.value = Some(StringFilter::parse(trimmed, regex)?)
         }
 
         Ok(result)
@@ -212,8 +212,8 @@ impl ElementFilter for SelectorFilter {
 
         if self
             .value
-            .as_deref()
-            .is_some_and(|value| value != element.get_text().trim())
+            .as_ref()
+            .is_some_and(|value| !value.is_match(element.get_text().trim()))
         {
             return false;
         }
