@@ -41,6 +41,7 @@ mod cache;
 mod findftl;
 mod fonts;
 mod github;
+mod gui;
 mod hyperspace;
 mod i18n;
 mod lazy;
@@ -396,6 +397,8 @@ struct App {
     settings_open: bool,
     visuals: Visuals,
 
+    sandbox: gui::sandbox::Sandbox,
+
     error_popups: Vec<ErrorPopup>,
 
     // % of window width
@@ -444,6 +447,8 @@ impl App {
             settings_path,
             settings,
             settings_open: false,
+
+            sandbox: gui::sandbox::Sandbox::new(),
 
             error_popups,
 
@@ -502,6 +507,19 @@ impl eframe::App for App {
                         .clicked()
                     {
                         self.settings_open = true;
+                    }
+
+                    if ui
+                        .add_enabled(
+                            !self.sandbox.is_open() && self.settings.ftl_directory.is_some(),
+                            egui::Button::new(l!("sandbox-button")),
+                        )
+                        .clicked()
+                    {
+                        if let Err(e) = self.sandbox.open(self.settings.ftl_directory.as_ref().unwrap()) {
+                            self.error_popups
+                                .push(ErrorPopup::create_and_log(l!("sandbox-open-failed").into_owned(), &e))
+                        }
                     }
                 })
             });
@@ -1063,6 +1081,7 @@ impl eframe::App for App {
                 });
         }
 
+        self.sandbox.render(ctx);
     }
 }
 

@@ -34,6 +34,10 @@ pathedit-tooltip = Use Tab and Shift+Tab to cycle suggestions
 
 findftl-failed-title = FTL directory autodetection failed
 
+sandbox-button = XML Sandbox
+sandbox-open-failed = Failed to open XML Sandbox
+sandbox-editor-hint = Type append xml here to apply it to the selected file
+
 settings-button = Settings
 settings-title = {settings-button}
 settings-mod-dir = Mod directory
