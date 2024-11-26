@@ -22,7 +22,7 @@ use eframe::{
 use egui_dnd::DragDropItem;
 use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
-use log::{debug, error, warn};
+use log::{debug, error};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
@@ -270,8 +270,6 @@ pub struct SharedState {
 
     ctx: egui::Context,
     hyperspace: Option<HyperspaceState>,
-    hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
-    ignore_releases_fetch_error: bool,
 
     mods: Vec<Mod>,
 }
@@ -389,6 +387,9 @@ struct App {
     last_hovered_mod: Option<usize>,
     shared: Arc<Mutex<SharedState>>,
 
+    hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
+    ignore_releases_fetch_error: bool,
+
     current_task: CurrentTask,
     settings_path: PathBuf,
     settings: Settings,
@@ -427,15 +428,16 @@ impl App {
             apply_stage: None,
             ctx: cc.egui_ctx.clone(),
             hyperspace: None,
-            hyperspace_releases: ResettableLazy::new(|| {
-                Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
-            }),
-            ignore_releases_fetch_error: false,
             mods: vec![],
         }));
         let mut app = App {
             last_hovered_mod: None,
             shared: shared.clone(),
+
+            hyperspace_releases: ResettableLazy::new(|| {
+                Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
+            }),
+            ignore_releases_fetch_error: false,
 
             current_task: CurrentTask::None,
             visuals: settings.theme.visuals(),
@@ -686,7 +688,7 @@ impl eframe::App for App {
                                     );
 
                                     let mut clicked = None;
-                                    match shared.hyperspace_releases.ready() {
+                                    match self.hyperspace_releases.ready() {
                                         Some(Ok(releases)) => {
                                             combobox.show_ui(ui, |ui| {
                                                 if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
@@ -727,7 +729,7 @@ impl eframe::App for App {
                                             // TODO: move stuff out of `shared`
                                             let error_chain =
                                                 err.chain().map(|x| x.to_string()).collect::<Vec<String>>();
-                                            if shared.ignore_releases_fetch_error {
+                                            if self.ignore_releases_fetch_error {
                                                 let name = shared.hyperspace.as_ref().map(|n| n.release.name());
                                                 if let Some(name) = name {
                                                     ui.label(name);
@@ -750,7 +752,7 @@ impl eframe::App for App {
                                                             egui::Layout::left_to_right(egui::Align::Min),
                                                             |ui| {
                                                                 if ui.button("Dismiss").clicked() {
-                                                                    shared.ignore_releases_fetch_error = true;
+                                                                    self.ignore_releases_fetch_error = true;
                                                                     if let Some(cached) =
                                                                         hyperspace::get_cached_hyperspace_releases()
                                                                             .unwrap_or_else(|e| {
@@ -758,7 +760,7 @@ impl eframe::App for App {
                                                                                 None
                                                                             })
                                                                     {
-                                                                        shared.hyperspace_releases.set(Promise::from_ready(Ok(cached)))
+                                                                        self.hyperspace_releases.set(Promise::from_ready(Ok(cached)))
                                                                     }
                                                                     ctx.request_repaint();
                                                                 }
@@ -767,7 +769,7 @@ impl eframe::App for App {
                                                                     egui::Layout::right_to_left(egui::Align::Min),
                                                                     |ui| {
                                                                         if ui.button("Retry").clicked() {
-                                                                            shared.hyperspace_releases.take();
+                                                                            self.hyperspace_releases.take();
                                                                             ctx.request_repaint();
                                                                         }
                                                                     },
@@ -795,7 +797,7 @@ impl eframe::App for App {
                                         }
                                     }
 
-                                    if shared.hyperspace_releases.ready().is_none() {
+                                    if self.hyperspace_releases.ready().is_none() {
                                         ui.label(l!("hyperspace-fetching-releases"));
                                         ui.spinner();
                                     }
