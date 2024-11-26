@@ -14,7 +14,11 @@ fn steam_library_folders_vdf() -> Result<Option<PathBuf>> {
                 .join(".steam/root/steamapps/libraryfolders.vdf"),
         ))
     }
-    #[cfg(not(any(target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        Ok(Some("C:\\Program Files (x86)\\Steam\\steamapps\\libraryfolders.vdf"))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
         warn!("steam_library_folders_vdf: Unsupported operating system");
         Ok(None)
