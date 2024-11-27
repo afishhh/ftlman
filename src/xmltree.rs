@@ -3,7 +3,7 @@
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::BTreeMap,
     io::{BufRead, Write},
 };
 
@@ -50,7 +50,7 @@ impl Node {
 pub struct Element {
     pub prefix: Option<String>,
     pub name: String,
-    pub attributes: HashMap<String, String>,
+    pub attributes: BTreeMap<String, String>,
     pub children: Vec<Node>,
 }
 
@@ -72,7 +72,7 @@ macro_rules! build_loop_match {
     ($reader: expr, $buffer: expr, output = $output: expr, End($end_name: tt) => $end: expr, Eof => $eof: expr) => {
         match $reader.read_event_into($buffer)? {
             ref event @ (Event::Start(ref x) | Event::Empty(ref x)) => {
-                let mut attributes = HashMap::new();
+                let mut attributes = BTreeMap::new();
                 for attr in x.attributes() {
                     let attr = attr.map_err(quick_xml::Error::from)?;
                     attributes.insert(
