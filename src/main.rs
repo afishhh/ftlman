@@ -20,6 +20,7 @@ use eframe::{
     },
 };
 use egui_dnd::DragDropItem;
+use gui::{DeferredWindow, WindowState};
 use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
 use log::{debug, error};
@@ -380,7 +381,7 @@ struct App {
     settings_open: bool,
     visuals: Visuals,
 
-    sandbox: gui::sandbox::Sandbox,
+    sandbox: gui::DeferredWindow<gui::Sandbox>,
 
     error_popups: Vec<ErrorPopup>,
 
@@ -431,7 +432,7 @@ impl App {
             settings,
             settings_open: false,
 
-            sandbox: gui::sandbox::Sandbox::new(),
+            sandbox: DeferredWindow::new(egui::ViewportId::from_hash_of("sandbox viewport"), gui::Sandbox::new()),
 
             error_popups,
 
@@ -494,12 +495,12 @@ impl eframe::App for App {
 
                     if ui
                         .add_enabled(
-                            !self.sandbox.is_open() && self.settings.ftl_directory.is_some(),
+                            !self.sandbox.state().is_open() && self.settings.ftl_directory.is_some(),
                             egui::Button::new(l!("sandbox-button")),
                         )
                         .clicked()
                     {
-                        if let Err(e) = self.sandbox.open(self.settings.ftl_directory.as_ref().unwrap()) {
+                        if let Err(e) = self.sandbox.state().open(self.settings.ftl_directory.as_ref().unwrap()) {
                             self.error_popups
                                 .push(ErrorPopup::create_and_log(l!("sandbox-open-failed").into_owned(), &e))
                         }
@@ -1064,7 +1065,7 @@ impl eframe::App for App {
                 });
         }
 
-        self.sandbox.render(ctx);
+        self.sandbox.render(ctx, "XML Sandbox", egui::vec2(500., 500.));
     }
 }
 
