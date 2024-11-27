@@ -84,9 +84,15 @@ fn cleanup(element: &mut Element) {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ParOperation {
+enum ParOperator {
     And,
     Or,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ParOperation {
+    complement: bool,
+    operator: ParOperator,
 }
 
 impl FromStr for ParOperation {
@@ -94,8 +100,22 @@ impl FromStr for ParOperation {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "AND" => Ok(ParOperation::And),
-            "OR" => Ok(ParOperation::Or),
+            "AND" => Ok(ParOperation {
+                complement: false,
+                operator: ParOperator::And,
+            }),
+            "OR" => Ok(ParOperation {
+                complement: false,
+                operator: ParOperator::Or,
+            }),
+            "NOR" => Ok(ParOperation {
+                complement: true,
+                operator: ParOperator::Or,
+            }),
+            "NAND" => Ok(ParOperation {
+                complement: true,
+                operator: ParOperator::And,
+            }),
             _ => bail!("Invalid par operation: {s}"),
         }
     }
@@ -283,24 +303,36 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
             bail!("par node contains an invalid child");
         };
 
-        match operation {
-            ParOperation::And => {
+        match operation.operator {
+            ParOperator::And => {
                 let candidate_set = candidates
                     .into_iter()
                     .map(|x| x as *mut Element)
                     .collect::<HashSet<_>>();
                 set.retain(|x| candidate_set.contains(x));
             }
-            ParOperation::Or => {
+            ParOperator::Or => {
                 set.extend(candidates.into_iter().map(|x| x as *mut Element));
             }
         }
     }
 
-    // SAFETY: This is a set so obviously all the pointers are going to be unique.
-    //         There are no other pointers that can point to these elements apart from
-    //         these.
-    Ok(Some(set.into_iter().map(|x| unsafe { &mut *x }).collect()))
+    Ok(Some(if operation.complement {
+        context
+            .children
+            .iter_mut()
+            .filter_map(Node::as_mut_element)
+            .map(|c| c as *mut Element)
+            .filter(|c| !set.contains(c))
+            // SAFETY: These were just created from a vector so they're all unique
+            //         and no existing mutable references to them can exist.
+            .map(|c| unsafe { &mut *c })
+            .collect()
+    } else {
+        // SAFETY: `set` is a set so obviously all the pointers are going to be unique.
+        //         There are no existing mutable references that can point to these elements.
+        set.into_iter().map(|x| unsafe { &mut *x }).collect()
+    }))
 }
 
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
