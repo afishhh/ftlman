@@ -2,6 +2,7 @@ use std::{fs::File, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use log::info;
 
 use crate::{Mod, ModSource};
 
@@ -55,11 +56,11 @@ pub fn main(command: Command) -> Result<()> {
                 .collect(),
             |stage| match stage {
                 crate::apply::ApplyStage::Preparing => {
-                    println!("Preparing...")
+                    info!("Preparing...")
                 }
                 crate::apply::ApplyStage::Mod { .. } => {}
                 crate::apply::ApplyStage::Repacking => {
-                    println!("Repacking...")
+                    info!("Repacking...")
                 }
                 _ => unreachable!(),
             },
