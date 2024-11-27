@@ -68,7 +68,8 @@ impl Sandbox {
         } else {
             Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?
         };
-        self.pkg_names = pkg.paths().cloned().collect();
+        self.pkg_names = pkg.paths().cloned().filter(|name| name.ends_with(".xml")).collect();
+        self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
         self.pkg = Some(pkg);
         if let Some(current) = self.current_file.as_ref().map(|c| c.index) {
