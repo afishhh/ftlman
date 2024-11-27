@@ -57,7 +57,7 @@ const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
 lazy_static! {
-    static ref USER_AGENT: String = format!("FTL Mod Manager v{}", crate::VERSION);
+    static ref USER_AGENT: String = format!("FTL Manager v{}", crate::VERSION);
     static ref AGENT: ureq::Agent = ureq::AgentBuilder::new()
         .user_agent(&USER_AGENT)
         .https_only(true)
@@ -127,7 +127,7 @@ fn main() -> ExitCode {
     }
 
     if let Err(error) = eframe::run_native(
-        "FTL Manager",
+        &l!("name", "version" => VERSION),
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size(Vec2::new(620., 480.))

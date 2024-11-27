@@ -1,4 +1,4 @@
-name = FTL Mod Manager v{$version}
+name = FTL Manager v{$version}
 
 mods-title = Mods
 mods-unselect-all = Unselect all
