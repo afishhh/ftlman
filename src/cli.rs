@@ -42,7 +42,16 @@ pub fn main(command: Command) -> Result<()> {
             command
                 .mods
                 .into_iter()
-                .map(|path| Mod::new_with_enabled(ModSource::Zip { path }, true))
+                .map(|path| {
+                    Mod::new_with_enabled(
+                        if path.is_dir() {
+                            ModSource::Directory { path }
+                        } else {
+                            ModSource::Zip { path }
+                        },
+                        true,
+                    )
+                })
                 .collect(),
             |stage| match stage {
                 crate::apply::ApplyStage::Preparing => {
