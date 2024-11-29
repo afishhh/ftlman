@@ -22,6 +22,9 @@ pub struct Sandbox {
     current_file: Option<CurrentFile>,
     patcher: Option<Promise<Result<String, Error>>>,
     output: Option<Output>,
+
+    // Whether the patch XML was changed since the last update was ran.
+    needs_update: bool,
 }
 
 enum Output {
@@ -58,16 +61,12 @@ impl Sandbox {
             current_file: None,
             patcher: None,
             output: None,
+            needs_update: false,
         }
     }
 
     pub fn open(&mut self, path: &Path) -> Result<()> {
-        let vanilla = path.join("ftl.dat.vanilla");
-        let pkg = if vanilla.exists() {
-            Pkg::parse(std::fs::File::open(vanilla)?)?
-        } else {
-            Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?
-        };
+        let pkg = Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?;
         self.pkg_names = pkg.paths().cloned().filter(|name| name.ends_with(".xml")).collect();
         self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
@@ -101,7 +100,7 @@ impl WindowState for Sandbox {
             ui.add_space(5.);
         });
 
-        let mut rerun_patch = false;
+        let mut rerun_patch = self.needs_update;
 
         egui::SidePanel::left("sandbox files").max_width(225.0).show(ctx, |ui| {
             ui.add_space(ui.spacing().window_margin.top);
@@ -214,9 +213,18 @@ impl WindowState for Sandbox {
                     || rerun_patch
                 {
                     let patch = self.patch_text.clone();
-                    self.patcher = Some(Promise::spawn_thread("sandbox patcher", move || {
-                        apply::apply_one(&document, &patch, apply::XmlAppendType::Append)
-                    }));
+                    let ctx = ctx.clone();
+                    if self.patcher.as_ref().is_none_or(|p| p.ready().is_some()) {
+                        let ctx = ctx.clone();
+                        self.patcher = Some(Promise::spawn_thread("sandbox patcher", move || {
+                            let result = apply::apply_one(&document, &patch, apply::XmlAppendType::Append);
+                            // FIXME: Improve handling of background patching
+                            ctx.request_repaint_after_secs(0.01);
+                            result
+                        }));
+                    } else {
+                        self.needs_update = true;
+                    }
                 }
             }
         });

@@ -1,4 +1,4 @@
-use std::backtrace::BacktraceStatus;
+use std::{backtrace::BacktraceStatus, sync::Arc};
 
 use eframe::egui::{FontDefinitions, FontFamily};
 use log::warn;
@@ -346,7 +346,7 @@ pub fn create_font_definitions(language: &str) -> FontDefinitions {
         Ok(data) => {
             let name = "System Sans Serif";
 
-            fonts.font_data.insert(name.to_string(), data);
+            fonts.font_data.insert(name.to_string(), Arc::new(data));
 
             fonts
                 .families

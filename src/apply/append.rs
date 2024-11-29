@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
     mem::offset_of,
-    ops::Deref,
     str::FromStr,
 };
 
