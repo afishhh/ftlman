@@ -129,7 +129,9 @@ fn main() -> ExitCode {
     }
 
     if let Err(error) = eframe::run_native(
-        &l!("name", "version" => VERSION),
+        // Windows will display special characters like "POP DIRECTIONAL ISOLATE" in the title...
+        // Remove them so it doesn't do that.
+        &l!("name", "version" => VERSION).chars().filter(|c| c.is_ascii_punctuation() || c.is_alphanumeric() || c.is_whitespace()).collect::<String>(),
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size(Vec2::new(620., 480.))

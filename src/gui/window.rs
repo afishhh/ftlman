@@ -27,16 +27,9 @@ impl<S: WindowState> DeferredWindow<S> {
     }
 
     pub fn render(&self, context: &egui::Context, title: &str, default_size: egui::Vec2) {
-        let mut state = self.state.lock();
-        if state.is_open() {
-            let is_close_requested = context.input_for(self.id, |r| r.viewport().close_requested());
-
-            if is_close_requested {
-                state.close();
-                return;
-            }
-
+        if self.state.lock().is_open() {
             let state = self.state.clone();
+            let parent = context.clone();
             context.show_viewport_deferred(
                 self.id,
                 egui::ViewportBuilder::default()
@@ -50,6 +43,11 @@ impl<S: WindowState> DeferredWindow<S> {
 
                     let mut state = state.lock();
                     state.render(context);
+
+                    if context.input(|r| r.viewport().close_requested()) {
+                        state.close();
+                        parent.request_repaint();
+                    }
                 },
             );
         }

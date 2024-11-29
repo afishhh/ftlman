@@ -16,7 +16,9 @@ fn steam_library_folders_vdf() -> Result<Option<PathBuf>> {
     }
     #[cfg(target_os = "windows")]
     {
-        Ok(Some("C:\\Program Files (x86)\\Steam\\steamapps\\libraryfolders.vdf"))
+        Ok(Some(PathBuf::from(
+            "C:\\Program Files (x86)\\Steam\\steamapps\\libraryfolders.vdf",
+        )))
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
