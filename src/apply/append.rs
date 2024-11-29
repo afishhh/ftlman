@@ -1,6 +1,8 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::Write,
+    mem::offset_of,
+    ops::Deref,
     str::FromStr,
 };
 
@@ -481,6 +483,94 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                         }
                         "removeTag" => {
                             context.prefix = Some(REMOVE_MARKER.to_string());
+                        }
+                        "insertByFind" => {
+                            let elements = command.children.iter().filter_map(Node::as_element);
+
+                            let add_anyway = get_attr!(command, bool, "addAnyway", true)?;
+
+                            let mut found = None;
+                            let mut before = Vec::new();
+                            let mut after = Vec::new();
+                            for child in elements.clone() {
+                                // NOTE: This ignores all but the last mod:find tag but this is how slipstream does it.
+                                if child.prefix.as_deref() == Some("mod") {
+                                    if let Some(results) = mod_find(context, child)? {
+                                        found = Some(results);
+                                    } else {
+                                        bail!(
+                                            "insertByFind encountered unexpected <{}> tag (expected a <mod:find*> tag)",
+                                            child.make_qualified_name()
+                                        );
+                                    }
+                                } else if child.prefix.as_deref() == Some("mod-before") {
+                                    let mut child = child.clone();
+                                    child.prefix = None;
+                                    before.push(child);
+                                } else if child.prefix.as_deref() == Some("mod-after") {
+                                    let mut child = child.clone();
+                                    child.prefix = None;
+                                    after.push(child);
+                                } else {
+                                    bail!(
+                                        "insertByFind encountered unexpected tag <{}> (expected a <mod:find*>, <mod-before:*> or <mod-after:*> tag)",
+                                        child.make_qualified_name()
+                                    )
+                                }
+                            }
+
+                            let Some(found) = found else {
+                                bail!("insertByFind is missing a <mod:find*> tag");
+                            };
+
+                            if before.is_empty() && after.is_empty() {
+                                bail!("insertByFind requires at least one <mod-before:*> or <mod-after:*> tag")
+                            }
+
+                            if found.is_empty() {
+                                if add_anyway {
+                                    context.children.splice(0..0, before.into_iter().map(Node::Element));
+                                    context
+                                        .children
+                                        .splice(context.children.len().., after.into_iter().map(Node::Element));
+                                }
+                            } else {
+                                // NOTE: This whole "process" is kinda ""hacky"" but is a pretty efficient way to do this I think.
+
+                                macro_rules! unwrap_ptr {
+                                    ($ref_to_mut_ref: expr) => {
+                                        unsafe {
+                                            // This should be able to reverse-map an Element pointer that's part of a
+                                            // Node enum back to the address of the original Node.
+                                            // Requires unstable `offset_of_enum` feature.
+                                            (*($ref_to_mut_ref as *const _ as *const *mut Element))
+                                                .byte_sub(offset_of!(Node, Element.0)) as *mut Node
+                                        }
+                                    };
+                                }
+
+                                let first = unwrap_ptr!(found.first().unwrap());
+                                let last = unwrap_ptr!(found.last().unwrap());
+
+                                debug_assert!(first.is_aligned() && last.is_aligned());
+                                let range = context.children.as_mut_ptr_range();
+                                debug_assert!(range.contains(&first));
+                                debug_assert!(range.contains(&last));
+
+                                // SAFETY: last and first should both point to the same allocation as `context.children`.
+                                let first_idx = unsafe { first.offset_from(range.start) as usize };
+                                let last_idx = unsafe { last.offset_from(range.start) as usize };
+
+                                // FIXME: This insertion strategy is not optimal. (does it matter?)
+                                let before_len = before.len();
+                                context
+                                    .children
+                                    .splice(first_idx..first_idx, before.into_iter().map(Node::Element));
+                                let after_insert_idx = last_idx + before_len + 1;
+                                context
+                                    .children
+                                    .splice(after_insert_idx..after_insert_idx, after.into_iter().map(Node::Element));
+                            }
                         }
                         _ => {
                             bail!("Unrecognised mod command tag {}", command.name)

@@ -242,4 +242,12 @@ impl Element {
             .filter_map(|x| x.as_mut_element())
             .find(|e| e.name == name)
     }
+
+    pub fn make_qualified_name(&self) -> String {
+        if let Some(prefix) = self.prefix.as_ref() {
+            format!("{prefix}:{}", self.name)
+        } else {
+            self.name.to_string()
+        }
+    }
 }
