@@ -39,6 +39,7 @@ mod pathedit;
 use pathedit::PathEdit;
 
 mod apply;
+mod bps;
 mod cache;
 mod findftl;
 mod fonts;

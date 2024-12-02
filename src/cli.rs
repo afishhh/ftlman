@@ -9,6 +9,7 @@ use crate::{Mod, ModSource};
 #[derive(Subcommand)]
 pub enum Command {
     Patch(PatchCommand),
+    BpsPatch(BpsPatchCommand),
     Extract(ExtractCommand),
 }
 
@@ -19,6 +20,13 @@ pub struct PatchCommand {
     data_path: PathBuf,
     /// List of paths to .ftl or .zip files
     mods: Vec<PathBuf>,
+}
+
+#[derive(Parser)]
+/// Patches a file according to a BPS patch file.
+pub struct BpsPatchCommand {
+    file: PathBuf,
+    patch: PathBuf,
 }
 
 #[derive(Parser)]
@@ -66,6 +74,17 @@ pub fn main(command: Command) -> Result<()> {
             },
             true,
         ),
+        Command::BpsPatch(command) => {
+            let source = std::fs::read(&command.file).context("Failed to read target file")?;
+            let patch = std::fs::read(command.patch).context("Failed to read patch file")?;
+
+            let mut output = Vec::new();
+            crate::bps::patch(&mut output, &source, &patch).context("Failed to apply patch")?;
+
+            std::fs::write(command.file, &output).context("Failed to write target file")?;
+
+            Ok(())
+        }
         Command::Extract(command) => {
             let mut pkg = silpkg::sync::Pkg::parse(File::open(command.dat_path).context("Failed to open data file")?)
                 .context("Failed to parse data file")?;
