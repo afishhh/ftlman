@@ -6,13 +6,11 @@ use std::{
     },
 };
 
-use eframe::egui::{
-    ahash::{HashMap, HashMapExt},
-    mutex::Mutex,
-};
 use fluent::{concurrent::FluentBundle, FluentArgs, FluentMessage, FluentResource};
 use lazy_static::lazy_static;
 use log::{error, warn};
+use parking_lot::Mutex;
+use std::collections::HashMap;
 
 const LOCALE_DEFINITIONS: &[(&str, &str)] = &[
     ("en", include_str!("../i18n/en.ftl")),

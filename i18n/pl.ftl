@@ -1,3 +1,6 @@
+state-yes = Tak
+state-no = No
+
 mods-title = Mody
 mods-unselect-all = Odznacz wszystkie
 mods-select-all = Zaznacz wszystkie
@@ -22,7 +25,7 @@ hyperspace-releases-loading = Ładowanie...
 hyperspace-fetching-releases = Pobieranie wersji hyperspace...
 patch-hyperspace-ftl = Dodaj Hyperspace.ftl
 
-mod-meta-authors = Autorzy: {$authors}
+mod-meta-authors = Autorzy:
 mod-meta-none = Metadane niedostępne dla moda
 mod-meta-hint = Najedź na moda i jego opis pokaże sie tutaj.
 

@@ -5,7 +5,7 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Display},
     fs::File,
-    io::{Cursor, Read, Seek, Write},
+    io::{BufReader, Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     process::ExitCode,
     sync::{atomic::AtomicU64, Arc},
@@ -131,7 +131,10 @@ fn main() -> ExitCode {
     if let Err(error) = eframe::run_native(
         // Windows will display special characters like "POP DIRECTIONAL ISOLATE" in the title...
         // Remove them so it doesn't do that.
-        &l!("name", "version" => VERSION).chars().filter(|c| c.is_ascii_punctuation() || c.is_alphanumeric() || c.is_whitespace()).collect::<String>(),
+        &l!("name", "version" => VERSION)
+            .chars()
+            .filter(|c| c.is_ascii_punctuation() || c.is_alphanumeric() || c.is_whitespace())
+            .collect::<String>(),
         eframe::NativeOptions {
             viewport: egui::ViewportBuilder::default()
                 .with_inner_size(Vec2::new(620., 480.))
@@ -720,7 +723,7 @@ impl eframe::App for App {
                                                         //       How do we distinguish users wanting to scroll
                                                         //       the combobox vs the description?
                                                         //       Making the description persist when the mouse
-                                                        //       mouse of the combobox could possibly be an option.
+                                                        //       moves out of the combobox could possibly be an option.
                                                         egui::Window::new("hyperspace version tooltip")
                                                             .fixed_pos(desc_pos)
                                                             .title_bar(false)
@@ -928,14 +931,32 @@ impl eframe::App for App {
                                 });
 
                                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
+                                ui.spacing_mut().item_spacing.y = 6.0;
 
-                                ui.label(
-                                    RichText::new(l!(
-                                        "mod-meta-authors",
-                                        "authors" => &metadata.author
-                                    ))
-                                    .strong(),
-                                );
+                                let key_value = |ui: &mut Ui, key: &str, value: &str| {
+                                    ui.horizontal_top(|ui| {
+                                        ui.label(RichText::new(key).strong());
+                                        ui.label(value)
+                                    })
+                                };
+
+
+                                key_value(ui, &l!("mod-meta-authors"), &metadata.author);
+
+                                if let Some(hs_metadata) = shared.mods[idx].hs_metadata().ok().flatten() {
+                                    if let Some(req_version) = hs_metadata.required_hyperspace.as_ref() {
+                                        key_value(ui, &l!("mod-meta-hs-req"), &req_version.to_string());
+                                    } else {
+                                        ui.label(RichText::new(l!("mod-meta-hs-req-fallback")).strong());
+                                    };
+
+                                    key_value(ui, &l!("mod-meta-hs-overwrites"),
+                                &if hs_metadata.overwrites_hyperspace_xml {
+                                            l!("state-yes")
+                                        } else {
+                                            l!("state-no")
+                                    });
+                                }
 
                                 if let Some(url) = &metadata.thread_url {
                                     // TODO: Make a context menu
@@ -1341,7 +1362,63 @@ impl Mod {
                     metadata
                 }))
             })
-            .map(|x| x.as_ref())
+            .map(Option::as_ref)
+    }
+
+    fn hs_metadata(&self) -> Result<Option<&HsMetadata>> {
+        self.cached_hs_metadata
+            .get_or_try_init(|| {
+                const HYPERSPACE_META_FILES: &[&str] = &[
+                    "data/hyperspace.xml",
+                    "data/hyperspace.xml.append",
+                    "data/hyperspace.append.xml",
+                ];
+
+                let mut overwrites_hyperspace_xml = true;
+                let mut mod_handle = self.source.open()?;
+                let mut reader = 'a: {
+                    for name in HYPERSPACE_META_FILES.iter().copied() {
+                        let reader = match mod_handle.open_if_exists(name)? {
+                            Some(handle) => BufReader::new(handle),
+                            None => {
+                                overwrites_hyperspace_xml = false;
+                                continue;
+                            }
+                        };
+                        break 'a quick_xml::Reader::from_reader(reader);
+                    }
+                    return Ok(None);
+                };
+
+                let mut buffer = Vec::new();
+                let mut version_req = None;
+                loop {
+                    match reader.read_event_into(&mut buffer)? {
+                        quick_xml::events::Event::Start(bytes_start)
+                            if bytes_start.local_name().into_inner() == b"version" =>
+                        {
+                            let mut content_buffer = Vec::new();
+                            let quick_xml::events::Event::Text(text) = reader.read_event_into(&mut content_buffer)?
+                            else {
+                                continue;
+                            };
+                            version_req = std::str::from_utf8(&text.into_inner())
+                                .map_err(anyhow::Error::from)
+                                .and_then(|s| semver::VersionReq::parse(s).map_err(Into::into))
+                                .ok();
+                            reader.read_to_end_into(bytes_start.name(), &mut content_buffer)?;
+                        }
+                        quick_xml::events::Event::Eof => break,
+                        _ => (),
+                    }
+                }
+
+                Ok(Some(HsMetadata {
+                    required_hyperspace: version_req,
+                    overwrites_hyperspace_xml,
+                }))
+            })
+            .map(Option::as_ref)
     }
 }
 

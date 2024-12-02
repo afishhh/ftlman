@@ -1,5 +1,8 @@
 name = FTL Manager v{$version}
 
+state-yes = Yes
+state-no = No
+
 mods-title = Mods
 mods-unselect-all = Unselect all
 mods-select-all = Select all
@@ -26,7 +29,10 @@ hyperspace-releases-loading = Loading...
 hyperspace-fetching-releases = Fetching hyperspace releases...
 patch-hyperspace-ftl = Patch Hyperspace.ftl
 
-mod-meta-authors = Authors: {$authors}
+mod-meta-authors = Authors:
+mod-meta-hs-req = Required hyperspace version:
+mod-meta-hs-req-fallback = Requires hyperspace
+mod-meta-hs-overwrites = Overwrites hyperspace.xml:
 mod-meta-none = No metadata available for this mod
 mod-meta-hint = Hover over a mod and its description will appear here.
 
