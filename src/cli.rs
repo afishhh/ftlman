@@ -1,4 +1,4 @@
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, hash::Hasher, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -10,6 +10,8 @@ use crate::{Mod, ModSource};
 pub enum Command {
     Patch(PatchCommand),
     BpsPatch(BpsPatchCommand),
+    BpsMeta(BpsMetaCommand),
+    Crc32(Crc32Command),
     Extract(ExtractCommand),
 }
 
@@ -27,6 +29,18 @@ pub struct PatchCommand {
 pub struct BpsPatchCommand {
     file: PathBuf,
     patch: PathBuf,
+}
+
+#[derive(Parser)]
+/// Print BPS patch file metadata.
+pub struct BpsMetaCommand {
+    patch: PathBuf,
+}
+
+#[derive(Parser)]
+/// Calculates the CRC32 checksum of a file.
+pub struct Crc32Command {
+    file: PathBuf,
 }
 
 #[derive(Parser)]
@@ -82,6 +96,48 @@ pub fn main(command: Command) -> Result<()> {
             crate::bps::patch(&mut output, &source, &patch).context("Failed to apply patch")?;
 
             std::fs::write(command.file, &output).context("Failed to write target file")?;
+
+            Ok(())
+        }
+        Command::BpsMeta(command) => {
+            let data = std::fs::read(command.patch).context("Failed to read patch file")?;
+
+            let patch = crate::bps::Patch::open(&data)?;
+
+            println!("Metadata field has size of {} bytes", patch.metadata.len());
+            println!("Source size: {}", patch.source_size);
+            println!("Source CRC32: {}", patch.source_crc);
+            println!("Target size: {}", patch.target_size);
+            println!("Target CRC32: {}", patch.target_crc);
+            println!("Patch CRC32: {}", patch.patch_crc);
+
+            Ok(())
+        }
+        Command::Crc32(command) => {
+            struct HashWriter {
+                crc: crc32fast::Hasher,
+            }
+            impl std::io::Write for HashWriter {
+                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                    self.crc.write(buf);
+                    Ok(buf.len())
+                }
+
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+
+            let mut writer = HashWriter {
+                crc: crc32fast::Hasher::new(),
+            };
+            std::io::copy(
+                &mut std::fs::File::open(&command.file).context("Failed to open input file")?,
+                &mut writer,
+            )
+            .context("An error occurred while reading input file")?;
+
+            println!("{}", writer.crc.finalize());
 
             Ok(())
         }

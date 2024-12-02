@@ -95,113 +95,154 @@ fn copy_into_within(target: &mut Vec<u8>, write_offset: usize, read_offset: usiz
 
 const MAGIC: &[u8] = b"BPS1";
 
-pub fn patch(target: &mut Vec<u8>, source: &[u8], patch: &[u8]) -> Result<()> {
-    let Some(mut patch) = patch.strip_prefix(MAGIC) else {
-        bail!("`patch` is not a valid BPS patch (mismatched magic)")
-    };
+#[derive(Clone, Copy)]
+pub struct Patch<'a> {
+    pub metadata: &'a [u8],
+    patch: &'a [u8],
+    pub source_size: usize,
+    pub source_crc: u32,
+    pub target_size: usize,
+    pub target_crc: u32,
+    pub patch_crc: u32,
+}
 
-    let patch_crc = take_crc_back(&mut patch)?;
+impl<'a> Patch<'a> {
+    pub fn open(patch: &'a [u8]) -> Result<Self> {
+        let Some(mut patch) = patch.strip_prefix(MAGIC) else {
+            bail!("`patch` is not a valid BPS patch (mismatched magic)")
+        };
 
-    let crc = {
-        let mut hasher = crc32fast::Hasher::new();
-        hasher.write(MAGIC);
-        hasher.write(patch);
-        hasher.finalize()
-    };
+        let patch_crc = take_crc_back(&mut patch)?;
 
-    if crc != patch_crc {
-        bail!("Patch doesn't match checksum")
-    }
+        let crc = {
+            let mut hasher = crc32fast::Hasher::new();
+            hasher.write(MAGIC);
+            hasher.write(patch);
+            hasher.finalize()
+        };
 
-    let target_crc = take_crc_back(&mut patch)?;
-    let source_crc = take_crc_back(&mut patch)?;
-
-    if crc32fast::hash(source) != source_crc {
-        bail!("Source checksum doesn't match")
-    }
-
-    let source_size = take_varint(&mut patch)? as usize;
-    let target_size = take_varint(&mut patch)? as usize;
-    let metadata_size = take_varint(&mut patch)? as usize;
-
-    let Some((_, mut patch)) = patch.split_at_checked(metadata_size) else {
-        bail!("Metadata size exceeds remaining size of patch");
-    };
-
-    if source.len() != source_size {
-        bail!("Source size doesn't match")
-    }
-
-    let mut output_offset = 0;
-    let mut source_relative_offset: usize = 0;
-    let mut target_relative_offset: usize = 0;
-
-    while !patch.is_empty() {
-        let word = take_varint(&mut patch)?;
-        let action = word & 0b11;
-        let length = (word >> 2) + 1;
-        match action {
-            // SourceRead
-            0 => {
-                if let Some(additional) = (output_offset + length).checked_sub(target.len()) {
-                    target.reserve(additional);
-                }
-                let data = source
-                    .get(output_offset..output_offset + length)
-                    .context("SourceRead went out of bounds of source")?;
-
-                copy_into(target, data, output_offset);
-                output_offset += length;
-            }
-            // TargetRead
-            1 => {
-                let (data, remaining) = patch
-                    .split_at_checked(length)
-                    .context("TargetRead length larger than patch")?;
-
-                copy_into(target, data, output_offset);
-                output_offset += length;
-                patch = remaining;
-            }
-            // SourceCopy
-            2 => {
-                let offset = take_signed_varint(&mut patch)?;
-                source_relative_offset = source_relative_offset
-                    .checked_add_signed(offset)
-                    .context("SourceCopy underflowed sourceRelativeOffset")?;
-                let data = source
-                    .get(source_relative_offset..source_relative_offset + length)
-                    .context("SourceCopy went out of bounds of source")?;
-
-                copy_into(target, data, output_offset);
-                output_offset += length;
-                source_relative_offset += length;
-            }
-            // TargetCopy
-            3 => {
-                let offset = take_signed_varint(&mut patch)?;
-                target_relative_offset = target_relative_offset
-                    .checked_add_signed(offset)
-                    .context("TargetCopy underflowed targetRelativeOffset")?;
-                if target_relative_offset >= target.len() {
-                    bail!("TargetCopy went out-of-bounds of target")
-                }
-
-                copy_into_within(target, output_offset, target_relative_offset, length);
-                output_offset += length;
-                target_relative_offset += length;
-            }
-            _ => unreachable!(),
+        if crc != patch_crc {
+            bail!("Patch doesn't match checksum")
         }
-    }
 
-    if target.len() != target_size {
-        bail!("Target size doesn't match")
-    }
+        let target_crc = take_crc_back(&mut patch)?;
+        let source_crc = take_crc_back(&mut patch)?;
 
-    if crc32fast::hash(target) != target_crc {
-        bail!("Target checksum doesn't match")
-    }
+        let source_size = take_varint(&mut patch)? as usize;
+        let target_size = take_varint(&mut patch)? as usize;
+        let metadata_size = take_varint(&mut patch)? as usize;
 
-    Ok(())
+        let Some((metadata, actions)) = patch.split_at_checked(metadata_size) else {
+            bail!("Metadata size exceeds remaining size of patch");
+        };
+
+        Ok(Patch {
+            metadata,
+            patch: actions,
+            source_size,
+            source_crc,
+            target_size,
+            target_crc,
+            patch_crc,
+        })
+    }
+}
+
+impl Patch<'_> {
+    pub fn patch(&self, target: &mut Vec<u8>, source: &[u8]) -> Result<()> {
+        let Self {
+            metadata: _,
+            mut patch,
+            source_size,
+            source_crc,
+            target_size,
+            target_crc,
+            patch_crc: _,
+        } = *self;
+
+        if crc32fast::hash(source) != source_crc {
+            bail!("Source checksum doesn't match")
+        }
+
+        if source.len() != source_size {
+            bail!("Source size doesn't match")
+        }
+
+        let mut output_offset = 0;
+        let mut source_relative_offset: usize = 0;
+        let mut target_relative_offset: usize = 0;
+
+        while !patch.is_empty() {
+            let word = take_varint(&mut patch)?;
+            let action = word & 0b11;
+            let length = (word >> 2) + 1;
+            match action {
+                // SourceRead
+                0 => {
+                    if let Some(additional) = (output_offset + length).checked_sub(target.len()) {
+                        target.reserve(additional);
+                    }
+                    let data = source
+                        .get(output_offset..output_offset + length)
+                        .context("SourceRead went out of bounds of source")?;
+
+                    copy_into(target, data, output_offset);
+                    output_offset += length;
+                }
+                // TargetRead
+                1 => {
+                    let (data, remaining) = patch
+                        .split_at_checked(length)
+                        .context("TargetRead length larger than patch")?;
+
+                    copy_into(target, data, output_offset);
+                    output_offset += length;
+                    patch = remaining;
+                }
+                // SourceCopy
+                2 => {
+                    let offset = take_signed_varint(&mut patch)?;
+                    source_relative_offset = source_relative_offset
+                        .checked_add_signed(offset)
+                        .context("SourceCopy underflowed sourceRelativeOffset")?;
+                    let data = source
+                        .get(source_relative_offset..source_relative_offset + length)
+                        .context("SourceCopy went out of bounds of source")?;
+
+                    copy_into(target, data, output_offset);
+                    output_offset += length;
+                    source_relative_offset += length;
+                }
+                // TargetCopy
+                3 => {
+                    let offset = take_signed_varint(&mut patch)?;
+                    target_relative_offset = target_relative_offset
+                        .checked_add_signed(offset)
+                        .context("TargetCopy underflowed targetRelativeOffset")?;
+                    if target_relative_offset >= target.len() {
+                        bail!("TargetCopy went out-of-bounds of target")
+                    }
+
+                    copy_into_within(target, output_offset, target_relative_offset, length);
+                    output_offset += length;
+                    target_relative_offset += length;
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        if target.len() != target_size {
+            bail!("Target size doesn't match")
+        }
+
+        if crc32fast::hash(target) != target_crc {
+            bail!("Target checksum doesn't match")
+        }
+
+        Ok(())
+    }
+}
+
+pub fn patch(target: &mut Vec<u8>, source: &[u8], patch: &[u8]) -> Result<()> {
+    Patch::open(patch)?.patch(target, source)
 }
