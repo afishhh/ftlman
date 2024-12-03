@@ -95,26 +95,12 @@ impl HyperspaceRelease {
         };
 
         let response = AGENT.get(&download_url).call()?;
-        let content_length = response.header("Content-Length").and_then(|x| x.parse::<u64>().ok());
-        let mut reader = response.into_reader();
 
-        const BUFFER_SIZE: usize = 4096;
-        let mut out = vec![0; BUFFER_SIZE];
-        loop {
-            let len = out.len();
-            let nread = reader.read(&mut out[(len - BUFFER_SIZE)..])?;
-            if nread == 0 {
-                out.resize(out.len() - BUFFER_SIZE, 0);
-                break;
-            } else {
-                out.extend(std::iter::repeat(0).take(nread));
-                if let Some(length) = content_length {
-                    progress_callback((out.len() - BUFFER_SIZE) as u64, length);
-                }
+        crate::util::download_body_with_progress(response, |current, total| {
+            if let Some(total) = total {
+                progress_callback(current, total);
             }
-        }
-
-        Ok(out)
+        })
     }
 
     pub fn extract_hyperspace_ftl(&self, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<Vec<u8>> {

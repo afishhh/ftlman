@@ -29,7 +29,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
-use util::SloppyVersion;
+use util::{to_human_size_units, SloppyVersion};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
@@ -65,19 +65,6 @@ lazy_static! {
         .user_agent(&USER_AGENT)
         .https_only(true)
         .build();
-}
-
-fn to_human_size_units(num: u64) -> (f64, &'static str) {
-    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
-
-    let mut i = 0;
-    let mut cur = num as f64;
-    while cur > 1024.0 {
-        cur /= 1024.0;
-        i += 1;
-    }
-
-    (cur, UNITS.get(i).unwrap_or_else(|| UNITS.last().unwrap()))
 }
 
 fn main() -> ExitCode {

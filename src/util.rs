@@ -1,8 +1,48 @@
-use std::fmt::Display;
+use std::{fmt::Display, hash::Hasher as _, io::Read};
 
 use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+
+mod download;
+pub use download::*;
+
+pub fn to_human_size_units(num: u64) -> (f64, &'static str) {
+    const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
+
+    let mut i = 0;
+    let mut cur = num as f64;
+    while cur > 1024.0 {
+        cur /= 1024.0;
+        i += 1;
+    }
+
+    (cur, UNITS.get(i).unwrap_or_else(|| UNITS.last().unwrap()))
+}
+
+pub fn crc32_from_reader(reader: &mut impl Read) -> std::io::Result<u32> {
+    struct HashWriter {
+        crc: crc32fast::Hasher,
+    }
+    impl std::io::Write for HashWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.crc.write(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    let mut writer = HashWriter {
+        crc: crc32fast::Hasher::new(),
+    };
+
+    std::io::copy(reader, &mut writer)?;
+
+    Ok(writer.crc.finalize())
+}
 
 #[derive(Debug, Clone)]
 pub enum SloppyVersion {

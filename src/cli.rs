@@ -1,10 +1,13 @@
-use std::{fs::File, hash::Hasher, path::PathBuf};
+use std::{fs::File, hash::Hasher, io::Write, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use log::info;
 
-use crate::{Mod, ModSource};
+use crate::{
+    util::{crc32_from_reader, to_human_size_units},
+    Mod, ModSource,
+};
 
 #[derive(Subcommand)]
 pub enum Command {
@@ -114,30 +117,10 @@ pub fn main(command: Command) -> Result<()> {
             Ok(())
         }
         Command::Crc32(command) => {
-            struct HashWriter {
-                crc: crc32fast::Hasher,
-            }
-            impl std::io::Write for HashWriter {
-                fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                    self.crc.write(buf);
-                    Ok(buf.len())
-                }
+            let crc = crc32_from_reader(&mut std::fs::File::open(&command.file).context("Failed to open input file")?)
+                .context("An error occurred while reading input file")?;
 
-                fn flush(&mut self) -> std::io::Result<()> {
-                    Ok(())
-                }
-            }
-
-            let mut writer = HashWriter {
-                crc: crc32fast::Hasher::new(),
-            };
-            std::io::copy(
-                &mut std::fs::File::open(&command.file).context("Failed to open input file")?,
-                &mut writer,
-            )
-            .context("An error occurred while reading input file")?;
-
-            println!("{}", writer.crc.finalize());
+            println!("{}", crc);
 
             Ok(())
         }
