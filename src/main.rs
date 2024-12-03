@@ -277,10 +277,9 @@ enum CurrentTask {
 }
 
 impl CurrentTask {
-    pub fn is_none(&self) -> bool {
+    pub fn is_idle(&self) -> bool {
         match self {
-            CurrentTask::Scan(_) => true,
-            CurrentTask::Apply(_) => true,
+            CurrentTask::Scan(p) | CurrentTask::Apply(p) => p.ready().is_some(),
             CurrentTask::None => true,
         }
     }
@@ -365,6 +364,7 @@ impl ErrorPopup {
 struct App {
     last_hovered_mod: Option<usize>,
     shared: Arc<Mutex<SharedState>>,
+    hyperspace_installer: Option<Result<Result<hyperspace::Installer, String>>>,
 
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
     ignore_releases_fetch_error: bool,
@@ -414,6 +414,7 @@ impl App {
         let mut app = App {
             last_hovered_mod: None,
             shared: shared.clone(),
+            hyperspace_installer: None,
 
             hyperspace_releases: ResettableLazy::new(|| {
                 Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
@@ -511,7 +512,7 @@ impl eframe::App for App {
                     ui.label(l!("mods-title"));
 
                     let mut lock = self.shared.lock();
-                    let modifiable = !lock.locked && self.current_task.is_none();
+                    let modifiable = !lock.locked && self.current_task.is_idle();
 
                     ui.add_enabled_ui(modifiable, |ui| {
                         if ui.button(l!("mods-unselect-all")).clicked() {
@@ -534,8 +535,12 @@ impl eframe::App for App {
                             let ftl_path = self.settings.ftl_directory.clone().unwrap();
                             let shared = self.shared.clone();
                             let settings = self.settings.clone();
+                            let hs = match self.hyperspace_installer {
+                                Some(Ok(Ok(ref installer))) => Some(installer.clone()),
+                                _ => None,
+                            };
                             self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
-                                let result = apply::apply(ftl_path, shared, settings);
+                                let result = apply::apply(ftl_path, shared, hs, settings);
                                 ctx.request_repaint();
                                 result
                             }));
@@ -557,20 +562,20 @@ impl eframe::App for App {
                         if lock.locked {
                             if let Some(stage) = &lock.apply_stage {
                                 match stage {
-                                    ApplyStage::DownloadingHyperspace { version, progress } => {
+                                    ApplyStage::Downloading { is_patch, version, progress } => {
                                         if let Some((downloaded, total)) = *progress {
                                             let (dl_iec, dl_sfx) = to_human_size_units(downloaded);
                                             let (tot_iec, tot_sfx) = to_human_size_units(total);
                                             ui.add(egui::ProgressBar::new(downloaded as f32 / total as f32).text(l!(
-                                                    "status-hyperspace-download2",
-                                                    "version" => version,
+                                                    if *is_patch { "status-patch-download2" } else { "status-hyperspace-download2" },
+                                                    "version" => version.as_ref(),
                                                     "done" => format!("{dl_iec:.2}{dl_sfx}"),
                                                     "total" => format!("{tot_iec:.2}{tot_sfx}"),
                                             )));
                                         } else {
                                             ui.strong(l!(
-                                                "status-hyperspace-download",
-                                                "version" => version
+                                                if *is_patch { "status-patch-download" } else { "status-hyperspace-download" },
+                                                "version" => version.as_ref()
                                             ));
                                         }
                                     }
@@ -645,38 +650,40 @@ impl eframe::App for App {
                                 - ui.next_widget_position().x,
                         );
 
-                        ui.add_enabled_ui(!shared.locked && self.current_task.is_none(), |ui| {
+                        ui.add_enabled_ui(!shared.locked && self.current_task.is_idle(), |ui| {
                             ui.horizontal(|ui| {
-                                if self.settings.ftl_directory.is_none()
-                                    || !self.settings.ftl_directory.as_ref().unwrap().exists()
-                                {
+                                let Some(ftl_directory) = self.settings.ftl_directory.as_mut().filter(|d| d.exists()) else {
                                     ui.label(
                                         RichText::new(l!("invalid-ftl-directory"))
                                             .color(ui.visuals().error_fg_color)
                                             .strong(),
                                     );
                                     return;
-                                }
+                                };
 
-                                let supported =
-                                    hyperspace::INSTALLER.supported(self.settings.ftl_directory.as_ref().unwrap());
-                                if let Err(err) = supported {
-                                    ui.label(
-                                        RichText::new(
-                                            l!("hyperspace-support-check-failed", "error" => err.to_string()),
-                                        )
-                                        .color(ui.visuals().error_fg_color)
-                                        .strong(),
-                                    );
-                                } else if let Err(err) = supported.unwrap() {
-                                    ui.label(
-                                        RichText::new(
-                                            l!("hyperspace-installer-not-supported", "error" => err.to_string()),
-                                        )
-                                        .color(ui.visuals().warn_fg_color)
-                                        .strong(),
-                                    );
-                                } else {
+                                if match self.hyperspace_installer.as_ref() {
+                                    Some(Ok(Ok(_))) => true,
+                                    Some(Ok(Err(error))) => {
+                                        ui.label(
+                                            RichText::new(error)
+                                            .color(ui.visuals().error_fg_color)
+                                            .strong(),
+                                        );
+                                        false
+                                    },
+                                    Some(Err(error)) => {
+                                        ui.label(
+                                            RichText::new(format!("Failed to create installer: {error}"))
+                                            .color(ui.visuals().error_fg_color)
+                                            .strong(),
+                                        );
+                                        false
+                                    }
+                                    None => {
+                                        self.hyperspace_installer = Some(hyperspace::Installer::create(ftl_directory));
+                                        false
+                                    },
+                                } {
                                     ui.label(RichText::new(l!("hyperspace")).font(FontId::default()).strong());
 
                                     let combobox = egui::ComboBox::new("hyperspace select combobox", "").selected_text(
@@ -1025,6 +1032,7 @@ impl eframe::App for App {
                         if ftl_dir_buf.is_empty() {
                             self.settings.ftl_directory = None
                         } else {
+                            self.hyperspace_installer = Some(hyperspace::Installer::create(Path::new(&ftl_dir_buf)));
                             self.settings.ftl_directory = Some(PathBuf::from(ftl_dir_buf));
                         }
                     }

@@ -1,7 +1,4 @@
-use std::{
-    io::{Cursor, Read},
-    path::Path,
-};
+use std::io::{Cursor, Read};
 
 use anyhow::{bail, Context, Result};
 use lazy_static::lazy_static;
@@ -141,35 +138,7 @@ pub fn get_cached_hyperspace_releases() -> Result<Option<Vec<HyperspaceRelease>>
         .collect(),
     ))
 }
-pub trait Installer {
-    fn supported(&self, ftl: &Path) -> Result<Result<&dyn Installer, String>>;
-    fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()>;
-    fn disable(&self, ftl: &Path) -> Result<()>;
-}
 
-#[allow(dead_code)]
-struct UnsupportedOSInstaller;
+mod installer;
 
-impl Installer for UnsupportedOSInstaller {
-    fn supported(&self, _ftl: &Path) -> Result<Result<&dyn Installer, String>> {
-        Ok(Err("Unsupported OS".to_string()))
-    }
-
-    fn install(&self, _ftl: &Path, _zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
-        bail!("Unsupported OS")
-    }
-
-    fn disable(&self, _ftl: &Path) -> Result<()> {
-        bail!("Unsupported OS")
-    }
-}
-
-mod linux;
-mod windows;
-
-#[cfg(target_os = "linux")]
-pub const INSTALLER: &dyn Installer = &linux::LinuxInstaller;
-#[cfg(target_os = "windows")]
-pub const INSTALLER: &dyn Installer = &windows::WindowsInstaller;
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub const INSTALLER: &dyn Installer = &UnsupportedOSInstaller;
+pub use installer::*;

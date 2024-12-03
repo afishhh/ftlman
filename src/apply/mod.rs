@@ -28,8 +28,10 @@ lazy_static! {
 
 #[derive(Debug)]
 pub enum ApplyStage {
-    DownloadingHyperspace {
-        version: String,
+    Downloading {
+        is_patch: bool,
+        // Hyperspace version or patch source version
+        version: Option<String>,
         progress: Option<(u64, u64)>,
     },
     InstallingHyperspace,
@@ -334,7 +336,12 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
     Ok(())
 }
 
-pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settings) -> Result<()> {
+pub fn apply(
+    ftl_path: PathBuf,
+    state: Arc<Mutex<SharedState>>,
+    hs: Option<hyperspace::Installer>,
+    settings: Settings,
+) -> Result<()> {
     let mut lock = state.lock();
 
     if lock.locked {
@@ -343,7 +350,7 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
     lock.locked = true;
     let mut mods = lock.mods.clone();
 
-    if let Ok(installer) = hyperspace::INSTALLER.supported(&ftl_path)? {
+    if let Some(installer) = hs {
         if let Some(HyperspaceState {
             release,
             patch_hyperspace_ftl,
@@ -353,14 +360,14 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
             drop(lock);
 
             let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
-                state.lock().apply_stage = Some(ApplyStage::DownloadingHyperspace {
-                    version: release.name().to_string(),
+                state.lock().apply_stage = Some(ApplyStage::Downloading {
+                    is_patch: false,
+                    version: Some(release.name().into()),
                     progress: None,
                 });
 
                 release.fetch_zip(|current, max| {
-                    let Some(ApplyStage::DownloadingHyperspace { ref mut progress, .. }) = state.lock().apply_stage
-                    else {
+                    let Some(ApplyStage::Downloading { ref mut progress, .. }) = state.lock().apply_stage else {
                         unreachable!();
                     };
                     *progress = Some((current, max));
@@ -369,8 +376,31 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
             })?;
             let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
+            let patcher = if let Some(patch) = installer.required_patch() {
+                state.lock().apply_stage = Some(ApplyStage::Downloading {
+                    is_patch: true,
+                    version: Some(patch.from_name().into()),
+                    progress: None,
+                });
+
+                Some(
+                    patch
+                        .fetch_or_load_cached(&mut zip, |current, total| {
+                            let Some(ApplyStage::Downloading { ref mut progress, .. }) = state.lock().apply_stage
+                            else {
+                                unreachable!();
+                            };
+                            *progress = Some((current, total));
+                            egui_ctx.request_repaint();
+                        })
+                        .context("Failed to download patch")?,
+                )
+            } else {
+                None
+            };
+
             state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
-            installer.install(&ftl_path, &mut zip)?;
+            installer.install(&ftl_path, &mut zip, patcher.as_ref())?;
             release.extract_hyperspace_ftl(&mut zip)?;
 
             egui_ctx.request_repaint();
@@ -392,10 +422,10 @@ pub fn apply(ftl_path: PathBuf, state: Arc<Mutex<SharedState>>, settings: Settin
             drop(lock);
 
             installer.disable(&ftl_path)?;
-        }
+        };
     } else {
         drop(lock);
-    }
+    };
 
     apply_ftl(
         &ftl_path,

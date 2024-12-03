@@ -1,4 +1,4 @@
-use std::{fs::File, hash::Hasher, io::Write, path::PathBuf};
+use std::{fs::File, io::Write, path::PathBuf};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};

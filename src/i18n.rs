@@ -195,10 +195,10 @@ pub fn resolve(id: &str, args: Option<&FluentArgs>) -> Cow<'static, str> {
 
 #[macro_export]
 macro_rules! l {
-    ($id: literal) => {
+    ($id: expr) => {
         $crate::i18n::resolve($id, None)
     };
-    ($id: literal, $($tt: tt)*) => {
+    ($id: expr, $($tt: tt)*) => {
         $crate::i18n::resolve($id, Some(&fluent::fluent_args! {
             $($tt)*
         }))

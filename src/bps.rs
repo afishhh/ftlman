@@ -179,6 +179,7 @@ impl Patch<'_> {
             match action {
                 // SourceRead
                 0 => {
+                    // TODO: actually just use target_size...
                     if let Some(additional) = (output_offset + length).checked_sub(target.len()) {
                         target.reserve(additional);
                     }

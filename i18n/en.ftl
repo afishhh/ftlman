@@ -12,16 +12,16 @@ mods-scan-button = Scan
 mods-scan-tooltip = Rescan mod folder
 
 status-preparing = Preparing
-status-hyperspace-download = Downloading Hyperspace {$version}
+status-hyperspace-download = Downloading Hyperspace
 status-hyperspace-download2 = Downloading Hyperspace {$version} ({$done}/{$total})
+status-patch-download = Downloading game patch
+status-patch-download2 = Downloading patch for {$version} ({$done}/{$total})
 status-hyperspace-install = Installing Hyperspace
 status-applying-mod = Applying {$mod}
 status-repacking = Repacking archive
 status-scanning-mods = Scanning mod folder
 
 invalid-ftl-directory = Invalid FTL directory specified
-hyperspace-support-check-failed = Hyperspace installer support check failed: {$error}
-hyperspace-installer-not-supported = Hyperspace installer not supported: {$error}
 hyperspace-fetch-releases-failed = Failed to fetch hyperspace releases
 
 hyperspace = Hyperspace
