@@ -377,12 +377,13 @@ pub fn apply(
             let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
             let patcher = if let Some(patch) = installer.required_patch() {
-                state.lock().apply_stage = Some(ApplyStage::Downloading {
-                    is_patch: true,
-                    version: Some(patch.from_name().into()),
-                    progress: None,
-                });
-
+                if patch.is_remote() {
+                    state.lock().apply_stage = Some(ApplyStage::Downloading {
+                        is_patch: true,
+                        version: Some(patch.from_name().into()),
+                        progress: None,
+                    });
+                }
                 Some(
                     patch
                         .fetch_or_load_cached(&mut zip, |current, total| {

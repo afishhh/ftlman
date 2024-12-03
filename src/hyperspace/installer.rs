@@ -7,22 +7,24 @@ use std::{
 use anyhow::{bail, Context as _, Result};
 use zip::ZipArchive;
 
+use crate::cache::CACHE;
+
 mod linux;
 mod windows;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Version {
-    Steam1_6_14Win,
-    Steam1_6_13Linux,
+    Steam1_6_14Win = 0,
+    Steam1_6_13Linux = 1,
     #[expect(dead_code)]
-    Gog1_6_13B,
+    Gog1_6_13B = 2,
     #[expect(dead_code)]
-    Gog1_6_9,
+    Gog1_6_9 = 3,
     #[expect(dead_code)]
-    Humble1_6_12,
-    Epic1_6_12,
-    Origin1_6_12,
-    Microsoft1_6_12,
+    Humble1_6_12 = 4,
+    Epic1_6_12 = 5,
+    Origin1_6_12 = 6,
+    Microsoft1_6_12 = 7,
 
     Downgraded1_6_9Win,
 }
@@ -105,6 +107,10 @@ impl Patch {
         self.from.name()
     }
 
+    pub fn is_remote(&self) -> bool {
+        !matches!(self.source, PatchLocation::HyperspaceZip { .. })
+    }
+
     pub fn fetch_or_load_cached<S: Read + Seek>(
         self,
         hyperspace_zip: &mut zip::ZipArchive<S>,
@@ -116,15 +122,18 @@ impl Patch {
                 hyperspace_zip.by_name(path)?.read_to_end(&mut data)?;
             }
             PatchLocation::GoogleDrive { file_id } => {
-                let response = crate::util::request_google_drive_download(file_id)?;
-                let patch = crate::util::download_body_with_progress(response, move |current, total| {
-                    if let Some(total) = total {
-                        on_progress(current, total);
-                    }
+                data = CACHE.read_or_create_key("ftl-patch", &(self.from as usize).to_string(), || {
+                    let response = crate::util::request_google_drive_download(file_id)?;
+                    let patch = crate::util::download_body_with_progress(response, move |current, total| {
+                        if let Some(total) = total {
+                            on_progress(current, total);
+                        }
+                    })?;
+                    let mut archive =
+                        ZipArchive::new(std::io::Cursor::new(patch)).context("Failed to open patch zip archive")?;
+                    archive.by_name("patch/patch.bps")?.read_to_end(&mut data)?;
+                    Ok(data)
                 })?;
-                let mut archive =
-                    ZipArchive::new(std::io::Cursor::new(patch)).context("Failed to open patch zip archive")?;
-                archive.by_name("patch/patch.bps")?.read_to_end(&mut data)?;
             }
         };
 
