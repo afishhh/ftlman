@@ -1505,6 +1505,7 @@ version = "0.4.0-pre.1"
 dependencies = [
  "anyhow",
  "clap",
+ "crc32fast",
  "dirs",
  "eframe",
  "egui_dnd",
