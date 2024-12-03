@@ -15,6 +15,8 @@ pub enum Command {
     BpsPatch(BpsPatchCommand),
     BpsMeta(BpsMetaCommand),
     Crc32(Crc32Command),
+    #[clap(name = "fetch-gdrive")]
+    FetchGDrive(FetchGDriveCommand),
     Extract(ExtractCommand),
 }
 
@@ -44,6 +46,13 @@ pub struct BpsMetaCommand {
 /// Calculates the CRC32 checksum of a file.
 pub struct Crc32Command {
     file: PathBuf,
+}
+
+#[derive(Parser)]
+/// Fetches a file from google drive by file_id.
+pub struct FetchGDriveCommand {
+    file_id: String,
+    output_path: PathBuf,
 }
 
 #[derive(Parser)]
@@ -121,6 +130,28 @@ pub fn main(command: Command) -> Result<()> {
                 .context("An error occurred while reading input file")?;
 
             println!("{}", crc);
+
+            Ok(())
+        }
+        Command::FetchGDrive(command) => {
+            let mut output = std::fs::File::create(command.output_path).context("Failed to open output file")?;
+
+            print!("Acquiring download response...");
+            _ = std::io::stdout().flush();
+
+            let response = crate::util::request_google_drive_download(&command.file_id)?;
+            let data = crate::util::download_body_with_progress(response, |current, total| {
+                let (n, unit) = to_human_size_units(current);
+                print!("\r\x1b[2KDownloaded {n:.3}{unit}");
+                if let Some(total) = total {
+                    let (n, unit) = to_human_size_units(total);
+                    print!("/{n:.3}{unit}");
+                }
+                _ = std::io::stdout().flush();
+            })?;
+            println!();
+
+            output.write_all(&data).context("Failed to write output file")?;
 
             Ok(())
         }

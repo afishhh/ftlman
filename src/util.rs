@@ -4,6 +4,8 @@ use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+mod gdrive;
+pub use gdrive::*;
 mod download;
 pub use download::*;
 
