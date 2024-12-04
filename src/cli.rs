@@ -1,12 +1,12 @@
 use std::{fs::File, io::Write, path::PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use log::info;
 
 use crate::{
     util::{crc32_from_reader, to_human_size_units},
-    Mod, ModSource,
+    Mod, ModSource, Settings,
 };
 
 #[derive(Subcommand)]
@@ -23,9 +23,14 @@ pub enum Command {
 #[derive(Parser)]
 /// Executes the patch phase of the mod manager.
 pub struct PatchCommand {
-    /// FTL data directory.
-    data_path: PathBuf,
+    /// FTL data directory, will use the one from the config if not set.
+    #[clap(long = "data-dir", short = 'd')]
+    data_path: Option<PathBuf>,
+
     /// List of paths to .ftl or .zip files
+    ///
+    /// If the path is has only one component it will be interpreted as
+    /// a file in the local user's mods directory (like in slipstream).
     mods: Vec<PathBuf>,
 }
 
@@ -72,34 +77,73 @@ pub struct Args {
 
 pub fn main(command: Command) -> Result<()> {
     match command {
-        Command::Patch(command) => crate::apply::apply_ftl(
-            &command.data_path,
-            command
-                .mods
-                .into_iter()
-                .map(|path| {
-                    Mod::new_with_enabled(
-                        if path.is_dir() {
-                            ModSource::Directory { path }
-                        } else {
-                            ModSource::Zip { path }
-                        },
-                        true,
-                    )
-                })
-                .collect(),
-            |stage| match stage {
-                crate::apply::ApplyStage::Preparing => {
-                    info!("Preparing...")
+        Command::Patch(mut command) => {
+            let settings = Settings::load(&Settings::default_path()).unwrap_or_default();
+            let Some(data_dir) = command.data_path.or(settings.ftl_directory) else {
+                bail!("--data-dir not set and ftl data directory is not set in settings");
+            };
+
+            for path in &mut command.mods {
+                let mut components = path.components();
+                match (components.next(), components.next()) {
+                    (Some(std::path::Component::Normal(_)), None) => {
+                        let new_path = settings.mod_directory.join(&path);
+                        if !new_path.exists() {
+                            bail!(
+                                "{} does not exist in {}",
+                                path.display(),
+                                settings.mod_directory.display()
+                            )
+                        }
+                        *path = new_path;
+                    }
+                    _ => match path.canonicalize() {
+                        Ok(new_path) => {
+                            *path = new_path;
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                            bail!("{} does not exist", path.display())
+                        }
+                        Err(e) => {
+                            bail!("Failed to canonicalize {}: {e}", path.display())
+                        }
+                    },
+                };
+
+                if path.file_name().is_none() {
+                    bail!("{} is invalid: contains no filename", path.display());
                 }
-                crate::apply::ApplyStage::Mod { .. } => {}
-                crate::apply::ApplyStage::Repacking => {
-                    info!("Repacking...")
-                }
-                _ => unreachable!(),
-            },
-            true,
-        ),
+            }
+
+            crate::apply::apply_ftl(
+                &data_dir,
+                command
+                    .mods
+                    .into_iter()
+                    .map(|path| {
+                        Mod::new_with_enabled(
+                            if path.is_dir() {
+                                ModSource::Directory { path }
+                            } else {
+                                ModSource::Zip { path }
+                            },
+                            true,
+                        )
+                    })
+                    .collect(),
+                |stage| match stage {
+                    crate::apply::ApplyStage::Preparing => {
+                        info!("Preparing...")
+                    }
+                    crate::apply::ApplyStage::Mod { .. } => {}
+                    crate::apply::ApplyStage::Repacking => {
+                        info!("Repacking...")
+                    }
+                    _ => unreachable!(),
+                },
+                true,
+            )
+        }
         Command::BpsPatch(command) => {
             let source = std::fs::read(&command.file).context("Failed to read target file")?;
             let patch = std::fs::read(command.patch).context("Failed to read patch file")?;

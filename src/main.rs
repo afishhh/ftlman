@@ -1178,7 +1178,11 @@ pub enum OpenModHandle<'a> {
 impl ModSource {
     pub fn filename(&self) -> &str {
         match self {
-            ModSource::Directory { path } | ModSource::Zip { path } => path.file_name().unwrap().to_str().unwrap(),
+            ModSource::Directory { path } | ModSource::Zip { path } => path
+                .file_name()
+                .expect("Directory mod has a path without a filename")
+                .to_str()
+                .unwrap(),
             ModSource::InMemoryZip { filename, .. } => filename,
         }
     }
