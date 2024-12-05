@@ -147,9 +147,12 @@ pub struct Patcher {
 }
 
 fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
+    let win_original = ftl.join("FTLGame_orig.exe");
     let win = ftl.join("FTLGame.exe");
     let unix = ftl.join("FTL.amd64");
-    Ok(if win.try_exists()? {
+    Ok(if win_original.try_exists()? {
+        Some(win_original)
+    } else if win.try_exists()? {
         Some(win)
     } else if unix.try_exists()? {
         Some(unix)
