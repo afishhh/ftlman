@@ -63,5 +63,9 @@ eframe = { git = "https://github.com/afishhh/egui", branch = "cache_galley_lines
 [profile.dev]
 opt-level = 2
 
+[profile.release]
+strip = "debuginfo"
+lto = "thin"
+
 [workspace]
 members = ["compare_with_slipstream/normalize_xml", "windows_gui_wrapper"]
