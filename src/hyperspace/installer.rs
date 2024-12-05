@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Context as _, Result};
+use log::{info, warn};
 use zip::ZipArchive;
 
 use crate::cache::CACHE;
@@ -190,7 +191,14 @@ impl Installer {
             None
         }
 
-        let (platform, patch) = match Version::from_executable_size(size) {
+        let version = Version::from_executable_size(size);
+        if let Some(version) = version {
+            info!("Detected FTL version {}", version);
+        } else {
+            warn!("Failed to determine FTL version (size={size})");
+        }
+
+        let (platform, patch) = match version {
             Some(Version::Downgraded1_6_9Win) => (Platform::Windows, None),
             Some(Version::Steam1_6_13Linux) => (Platform::Linux, None),
             Some(Version::Gog1_6_9) => (Platform::Windows, None),
