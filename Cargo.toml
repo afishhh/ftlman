@@ -64,4 +64,4 @@ eframe = { git = "https://github.com/afishhh/egui", branch = "cache_galley_lines
 opt-level = 2
 
 [workspace]
-members = ["compare_with_slipstream/normalize_xml"]
+members = ["compare_with_slipstream/normalize_xml", "windows_gui_wrapper"]

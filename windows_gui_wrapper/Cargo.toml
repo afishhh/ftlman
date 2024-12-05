@@ -1,0 +1,8 @@
+[package]
+name = "windows_gui_wrapper"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+winapi = { version = "0.3", features = [ "winuser" ] }
