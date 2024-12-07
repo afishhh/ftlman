@@ -56,6 +56,7 @@ use lazy::ResettableLazy;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
+const EFRAME_PERSISTENCE_LOCATION: &str = "ftlman/eguistate.ron";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
 lazy_static! {
@@ -128,6 +129,7 @@ fn main() -> ExitCode {
                 .with_min_inner_size(Vec2::new(620., 480.))
                 .with_transparent(true)
                 .with_resizable(true),
+            persistence_path: Some(dirs::data_local_dir().unwrap().join(EFRAME_PERSISTENCE_LOCATION)),
 
             ..Default::default()
         },
