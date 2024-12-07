@@ -342,7 +342,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
             return Ok(None);
         }
 
-        let search_reverse = get_attr!(node, bool, "reverse", true)?;
+        let search_reverse = get_attr!(node, bool, "reverse", node.name == "findName")?;
         let search_start = get_attr!(node, usize, "start", 0)?;
         let search_limit = get_attr!(node, isize, "limit", if node.name == "findName" { 1 } else { -1 })?;
 
