@@ -2,7 +2,7 @@
 use std::{fmt::Write as _, os::windows::process::CommandExt, process::Child};
 
 use anyhow::{Context, Result};
-use winapi::um::winuser::{MB_ICONERROR, MB_OK, MessageBoxW};
+use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_OK};
 
 fn run() -> Result<Child, anyhow::Error> {
     let exe = std::env::current_exe().context("Failed to get path to current executable")?;
