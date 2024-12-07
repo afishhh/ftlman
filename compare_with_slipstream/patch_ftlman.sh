@@ -10,7 +10,8 @@ set -euo pipefail
 [[ -e data-ftlman ]] || mkdir data-ftlman
 [[ -e data-ftlman/ftl.dat ]] || cp ./ftl.dat data-ftlman
 
-cargo run -- patch ./data-ftlman "$@"
+cargo build --release
+time ../target/release/ftlman patch -d ./data-ftlman "$@"
 [[ -e data-ftlman/ftl ]] && rm -r ./data-ftlman/ftl
-cargo run -- extract ./data-ftlman/ftl ./data-ftlman/ftl.dat
-cargo run --package=normalize_xml ./data-ftlman/ftl
+time ../target/release/ftlman extract ./data-ftlman/ftl ./data-ftlman/ftl.dat
+cargo run --package=normalize_xml ./data-ftlman/ftl >/dev/null
