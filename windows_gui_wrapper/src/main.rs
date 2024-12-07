@@ -4,12 +4,18 @@ use std::{fmt::Write as _, os::windows::process::CommandExt, process::Child};
 use anyhow::{bail, Context, Result};
 use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_OK};
 
+const RECURSION_GUARD_ENV_VAR: &str = "_FTLMAN_GUI_WRAPPER_CHILD";
+
 fn run() -> Result<Child, anyhow::Error> {
     let exe = std::env::current_exe().context("Failed to get path to current executable")?;
     let exe_filename = exe
         .file_name()
         .context("Executable has no filename (should never happen!)")?;
     let dir = exe.parent().context("Current executable path has no parent")?;
+
+    if std::env::var_os(RECURSION_GUARD_ENV_VAR).is_some() {
+        bail!("It looks like the GUI wrapper called itself recursively!\nThis should not happen unless you accidentally copied around ftlman's executables.")
+    }
 
     const NAMES: &[&str] = &["ftlman.com", "ftlman.exe"];
     for name in NAMES.iter().copied() {
@@ -21,6 +27,7 @@ fn run() -> Result<Child, anyhow::Error> {
         if path.exists() {
             return std::process::Command::new(path)
                 .creation_flags(0x00000008)
+                .env(RECURSION_GUARD_ENV_VAR, "1")
                 .args(std::env::args_os().skip(1))
                 .spawn()
                 .context("Failed to execute ftlman.com");
