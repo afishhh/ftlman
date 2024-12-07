@@ -56,16 +56,84 @@ pub struct Element {
 
 macro_rules! decode_inner {
     ($x: expr) => {
-        decode_inner!(@slice $x.into_inner())
+        decode_inner!(@slice &$x).map(|s| s.to_owned())
     };
     (@slice $x: expr) => {
-        String::from_utf8($x.to_vec())
+        std::str::from_utf8($x)
             .map_err(|e|
                 quick_xml::errors::Error::from(
-                    quick_xml::encoding::EncodingError::from(e.utf8_error())
+                    quick_xml::encoding::EncodingError::from(e)
                 )
             )
     };
+}
+
+// This unescapes strings exactly (hopefully) like RapidXML
+// Ignores all errors and keeps invalid sequences unexpanded.
+//
+// TODO: Maybe warn on some errors?
+fn sloppy_unescape(string: &str) -> Cow<str> {
+    let mut replaced = String::new();
+    let mut position = 0;
+
+    let mut it = string.char_indices();
+    while let Some((i, c)) = it.next() {
+        if c == '&' {
+            if let Some(chr) = resolve_entity(&mut it) {
+                replaced.push_str(&string[position..i]);
+                replaced.push(chr);
+                position = it.offset();
+            }
+        }
+    }
+
+    if replaced.is_empty() {
+        Cow::Borrowed(string)
+    } else {
+        replaced.push_str(&string[position..]);
+        Cow::Owned(replaced)
+    }
+}
+
+fn resolve_entity(it: &mut std::str::CharIndices) -> Option<char> {
+    let mut peek = it.clone();
+
+    let result = match peek.next()?.1 {
+        'l' if peek.next()?.1 == 't' => '<',
+        'g' if peek.next()?.1 == 't' => '>',
+        'a' => match peek.next()?.1 {
+            'p' if peek.next()?.1 == 'o' && peek.next()?.1 == 's' => '\'',
+            'm' if peek.next()?.1 == 'p' => '&',
+            _ => return None,
+        },
+        'q' if peek.next()?.1 == 'u' && peek.next()?.1 == 'o' && peek.next()?.1 == 't' => '"',
+        '#' => {
+            let first = peek.as_str().chars().next()?;
+            let mut code = 0;
+            let radix = if first == 'x' { 16 } else { 10 };
+            loop {
+                let chr = peek.next()?.1;
+                code *= radix;
+                code += chr.to_digit(radix)?;
+                if chr == ';' {
+                    break;
+                }
+            }
+
+            let result = char::from_u32(code)?;
+            // NOTE: We've already consumed a ';' so we return early here.
+            *it = peek;
+            return Some(result);
+        }
+        _ => return None,
+    };
+
+    if peek.next()?.1 != ';' {
+        None
+    } else {
+        *it = peek;
+        Some(result)
+    }
 }
 
 macro_rules! build_loop_match {
@@ -76,14 +144,14 @@ macro_rules! build_loop_match {
                 for attr in x.attributes() {
                     let attr = attr.map_err(quick_xml::Error::from)?;
                     attributes.insert(
-                        decode_inner!(attr.key.local_name())?,
-                        attr.unescape_value()?.into_owned(),
+                        decode_inner!(attr.key.local_name().into_inner())?,
+                        sloppy_unescape(decode_inner!(@slice &attr.value)?).into_owned(),
                     );
                 }
 
                 let mut new_element = Element {
-                    prefix: x.name().prefix().map(|x| decode_inner!(x)).transpose()?,
-                    name: decode_inner!(x.local_name())?,
+                    prefix: x.name().prefix().map(|x| decode_inner!(x.into_inner())).transpose()?,
+                    name: decode_inner!(x.local_name().into_inner())?,
                     attributes,
                     children: Vec::new(),
                 };
@@ -95,13 +163,17 @@ macro_rules! build_loop_match {
                 $output.push(Node::Element(new_element))
             }
             Event::End($end_name) => $end,
-            Event::Text(text) => $output.push(Node::Text(text.unescape()?.into_owned())),
+            Event::Text(text) => $output.push(Node::Text(
+                sloppy_unescape(decode_inner!(@slice &text)?).into_owned()
+            )),
             Event::CData(cdata) => $output.push(Node::CData(decode_inner!(cdata)?)),
-            Event::Comment(comment) => $output.push(Node::Comment(comment.unescape()?.into_owned())),
+            Event::Comment(comment) => $output.push(Node::Comment(
+                sloppy_unescape(decode_inner!(@slice &comment)?).into_owned()
+            )),
             x @ Event::Decl(_) => warn!("Ignoring XML event: {x:?}"),
             Event::PI(pi) => $output.push(Node::ProcessingInstruction(
-                decode_inner!(@slice pi.target())?,
-                decode_inner!(@slice pi.content())?,
+                decode_inner!(@slice pi.target())?.to_owned(),
+                decode_inner!(@slice pi.content())?.to_owned(),
             )),
             Event::DocType(_) => (),
             Event::Eof => $eof
