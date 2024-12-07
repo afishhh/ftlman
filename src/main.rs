@@ -794,7 +794,6 @@ impl eframe::App for App {
                                         if let Some(release) = new_value {
                                             shared.hyperspace = Some(HyperspaceState {
                                                 release,
-                                                patch_hyperspace_ftl: false,
                                             });
                                         } else {
                                             shared.hyperspace = None;
@@ -805,16 +804,6 @@ impl eframe::App for App {
                                         ui.label(l!("hyperspace-fetching-releases"));
                                         ui.spinner();
                                     }
-
-                                    ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Center), |ui| {
-                                        if let Some(HyperspaceState {
-                                            ref mut patch_hyperspace_ftl,
-                                            ..
-                                        }) = shared.hyperspace
-                                        {
-                                            ui.checkbox(patch_hyperspace_ftl, l!("patch-hyperspace-ftl"));
-                                        }
-                                    });
                                 }
                             });
 
@@ -1110,8 +1099,13 @@ impl SharedState {
 #[derive(Clone)]
 struct Mod {
     source: ModSource,
+    /// Whether this mod is currently enabled or not.
     enabled: bool,
+    /// Whether this mod is the Hyperspace.ftl file from the hyperspace zip
+    is_hyperspace_ftl: bool,
+    /// Metadata from mod-appendix/metadata.xml
     cached_metadata: OnceCell<Option<Metadata>>,
+    /// Additional metadata for Hyperspace mods
     cached_hs_metadata: OnceCell<Option<HsMetadata>>,
 }
 
@@ -1137,7 +1131,6 @@ struct ModOrder(Vec<ModOrderElement>);
 #[derive(Clone, Serialize, Deserialize)]
 struct HyperspaceState {
     release: HyperspaceRelease,
-    patch_hyperspace_ftl: bool,
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -1312,6 +1305,7 @@ impl Mod {
         Mod {
             source,
             enabled,
+            is_hyperspace_ftl: false,
             cached_metadata: Default::default(),
             cached_hs_metadata: Default::default(),
         }

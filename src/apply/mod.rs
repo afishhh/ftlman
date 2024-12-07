@@ -218,7 +218,11 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
         let path_count = paths.len();
 
         for (j, name) in paths.into_iter().enumerate() {
-            if name.starts_with("mod-appendix") {
+            if name.starts_with("mod-appendix") || 
+                // example_layout_syntax.xml is used by Hyperspace to detect when
+                // Hyperspace.ftl has been accidentally patched alongside Multiverse
+                (m.is_hyperspace_ftl && name == "example_layout_syntax.xml")
+            {
                 trace!("Skipping {name}");
                 continue;
             }
@@ -352,11 +356,7 @@ pub fn apply(
     let mut mods = lock.mods.clone();
 
     if let Some(installer) = hs {
-        if let Some(HyperspaceState {
-            release,
-            patch_hyperspace_ftl,
-        }) = lock.hyperspace.clone()
-        {
+        if let Some(HyperspaceState { release }) = lock.hyperspace.clone() {
             let egui_ctx = lock.ctx.clone();
             drop(lock);
 
@@ -408,18 +408,19 @@ pub fn apply(
             egui_ctx.request_repaint();
             drop(egui_ctx);
 
-            if patch_hyperspace_ftl {
-                mods.insert(
-                    0,
-                    Mod::new_with_enabled(
+            mods.insert(
+                0,
+                Mod {
+                    is_hyperspace_ftl: true,
+                    ..Mod::new_with_enabled(
                         ModSource::InMemoryZip {
                             filename: "hyperspace.ftl".to_string(),
                             data: release.extract_hyperspace_ftl(&mut zip)?,
                         },
                         true,
-                    ),
-                );
-            }
+                    )
+                },
+            );
         } else {
             drop(lock);
 
