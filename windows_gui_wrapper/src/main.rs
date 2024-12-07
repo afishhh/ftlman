@@ -7,11 +7,11 @@ use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_OK};
 const RECURSION_GUARD_ENV_VAR: &str = "_FTLMAN_GUI_WRAPPER_CHILD";
 
 fn run() -> Result<Child, anyhow::Error> {
-    let exe = std::env::current_exe().context("Failed to get path to current executable")?;
-    let exe_filename = exe
+    let exe_path = std::env::current_exe().context("Failed to get path to current executable")?;
+    let exe_filename = exe_path
         .file_name()
         .context("Executable has no filename (should never happen!)")?;
-    let dir = exe.parent().context("Current executable path has no parent")?;
+    let dir = exe_path.parent().context("Current executable path has no parent")?;
 
     if std::env::var_os(RECURSION_GUARD_ENV_VAR).is_some() {
         bail!("It looks like the GUI wrapper called itself recursively!\nThis should not happen unless you accidentally copied around ftlman's executables.")
@@ -49,8 +49,21 @@ fn main() {
             _ = write!(description, "\n{cause}");
         }
 
-        description.push_str("\n\nMake sure ftlman.exe is in the same directory as ftlman.com");
-        description.push_str(" and that you don't run this file directly from a compressed archive");
+        let exe_path = std::env::current_exe().ok();
+        let exe_filename = exe_path
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .unwrap_or("this file");
+
+        _ = write!(
+            description,
+            concat!(
+                "\n\nMake sure {} is in the same directory as the command line ftlman executable",
+                " and that you don't run this file directly from a compressed archive"
+            ),
+            exe_filename
+        );
 
         let description = encode_wstr(&description);
         let title = encode_wstr("Wrapper Error");
