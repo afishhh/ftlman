@@ -1069,7 +1069,7 @@ checksum = "f25c0e292a7ca6d6498557ff1df68f32c99850012b6ea401cf8daf771f22ff53"
 [[package]]
 name = "ecolor"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "bytemuck",
  "emath",
@@ -1079,7 +1079,7 @@ dependencies = [
 [[package]]
 name = "eframe"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1116,7 +1116,7 @@ dependencies = [
 [[package]]
 name = "egui"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "accesskit",
  "ahash",
@@ -1131,7 +1131,7 @@ dependencies = [
 [[package]]
 name = "egui-wgpu"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1149,7 +1149,7 @@ dependencies = [
 [[package]]
 name = "egui-winit"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "accesskit_winit",
  "ahash",
@@ -1190,7 +1190,7 @@ dependencies = [
 [[package]]
 name = "egui_extras"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "ahash",
  "egui",
@@ -1203,7 +1203,7 @@ dependencies = [
 [[package]]
 name = "egui_glow"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -1219,7 +1219,7 @@ dependencies = [
 [[package]]
 name = "emath"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "bytemuck",
  "serde",
@@ -1310,7 +1310,7 @@ dependencies = [
 [[package]]
 name = "epaint"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 dependencies = [
  "ab_glyph",
  "ahash",
@@ -1327,7 +1327,7 @@ dependencies = [
 [[package]]
 name = "epaint_default_fonts"
 version = "0.29.1"
-source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#bc86bec1cb69a99e0b2d49272608f298021824d4"
+source = "git+https://github.com/afishhh/egui?branch=cache_galley_lines#c094ee8a15ccea868f2d4171c7f8bf3cd0d5761d"
 
 [[package]]
 name = "equivalent"
@@ -4132,7 +4132,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
