@@ -1206,72 +1206,6 @@ impl ModSource {
         }
     }
 
-    pub fn paths(&self) -> Result<Vec<String>> {
-        match self {
-            Self::Directory { path } => {
-                let mut out = vec![];
-
-                for result in WalkDir::new(path).into_iter() {
-                    let entry = result?;
-
-                    if entry.file_type().is_file() {
-                        out.push(
-                            entry
-                                .path()
-                                .strip_prefix(path)
-                                .unwrap()
-                                .to_str()
-                                // TODO: don't unwrap this
-                                .unwrap()
-                                .to_string(),
-                        );
-                    }
-                }
-
-                Ok(out)
-            }
-            Self::Zip { path } => {
-                let mut out = vec![];
-                let mut archive = zip::ZipArchive::new(std::fs::File::open(path)?)?;
-                for name in archive.file_names().map(|s| s.to_string()).collect::<Vec<String>>() {
-                    if !name.ends_with('/') {
-                        out.push(
-                            archive
-                                .by_name(&name)?
-                                .enclosed_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string(),
-                        );
-                    }
-                }
-
-                Ok(out)
-            }
-            Self::InMemoryZip { data, .. } => {
-                let mut out = vec![];
-                let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))?;
-
-                for name in archive.file_names().map(|s| s.to_string()).collect::<Vec<String>>() {
-                    if !name.ends_with('/') {
-                        out.push(
-                            archive
-                                .by_name(&name)?
-                                .enclosed_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string(),
-                        );
-                    }
-                }
-
-                Ok(out)
-            }
-        }
-    }
-
     pub fn open(&self) -> Result<OpenModHandle<'_>> {
         Ok(match self {
             Self::Directory { path } => OpenModHandle::Directory { path: path.clone() },
@@ -1308,6 +1242,52 @@ impl<'a> OpenModHandle<'a> {
                 Err(e) => return Err(e.into()),
             }),
         }))
+    }
+
+    pub fn paths(&mut self) -> Result<Vec<String>> {
+        match self {
+            Self::Directory { path } => {
+                let mut out = Vec::new();
+
+                for result in WalkDir::new(&path).into_iter() {
+                    let entry = result?;
+
+                    if entry.file_type().is_file() {
+                        out.push(
+                            entry
+                                .path()
+                                .strip_prefix(&path)
+                                .unwrap()
+                                .to_str()
+                                // TODO: don't unwrap this
+                                .unwrap()
+                                .to_string(),
+                        );
+                    }
+                }
+
+                Ok(out)
+            }
+            Self::Zip { archive } => {
+                let mut out = Vec::new();
+
+                for name in archive.file_names().map(|s| s.to_string()).collect::<Vec<String>>() {
+                    if !name.ends_with('/') {
+                        out.push(
+                            archive
+                                .by_name(&name)?
+                                .enclosed_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string(),
+                        );
+                    }
+                }
+
+                Ok(out)
+            }
+        }
     }
 }
 

@@ -213,9 +213,10 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
         let mod_name = m.title_or_filename()?.to_string();
         info!("Applying mod {}", mod_name);
 
-        let paths = m.source.paths()?;
-        let path_count = paths.len();
         let mut handle = m.source.open()?;
+        let paths = handle.paths()?;
+        let path_count = paths.len();
+
         for (j, name) in paths.into_iter().enumerate() {
             if name.starts_with("mod-appendix") {
                 trace!("Skipping {name}");
