@@ -168,6 +168,8 @@ impl Patch<'_> {
             bail!("Source size doesn't match")
         }
 
+        reserve_to_size(target, target_size);
+
         let mut output_offset = 0;
         let mut source_relative_offset: usize = 0;
         let mut target_relative_offset: usize = 0;
