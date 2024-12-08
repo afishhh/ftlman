@@ -1,5 +1,5 @@
 state-yes = Tak
-state-no = No
+state-no = Nie
 
 mods-title = Mody
 mods-unselect-all = Odznacz wszystkie
@@ -25,11 +25,21 @@ hyperspace-fetch-releases-failed = Pobieranie wersji hyperspace nie udało się
 hyperspace = Hyperspace
 hyperspace-releases-loading = Ładowanie...
 hyperspace-fetching-releases = Pobieranie wersji hyperspace...
-patch-hyperspace-ftl = Dodaj Hyperspace.ftl
 
 mod-meta-authors = Autorzy:
+mod-meta-hs-req = Wymagana wersja hyperspace:
+mod-meta-hs-req-fallback = Wymaga hyperspace
+mod-meta-hs-overwrites = Nadpisuje hyperspace.xml:
 mod-meta-none = Metadane niedostępne dla moda
 mod-meta-hint = Najedź na moda i jego opis pokaże sie tutaj.
+
+pathedit-tooltip = Użyj Tab oraz Shift+Tab aby zmieniać sugestie
+
+findftl-failed-title = Wykrywanie folderu FTL nie powiodło się
+
+sandbox-button = Piaskownica XML
+sandbox-open-failed = Nie udało się otworzyć Piaskownicy XML
+sandbox-editor-hint = Wpisz tutaj append XML aby zaaplikować go do wybranego pliku
 
 settings-button = Ustawienia
 settings-title = {settings-button}

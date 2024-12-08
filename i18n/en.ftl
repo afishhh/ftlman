@@ -27,7 +27,6 @@ hyperspace-fetch-releases-failed = Failed to fetch hyperspace releases
 hyperspace = Hyperspace
 hyperspace-releases-loading = Loading...
 hyperspace-fetching-releases = Fetching hyperspace releases...
-patch-hyperspace-ftl = Patch Hyperspace.ftl
 
 mod-meta-authors = Authors:
 mod-meta-hs-req = Required hyperspace version:
