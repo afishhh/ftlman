@@ -196,33 +196,42 @@ impl Widget for PathEdit<'_> {
         // FIXME: Is there a simpler way to do this?
         let mut output = ui
             .scope(|ui| {
-                if let Some(width) = self.desired_width {
-                    ui.set_max_width(width);
-                }
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .layout(Layout::right_to_left(Align::Center))
+                        .max_rect({
+                            let mut rect = ui.available_rect_before_wrap();
+                            // HACK: I hate immediate mode UI I hate immediate mode UI I hate immediate mode UI
+                            rect.set_height(ui.text_style_height(&egui::TextStyle::Monospace) + 4.0);
+                            if let Some(width) = self.desired_width {
+                                rect.set_width(width);
+                            }
 
-                // HACK: I hate immediate mode UI I hate immediate mode UI I hate immediate mode UI
-                ui.set_max_height(ui.text_style_height(&egui::TextStyle::Monospace) + 4.0);
+                            rect
+                        }),
+                );
 
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if self.open_directory_button {
-                        if ui.small_button("🗁").clicked() {
-                            let path = Path::new(self.buffer.as_str());
-                            if path.is_dir() {
-                                if let Err(e) = open::that_detached(path) {
-                                    log::error!("Failed to open {path:?}: {e}");
-                                }
+                ui.advance_cursor_after_rect(child_ui.max_rect());
+
+                let ui = &mut child_ui;
+
+                if self.open_directory_button {
+                    if ui.small_button("🗁").clicked() {
+                        let path = Path::new(self.buffer.as_str());
+                        if path.is_dir() {
+                            if let Err(e) = open::that_detached(path) {
+                                log::error!("Failed to open {path:?}: {e}");
                             }
                         }
                     }
+                }
 
-                    TextEdit::singleline(self.buffer)
-                        .lock_focus(true)
-                        .id(text_edit_id)
-                        .desired_width(f32::INFINITY)
-                        .font(FontSelection::Style(eframe::egui::TextStyle::Monospace))
-                        .show(ui)
-                })
-                .inner
+                TextEdit::singleline(self.buffer)
+                    .lock_focus(true)
+                    .id(text_edit_id)
+                    .desired_width(f32::INFINITY)
+                    .font(FontSelection::Style(eframe::egui::TextStyle::Monospace))
+                    .show(ui)
             })
             .inner;
 
