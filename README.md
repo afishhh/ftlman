@@ -4,21 +4,24 @@ This project is an alternative to the [Slipstream Mod Manager](https://github.co
 
 ### Features
 
-- [x] Regular FTL mods (mostly Slipstream compatible*)
+- [x] Regular FTL mods (mostly Slipstream compatible\*)
+- [x] Supports mod tags from [Blizz's Slipstream fork](https://github.com/blizzarchon/Slipstream-Mod-Manager)
 - [x] Automatic [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) installer
+- [x] Mostly functional XML Sandbox
 
-Currently automatic hyperspace installation is only supported on the following OS + Store combinations:
-- Windows + Steam
-- Linux + Steam
+Currently automatic hyperspace installation is supported for the following FTL versions:
+- Steam (Linux and Windows)
+- Epic (untested)
+- Origin (untested)
 
-Adding support for other game stores is possible, but I only own the game on Steam so I have no way of testing potential implementations. If anyone wants an implementation and is willing to test changes for me, [open an issue](https://github.com/afishhh/ftlman/issues/new).
+Patching the Microsoft version is technically supported but you may encounter permission problems if you try to patch it in the original installation directory.
 
 \* Most Slipstream mods are supported but these Slipstream features are currently unimplemented:
 - .rawappend.xml/.xml.rawappend files
 - .rawclobber.xml/.xml.rawclobber files
 - Some ill-formed XML files may still be rejected by ftlman but accepted by Slipstream.
 
-These features are not particularly difficult to implement but I just don't have any mods that actually *use* them so I can't test changes. If you find a mod that requires this please [open an issue](https://github.com/afishhh/ftlman/issues/new).
+These features are not particularly difficult to implement but I just don't have any mods that actually *use* them so I can't test changes. If you find a mod that requires any of these please [open an issue](https://github.com/afishhh/ftlman/issues/new).
 
 If you find a mod that fails to patch with ftlman but works with slipstream or one that works different under ftlman also [open an issue](https://github.com/afishhh/ftlman/issues/new).
 
