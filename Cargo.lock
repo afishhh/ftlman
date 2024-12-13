@@ -1784,6 +1784,8 @@ version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a9bfc1af68b1726ea47d3d5109de126281def866b33970e10fbab11b5dafab3"
 dependencies = [
+ "allocator-api2",
+ "equivalent",
  "foldhash",
 ]
 
@@ -3247,21 +3249,23 @@ dependencies = [
 
 [[package]]
 name = "silpkg"
-version = "0.0.0"
-source = "git+https://github.com/afishhh/silpkg.git#6acfc99fb9ed4b0bf555cddc1dd5915bc40ea929"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "89ba2df6f62bc3dd2dd22ca7374423517f63da47aed11b65df4fd28423db5a5f"
 dependencies = [
  "bitflags 2.6.0",
  "flate2",
- "hashbrown 0.14.5",
+ "hashbrown 0.15.1",
  "log",
  "silpkg-macros",
- "thiserror-core",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
 name = "silpkg-macros"
-version = "0.0.0"
-source = "git+https://github.com/afishhh/silpkg.git#6acfc99fb9ed4b0bf555cddc1dd5915bc40ea929"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "880db1934561cbb5f96fc579472dd6523a88e0822b1fdfff3a132633b6a8ac5a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3476,26 +3480,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
 dependencies = [
  "thiserror-impl 2.0.3",
-]
-
-[[package]]
-name = "thiserror-core"
-version = "1.0.50"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c001ee18b7e5e3f62cbf58c7fe220119e68d902bb7443179c0c8aef30090e999"
-dependencies = [
- "thiserror-core-impl",
-]
-
-[[package]]
-name = "thiserror-core-impl"
-version = "1.0.50"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4c60d69f36615a077cc7663b9cb8e42275722d23e58a7fa3d2c7f2915d09d04"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -4132,7 +4116,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

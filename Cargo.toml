@@ -24,7 +24,7 @@ poll-promise = { version = "0.3" }
 crc32fast = "1"
 
 # Used to read/write SIL archives and mod files/dirs
-silpkg = { git = "https://github.com/afishhh/silpkg.git" }
+silpkg = "0.1"
 zip = "2"
 walkdir = "2"
 
