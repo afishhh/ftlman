@@ -33,7 +33,9 @@ mod-meta-hs-overwrites = Nadpisuje hyperspace.xml:
 mod-meta-none = Metadane niedostępne dla moda
 mod-meta-hint = Najedź na moda i jego opis pokaże sie tutaj.
 
-pathedit-tooltip = Użyj Tab oraz Shift+Tab aby zmieniać sugestie
+pathedit-tooltip =
+    Użyj Tab oraz Shift+Tab aby zmieniać sugestie
+    Wciśnij Enter aby zaakceptować sugestie
 
 findftl-failed-title = Wykrywanie folderu FTL nie powiodło się
 

@@ -35,7 +35,9 @@ mod-meta-hs-overwrites = Overwrites hyperspace.xml:
 mod-meta-none = No metadata available for this mod
 mod-meta-hint = Hover over a mod and its description will appear here.
 
-pathedit-tooltip = Use Tab and Shift+Tab to cycle suggestions
+pathedit-tooltip =
+    Use Tab and Shift+Tab to cycle suggestions
+    Press Enter to accept a suggestion
 
 findftl-failed-title = FTL directory autodetection failed
 
