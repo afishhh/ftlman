@@ -334,7 +334,7 @@ mod backend {
     use anyhow::{bail, Result};
     use eframe::egui::FontData;
 
-    pub fn find_system_sans_serif() -> Result<FontData> {
+    pub fn find_system_sans_serif(_language: &str) -> Result<FontData> {
         bail!("Platform not supported")
     }
 }
