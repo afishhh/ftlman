@@ -18,7 +18,6 @@ Patching the Microsoft version is technically supported but you may encounter pe
 
 \* Most Slipstream mods are supported but these Slipstream features are currently unimplemented:
 - .rawappend.xml/.xml.rawappend files
-- .rawclobber.xml/.xml.rawclobber files
 - Some ill-formed XML files may still be rejected by ftlman but accepted by Slipstream.
 
 These features are not particularly difficult to implement but I just don't have any mods that actually *use* them so I can't test changes. If you find a mod that requires any of these please [open an issue](https://github.com/afishhh/ftlman/issues/new).
