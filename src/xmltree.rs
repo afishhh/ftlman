@@ -242,8 +242,8 @@ fn write<W: Write>(writer: &mut quick_xml::Writer<W>, element: &Element) -> Resu
 }
 
 impl Element {
-    pub fn parse_all_sloppy(reader: impl BufRead) -> Result<Vec<Node>, quick_xml::Error> {
-        let mut reader = quick_xml::Reader::from_reader(reader);
+    pub fn parse_all_sloppy(text: &str) -> Result<Vec<Node>, quick_xml::Error> {
+        let mut reader = quick_xml::Reader::from_str(text);
         reader.config_mut().check_end_names = false;
         let mut buffer = vec![];
 
@@ -258,8 +258,8 @@ impl Element {
         }
     }
 
-    pub fn parse_sloppy(reader: impl BufRead) -> Result<Option<Element>, quick_xml::Error> {
-        let nodes = Self::parse_all_sloppy(reader)?;
+    pub fn parse_sloppy(text: &str) -> Result<Option<Element>, quick_xml::Error> {
+        let nodes = Self::parse_all_sloppy(text)?;
         Ok(nodes.into_iter().find_map(|x| x.into_element()))
     }
 

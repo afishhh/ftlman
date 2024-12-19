@@ -5,7 +5,6 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use eframe::egui::TextBuffer;
 use lazy_static::lazy_static;
 use log::{info, trace, warn};
 use parking_lot::Mutex;
@@ -56,14 +55,13 @@ fn unwrap_rewrap_xml(
 
     let lower_wrapped = format!("<FTL>{lower_without_root}</FTL>");
 
-    let mut lower_parsed = xmltree::Element::parse_sloppy(Cursor::new(&lower_wrapped.as_str()))
+    let mut lower_parsed = xmltree::Element::parse_sloppy(&lower_wrapped)
         .context("Could not parse XML document")?
         .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
 
     combine(
         &mut lower_parsed,
-        xmltree::Element::parse_all_sloppy(Cursor::new(upper_without_root.as_str()))
-            .context("Could not parse XML append document")?,
+        xmltree::Element::parse_all_sloppy(&upper_without_root).context("Could not parse XML append document")?,
     )?;
 
     Ok({
@@ -276,7 +274,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
 
                 trace!("Patching {real_name} according to {name}");
 
-                let append_text = std::io::read_to_string(
+                let append_text = read_encoded_text(
                     handle
                         .open(&name)
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?,
