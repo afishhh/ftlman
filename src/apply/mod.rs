@@ -114,13 +114,12 @@ fn read_exact_n(reader: &mut impl Read, buf: &mut [u8]) -> Result<(), (usize, st
 
     while nread < buf.len() {
         let nread_now = match reader.read(&mut buf[nread..]) {
+            Ok(0) => {
+                return Err((nread, std::io::Error::from(std::io::ErrorKind::UnexpectedEof)));
+            }
             Ok(n) => n,
             Err(e) => return Err((nread, e)),
         };
-
-        if nread_now == 0 {
-            return Err((nread, std::io::Error::from(std::io::ErrorKind::UnexpectedEof)));
-        }
 
         nread += nread_now;
     }
@@ -129,44 +128,48 @@ fn read_exact_n(reader: &mut impl Read, buf: &mut [u8]) -> Result<(), (usize, st
 }
 
 // Some modders helpfully save their files as UTF-16 or with a UTF-8 BOM
-fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 'a>> {
-    let mut peek = [0; 3];
-    match read_exact_n(&mut reader, &mut peek[..2]) {
+// TODO: This could be made a reader instead, probably won't change performance though.
+fn read_encoded_text(mut reader: impl Read) -> Result<String> {
+    let mut peek = [0; 2];
+    match read_exact_n(&mut reader, &mut peek) {
         Err((nread, err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-            return Ok(Box::new(Cursor::new(peek).take(nread as u64)))
+            return String::from_utf8(peek[..nread].to_vec()).map_err(Into::into);
         }
         Err((_, err)) => return Err(err.into()),
         Ok(()) => (),
     };
 
-    let utf16_pairs = if &peek[..2] == b"\xFF\xFE" {
+    let utf16_pairs = if &peek == b"\xFF\xFE" {
         trace!("Transcoding UTF-16 LE file into UTF-8");
         read_utf16_pairs(&mut reader, u16::from_le_bytes)?
-    } else if &peek[..2] == b"\xFE\xFF" {
+    } else if &peek == b"\xFE\xFF" {
         trace!("Transcoding UTF-16 BE file into UTF-8");
         read_utf16_pairs(&mut reader, u16::from_be_bytes)?
-    } else if &peek[..2] == b"\xef\xbb" {
-        match reader.read_exact(&mut peek[2..3]) {
-            Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
-                return Ok(Box::new(std::io::Cursor::new([peek[0], peek[1]]).chain(reader)))
-            }
-            other => other?,
-        };
-        return if peek[2] == b'\xbf' {
-            Ok(Box::new(reader))
-        } else {
-            Ok(Box::new(std::io::Cursor::new(peek).chain(reader)))
-        };
     } else {
-        return Ok(Box::new(std::io::Cursor::new([peek[0], peek[1]]).chain(reader)));
+        let mut result;
+
+        if &peek == b"\xEF\xBB" {
+            if reader.read(&mut peek[..1])? == 0 {
+                // Technically, at this point we know this is invalid UTF-8 because
+                // this is an incomplete three byte sequence, but use from_utf8 for
+                // the standard error message
+                return String::from_utf8(vec![0xEF, 0xBB]).map_err(Into::into);
+            }
+
+            if peek[0] != b'\xBF' {
+                result = String::from_utf8(vec![0xEF, 0xBB, peek[0]])?
+            } else {
+                result = String::new();
+            };
+        } else {
+            result = String::from_utf8(peek.to_vec())?;
+        }
+
+        reader.read_to_string(&mut result)?;
+        return Ok(result);
     };
 
-    let mut out = String::new();
-    for chr in char::decode_utf16(utf16_pairs) {
-        out.push(chr?);
-    }
-
-    Ok(Box::new(Cursor::new(out.into_bytes())))
+    String::from_utf16(&utf16_pairs).map_err(Into::into)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -303,8 +306,8 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 }
 
                 if name.ends_with(".xml") {
-                    let mut reader =
-                        quick_xml::Reader::from_reader(std::io::BufReader::new(fixup_text_file(handle.open(&name)?)?));
+                    let original_text = read_encoded_text(&mut handle.open(&name)?)?;
+                    let mut reader = quick_xml::Reader::from_str(&original_text);
                     reader.config_mut().check_end_names = false;
                     let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(vec![]), b' ', 4);
                     let mut buf = vec![];
@@ -339,12 +342,10 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                         .open(&name)
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
                     if name.ends_with(".txt") {
-                        std::io::copy(
-                            &mut fixup_text_file(reader)?,
-                            &mut pkg.insert(name.clone(), INSERT_FLAGS)?,
-                        )
+                        pkg.insert(name.clone(), INSERT_FLAGS)?
+                            .write_all(read_encoded_text(reader)?.as_bytes())
                     } else {
-                        std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?)
+                        std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?).map(|_| ())
                     }
                     .with_context(|| format!("Failed to insert {name} into ftl.dat"))?;
                 }
