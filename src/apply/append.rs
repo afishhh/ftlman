@@ -465,16 +465,9 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                             }
                         }
                         "setValue" => {
-                            // Remove all text and cdata nodes
-                            for node in std::mem::take(&mut context.children) {
-                                match node {
-                                    XMLNode::Element(_)
-                                    | XMLNode::Comment(_)
-                                    | XMLNode::ProcessingInstruction(_, _) => context.children.push(node),
-                                    XMLNode::CData(_) | XMLNode::Text(_) => {}
-                                }
-                            }
-
+                            context
+                                .children
+                                .retain(|node| !matches!(node, XMLNode::CData(_) | XMLNode::Text(_)));
                             context.children.push(XMLNode::Text(command.get_text_trim()))
                         }
                         "removeTag" => {
