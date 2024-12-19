@@ -109,12 +109,34 @@ fn read_utf16_pairs(reader: &mut impl Read, bytepair_mapper: impl Fn([u8; 2]) ->
     Ok(result)
 }
 
+fn read_exact_n(reader: &mut impl Read, buf: &mut [u8]) -> Result<(), (usize, std::io::Error)> {
+    let mut nread = 0;
+
+    while nread < buf.len() {
+        let nread_now = match reader.read(&mut buf[nread..]) {
+            Ok(n) => n,
+            Err(e) => return Err((nread, e)),
+        };
+
+        if nread_now == 0 {
+            return Err((nread, std::io::Error::from(std::io::ErrorKind::UnexpectedEof)));
+        }
+
+        nread += nread_now;
+    }
+
+    Ok(())
+}
+
 // Some modders helpfully save their files as UTF-16 or with a UTF-8 BOM
 fn fixup_text_file<'a>(mut reader: Box<dyn Read + 'a>) -> Result<Box<dyn Read + 'a>> {
     let mut peek = [0; 3];
-    match reader.read_exact(&mut peek[..2]) {
-        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(Box::new(Cursor::new(peek))),
-        other => other?,
+    match read_exact_n(&mut reader, &mut peek[..2]) {
+        Err((nread, err)) if err.kind() == std::io::ErrorKind::UnexpectedEof => {
+            return Ok(Box::new(Cursor::new(peek).take(nread as u64)))
+        }
+        Err((_, err)) => return Err(err.into()),
+        Ok(()) => (),
     };
 
     let utf16_pairs = if &peek[..2] == b"\xFF\xFE" {
