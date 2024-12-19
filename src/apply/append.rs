@@ -201,10 +201,9 @@ impl SelectorFilter {
             result.attrs.push((key.to_owned(), StringFilter::parse(value, regex)?));
         }
 
-        let text = selector.get_text();
-        let trimmed = text.trim();
-        if !trimmed.is_empty() {
-            result.value = Some(StringFilter::parse(trimmed, regex)?)
+        let text = selector.get_text_trim();
+        if !text.is_empty() {
+            result.value = Some(StringFilter::parse(&text, regex)?)
         }
 
         Ok(result)
@@ -234,7 +233,7 @@ impl ElementFilter for SelectorFilter {
         if self
             .value
             .as_ref()
-            .is_some_and(|value| !value.is_match(element.get_text().trim()))
+            .is_some_and(|value| !value.is_match(&element.get_text_trim()))
         {
             return false;
         }
@@ -476,9 +475,7 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                                 }
                             }
 
-                            context
-                                .children
-                                .push(XMLNode::Text(command.get_text().trim().to_string()))
+                            context.children.push(XMLNode::Text(command.get_text_trim()))
                         }
                         "removeTag" => {
                             context.prefix = Some(REMOVE_MARKER.to_string());

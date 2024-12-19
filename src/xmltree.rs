@@ -286,7 +286,7 @@ impl Element {
         Ok(())
     }
 
-    pub fn get_text(&self) -> String {
+    pub fn get_text_trim(&self) -> String {
         let mut result = String::new();
         for child in self.children.iter() {
             if let Some(text) = child.as_text() {
