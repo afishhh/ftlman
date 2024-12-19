@@ -5,18 +5,12 @@ use std::hash::Hasher;
 
 use anyhow::{bail, Context, Result};
 
-trait PatchExt {
-    fn take_one(&mut self) -> Option<u8>;
-}
-
-impl PatchExt for &[u8] {
-    fn take_one(&mut self) -> Option<u8> {
-        if let Some((first, tail)) = self.split_first() {
-            *self = tail;
-            Some(*first)
-        } else {
-            None
-        }
+fn take_one(patch: &mut &[u8]) -> Option<u8> {
+    if let Some((first, tail)) = patch.split_first() {
+        *patch = tail;
+        Some(*first)
+    } else {
+        None
     }
 }
 
@@ -24,9 +18,7 @@ fn take_varint(patch: &mut &[u8]) -> Result<usize> {
     let mut data = 0;
     let mut shift = 1;
     loop {
-        let x = patch
-            .take_one()
-            .context("Unexpected EOF while reading varint from patch")?;
+        let x = take_one(patch).context("Unexpected EOF while reading varint from patch")?;
         data += (x & 0x7f) as usize * shift;
         if (x & 0x80) != 0 {
             break;
@@ -58,39 +50,45 @@ fn reserve_to_size(target: &mut Vec<u8>, length: usize) {
     }
 }
 
-fn copy_into(target: &mut Vec<u8>, bytes: &[u8], offset: usize) {
-    let new_size = offset + bytes.len();
-    reserve_to_size(target, new_size);
-
-    unsafe {
-        let ptr = target.as_mut_ptr().add(offset);
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
-        if new_size > target.len() {
-            target.set_len(new_size);
-        }
+fn check_spare_capacity(target: &Vec<u8>, required: usize) -> Result<()> {
+    if required > target.capacity() - target.len() {
+        bail!("outputOffset exceeded preallocated target capacity");
+    } else {
+        Ok(())
     }
 }
 
-fn copy_into_within(target: &mut Vec<u8>, write_offset: usize, read_offset: usize, length: usize) {
-    let new_size = write_offset + length;
-    reserve_to_size(target, new_size);
+fn copy_into(target: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
+    check_spare_capacity(target, bytes.len())?;
 
     unsafe {
-        let mut write_ptr = target.as_mut_ptr().add(write_offset);
+        let ptr = target.spare_capacity_mut().as_mut_ptr() as *mut u8;
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+        target.set_len(target.len() + bytes.len());
+    }
+
+    Ok(())
+}
+
+fn copy_into_within(target: &mut Vec<u8>, read_offset: usize, length: usize) -> Result<()> {
+    check_spare_capacity(target, length)?;
+
+    unsafe {
+        let mut write_ptr = target.spare_capacity_mut().as_mut_ptr() as *mut u8;
         let mut read_ptr = target.as_mut_ptr().add(read_offset);
         // NOTE: std::ptr::copy doesn't work here
         //       Probably because it requires that after reading from read_ptr, write_ptr
         //       will not alias read_ptr.
         //       (at least that's how I understand "must not be subject to aliasing restrictions")
         for _ in 0..length {
-            *write_ptr = *read_ptr;
+            write_ptr.write(read_ptr.read());
             write_ptr = write_ptr.add(1);
             read_ptr = read_ptr.add(1);
         }
-        if new_size > target.len() {
-            target.set_len(new_size);
-        }
+        target.set_len(target.len() + length);
     }
+
+    Ok(())
 }
 
 const MAGIC: &[u8] = b"BPS1";
@@ -170,7 +168,6 @@ impl Patch<'_> {
 
         reserve_to_size(target, target_size);
 
-        let mut output_offset = 0;
         let mut source_relative_offset: usize = 0;
         let mut target_relative_offset: usize = 0;
 
@@ -181,25 +178,19 @@ impl Patch<'_> {
             match action {
                 // SourceRead
                 0 => {
-                    // TODO: actually just use target_size...
-                    if let Some(additional) = (output_offset + length).checked_sub(target.len()) {
-                        target.reserve(additional);
-                    }
                     let data = source
-                        .get(output_offset..output_offset + length)
+                        .get(target.len()..target.len() + length)
                         .context("SourceRead went out of bounds of source")?;
 
-                    copy_into(target, data, output_offset);
-                    output_offset += length;
+                    copy_into(target, data)?;
                 }
                 // TargetRead
                 1 => {
                     let (data, remaining) = patch
                         .split_at_checked(length)
-                        .context("TargetRead length larger than patch")?;
+                        .context("TargetRead went out of bounds of patch")?;
 
-                    copy_into(target, data, output_offset);
-                    output_offset += length;
+                    copy_into(target, data)?;
                     patch = remaining;
                 }
                 // SourceCopy
@@ -212,8 +203,7 @@ impl Patch<'_> {
                         .get(source_relative_offset..source_relative_offset + length)
                         .context("SourceCopy went out of bounds of source")?;
 
-                    copy_into(target, data, output_offset);
-                    output_offset += length;
+                    copy_into(target, data)?;
                     source_relative_offset += length;
                 }
                 // TargetCopy
@@ -223,11 +213,10 @@ impl Patch<'_> {
                         .checked_add_signed(offset)
                         .context("TargetCopy underflowed targetRelativeOffset")?;
                     if target_relative_offset >= target.len() {
-                        bail!("TargetCopy went out-of-bounds of target")
+                        bail!("TargetCopy went out of bounds of target")
                     }
 
-                    copy_into_within(target, output_offset, target_relative_offset, length);
-                    output_offset += length;
+                    copy_into_within(target, target_relative_offset, length)?;
                     target_relative_offset += length;
                 }
                 _ => unreachable!(),
