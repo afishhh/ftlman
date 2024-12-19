@@ -174,7 +174,6 @@ fn read_encoded_text(mut reader: impl Read) -> Result<String> {
 pub enum XmlAppendType {
     Append,
     RawAppend,
-    RawClobber,
 }
 
 impl XmlAppendType {
@@ -184,8 +183,6 @@ impl XmlAppendType {
             (".append.xml", XmlAppendType::Append),
             (".rawappend.xml", XmlAppendType::RawAppend),
             (".xml.rawappend", XmlAppendType::RawAppend),
-            (".rawclobber.xml", XmlAppendType::RawClobber),
-            (".xml.rawclobber", XmlAppendType::RawClobber),
         ];
 
         XML_APPEND_SUFFIXES
@@ -198,9 +195,6 @@ pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<Str
     Ok(match kind {
         XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
         XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
-        XmlAppendType::RawClobber => {
-            bail!(".xml.rawclobber files are not supported yet")
-        }
     })
 }
 
@@ -294,6 +288,22 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                     .map_err(|x| anyhow!(x))
                     .and_then(|mut x| x.write_all(new_text.as_bytes()).map_err(Into::into))
                     .with_context(|| format!("Failed to insert modified {real_name} into ftl.dat"))?;
+            } else if name.ends_with(".xml.rawclobber") || name.ends_with(".rawclobber.xml") {
+                let target_name = name.strip_suffix(".rawclobber.xml").map_or_else(
+                    || name.strip_suffix(".rawclobber").unwrap().to_owned(),
+                    |n| format!("{n}.xml"),
+                );
+
+                let text = read_encoded_text(&mut handle.open(&name)?)?;
+                if pkg.contains(&target_name) {
+                    trace!("Overwriting {target_name}");
+                    pkg.remove(&target_name)
+                        .with_context(|| format!("Failed to remove {target_name} from ftl.dat"))?
+                } else {
+                    trace!("Inserting {target_name}")
+                }
+
+                pkg.insert(target_name, INSERT_FLAGS)?.write_all(text.as_bytes())?;
             } else {
                 if pkg.contains(&name) {
                     trace!("Overwriting {name}");
