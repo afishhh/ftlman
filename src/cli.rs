@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write, path::PathBuf};
+use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
@@ -12,6 +12,7 @@ use crate::{
 #[derive(Subcommand)]
 pub enum Command {
     Patch(PatchCommand),
+    Append(AppendCommand),
     BpsPatch(BpsPatchCommand),
     BpsMeta(BpsMetaCommand),
     Crc32(Crc32Command),
@@ -32,6 +33,12 @@ pub struct PatchCommand {
     /// If the path is has only one component it will be interpreted as
     /// a file in the local user's mods directory (like in slipstream).
     mods: Vec<PathBuf>,
+}
+
+#[derive(Parser)]
+pub struct AppendCommand {
+    file: PathBuf,
+    patch: PathBuf,
 }
 
 #[derive(Parser)]
@@ -143,6 +150,22 @@ pub fn main(command: Command) -> Result<()> {
                 },
                 true,
             )
+        }
+        Command::Append(command) => {
+            let patch_name = command
+                .patch
+                .file_name()
+                .and_then(OsStr::to_str)
+                .context("Failed to get patch filename as UTF-8")?;
+            let (_, kind) =
+                crate::apply::XmlAppendType::from_filename(patch_name).context("Failed to determine append type")?;
+
+            let source = std::fs::read_to_string(&command.file).context("Failed to read source file")?;
+            let patch = std::fs::read_to_string(&command.patch).context("Failed to read patch file")?;
+
+            std::io::stdout().write_all(crate::apply::apply_one(&source, &patch, kind)?.as_bytes())?;
+
+            Ok(())
         }
         Command::BpsPatch(command) => {
             let source = std::fs::read(&command.file).context("Failed to read target file")?;
