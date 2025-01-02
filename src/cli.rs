@@ -36,8 +36,11 @@ pub struct PatchCommand {
 }
 
 #[derive(Parser)]
+/// Executes an append script on an XML document
 pub struct AppendCommand {
-    file: PathBuf,
+    /// Document to evaluate the script on
+    document: PathBuf,
+    /// Append script to execute on the document
     patch: PathBuf,
 }
 
@@ -160,7 +163,7 @@ pub fn main(command: Command) -> Result<()> {
             let (_, kind) =
                 crate::apply::XmlAppendType::from_filename(patch_name).context("Failed to determine append type")?;
 
-            let source = std::fs::read_to_string(&command.file).context("Failed to read source file")?;
+            let source = std::fs::read_to_string(&command.document).context("Failed to read source file")?;
             let patch = std::fs::read_to_string(&command.patch).context("Failed to read patch file")?;
 
             std::io::stdout().write_all(crate::apply::apply_one(&source, &patch, kind)?.as_bytes())?;
