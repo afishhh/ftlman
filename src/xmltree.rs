@@ -13,6 +13,8 @@ use quick_xml::{
     name::QName,
 };
 
+pub mod dom;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
     Element(Element),

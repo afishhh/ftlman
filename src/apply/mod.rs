@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -11,7 +12,12 @@ use parking_lot::Mutex;
 use regex::Regex;
 use zip::ZipArchive;
 
-use crate::{cache::CACHE, hyperspace, xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState};
+use crate::{
+    cache::CACHE,
+    hyperspace,
+    lua::{LuaContext, ModLuaRuntime},
+    xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState,
+};
 
 mod append;
 
@@ -43,37 +49,51 @@ pub enum ApplyStage {
     Repacking,
 }
 
-fn unwrap_rewrap_xml(
+fn unwrap_xml_text(xml_text: &str) -> Cow<'_, str> {
+    WRAPPER_TAG_REGEX.replace_all(xml_text, "")
+}
+
+fn unwrap_rewrap_single(
     lower: &str,
-    upper: &str,
-    combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
+    combine: impl FnOnce(xmltree::Element) -> Result<xmltree::Element>,
 ) -> Result<String> {
     // FIXME: this can be made quicker
-    let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(&lower).any(|x| x.get(2).is_some());
-    let lower_without_root = WRAPPER_TAG_REGEX.replace_all(&lower, "");
-    let upper_without_root = WRAPPER_TAG_REGEX.replace_all(&upper, "");
+    let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(lower).any(|x| x.get(2).is_some());
+    let lower_without_root = unwrap_xml_text(lower);
 
     let lower_wrapped = format!("<FTL>{lower_without_root}</FTL>");
 
-    let mut lower_parsed = xmltree::Element::parse_sloppy(&lower_wrapped)
+    let lower_parsed = xmltree::Element::parse_sloppy(&lower_wrapped)
         .context("Could not parse XML document")?
         .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
 
-    combine(
-        &mut lower_parsed,
-        xmltree::Element::parse_all_sloppy(&upper_without_root).context("Could not parse XML append document")?,
-    )?;
+    let result = combine(lower_parsed)?;
 
     Ok({
         let mut out = vec![];
 
         if had_ftl_root {
-            lower_parsed.write_with_indent(&mut Cursor::new(&mut out), b' ', 4)?;
+            result.write_with_indent(&mut Cursor::new(&mut out), b' ', 4)?;
         } else {
-            lower_parsed.write_children_with_indent(&mut Cursor::new(&mut out), b' ', 4)?
+            result.write_children_with_indent(&mut Cursor::new(&mut out), b' ', 4)?
         }
 
         String::from_utf8(out)?
+    })
+}
+
+fn unwrap_rewrap_xml(
+    lower: &str,
+    upper: &str,
+    combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
+) -> Result<String> {
+    let upper_without_root = unwrap_xml_text(upper);
+    let upper_elements =
+        xmltree::Element::parse_all_sloppy(&upper_without_root).context("Could not parse XML append document")?;
+
+    unwrap_rewrap_single(lower, |mut lower| {
+        combine(&mut lower, upper_elements)?;
+        Ok(lower)
     })
 }
 
@@ -174,6 +194,7 @@ fn read_encoded_text(mut reader: impl Read) -> Result<String> {
 pub enum XmlAppendType {
     Append,
     RawAppend,
+    LuaAppend,
 }
 
 impl XmlAppendType {
@@ -183,6 +204,7 @@ impl XmlAppendType {
             (".append.xml", XmlAppendType::Append),
             (".rawappend.xml", XmlAppendType::RawAppend),
             (".xml.rawappend", XmlAppendType::RawAppend),
+            (".append.lua", XmlAppendType::LuaAppend),
         ];
 
         XML_APPEND_SUFFIXES
@@ -195,6 +217,16 @@ pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<Str
     Ok(match kind {
         XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
         XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
+        XmlAppendType::LuaAppend => unwrap_rewrap_single(document, |lower| {
+            // TODO: Reuse this
+            let mut runtime = ModLuaRuntime::new().context("Failed to initialize lua runtime")?;
+            let mut context = LuaContext {
+                document_root: Some(lower),
+                print_memory_stats: false,
+            };
+            runtime.run(patch, "<patch>", &mut context)?;
+            Ok(context.document_root.unwrap())
+        })?,
     })
 }
 

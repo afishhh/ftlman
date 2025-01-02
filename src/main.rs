@@ -47,6 +47,7 @@ mod gui;
 mod hyperspace;
 mod i18n;
 mod lazy;
+mod lua;
 mod scan;
 mod util;
 mod xmltree;
