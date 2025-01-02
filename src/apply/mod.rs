@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
@@ -14,6 +15,7 @@ use zip::ZipArchive;
 use crate::{cache::CACHE, hyperspace, xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState};
 
 mod append;
+mod lua;
 
 lazy_static! {
     // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
@@ -43,15 +45,14 @@ pub enum ApplyStage {
     Repacking,
 }
 
-fn unwrap_rewrap_xml(
-    lower: &str,
-    upper: &str,
-    combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
-) -> Result<String> {
+fn unwrap_xml_text(xml_text: &str) -> Cow<'_, str> {
+    WRAPPER_TAG_REGEX.replace_all(xml_text, "")
+}
+
+fn unwrap_rewrap_single(lower: &str, combine: impl FnOnce(&mut xmltree::Element) -> Result<()>) -> Result<String> {
     // FIXME: this can be made quicker
     let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(&lower).any(|x| x.get(2).is_some());
-    let lower_without_root = WRAPPER_TAG_REGEX.replace_all(&lower, "");
-    let upper_without_root = WRAPPER_TAG_REGEX.replace_all(&upper, "");
+    let lower_without_root = unwrap_xml_text(&lower);
 
     let lower_wrapped = format!("<FTL>{lower_without_root}</FTL>");
 
@@ -59,10 +60,7 @@ fn unwrap_rewrap_xml(
         .context("Could not parse XML document")?
         .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
 
-    combine(
-        &mut lower_parsed,
-        xmltree::Element::parse_all_sloppy(&upper_without_root).context("Could not parse XML append document")?,
-    )?;
+    combine(&mut lower_parsed)?;
 
     Ok({
         let mut out = vec![];
@@ -75,6 +73,18 @@ fn unwrap_rewrap_xml(
 
         String::from_utf8(out)?
     })
+}
+
+fn unwrap_rewrap_xml(
+    lower: &str,
+    upper: &str,
+    combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
+) -> Result<String> {
+    let upper_without_root = unwrap_xml_text(upper);
+    let upper_elements =
+        xmltree::Element::parse_all_sloppy(&upper_without_root).context("Could not parse XML append document")?;
+
+    unwrap_rewrap_single(lower, |lower| combine(lower, upper_elements))
 }
 
 // TODO: Remove once str_from_utf16_endian is stabilised.
@@ -174,6 +184,7 @@ fn read_encoded_text(mut reader: impl Read) -> Result<String> {
 pub enum XmlAppendType {
     Append,
     RawAppend,
+    LuaAppend,
 }
 
 impl XmlAppendType {
@@ -183,6 +194,7 @@ impl XmlAppendType {
             (".append.xml", XmlAppendType::Append),
             (".rawappend.xml", XmlAppendType::RawAppend),
             (".xml.rawappend", XmlAppendType::RawAppend),
+            (".append.lua", XmlAppendType::LuaAppend),
         ];
 
         XML_APPEND_SUFFIXES
@@ -195,6 +207,7 @@ pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<Str
     Ok(match kind {
         XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
         XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
+        XmlAppendType::LuaAppend => unwrap_rewrap_single(document, |lower| lua::lua_append(lower, patch))?,
     })
 }
 
