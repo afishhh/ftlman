@@ -31,11 +31,16 @@ function Node:as(type) end
 
 ---@class (exact) Element: Node
 ---@field type 'element'
+---@field name 'string'
+---@field prefix 'string'
 ---@field textContent string
 local Element = {}
 
----@return fun(): Node
+---@return fun(): Element
 function Element:children() end
+
+---@return fun(): Node
+function Element:childNodes() end
 
 ---@param ... Node|string
 function Element:append(...) end

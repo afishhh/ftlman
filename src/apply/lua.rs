@@ -1,87 +1,145 @@
-use std::{cell::Ref, collections::BTreeMap};
+use std::{cell::Ref, collections::BTreeMap, fmt::Write as _};
 
 use anyhow::Result;
-use luaxmltree::{NodeHeader, NodeRc, RefCellNodeExt as _};
 use mlua::{prelude::*, FromLua, UserData, UserDataFields};
 
-use crate::xmltree;
-
-#[path = "lua/xmltree.rs"]
-mod luaxmltree;
+use crate::xmltree::{
+    self,
+    dom::{self, NodeRc, NodeTraits as _, RcCell},
+};
 
 struct LuaDocument {
     root: LuaElement,
+}
+
+fn append_qualified_name(element: &dom::Element, output: &mut String) {
+    if let Some(ref prefix) = element.prefix {
+        output.push_str(prefix);
+        output.push(':');
+    }
+    output.push_str(&element.name);
+}
+
+fn element_tostring(element: &dom::Element, output: &mut String) {
+    output.push('<');
+    append_qualified_name(element, output);
+    if !element.attributes.is_empty() {
+        for (name, value) in element.attributes.iter() {
+            _ = write!(output, " {name:?}={value:?}");
+        }
+    }
+
+    if element.children().next().is_none() {
+        output.push_str("/>");
+    } else {
+        output.push_str(">...</");
+        append_qualified_name(element, output);
+        output.push('>');
+    }
+}
+
+trait LuaNode: Sized {
+    fn as_node(&self) -> Ref<dyn dom::Node>;
+    fn to_node(&self) -> NodeRc;
+}
+
+macro_rules! impl_lua_node {
+    ($type: ident) => {
+        impl LuaNode for $type {
+            fn as_node(&self) -> Ref<dyn dom::Node> {
+                self.0.borrow()
+            }
+
+            fn to_node(&self) -> NodeRc {
+                self.0.clone()
+            }
+        }
+    };
+}
+
+fn add_node_fields<T: LuaNode, M: LuaUserDataFields<T>>(fields: &mut M, name: &'static str) {
+    fields.add_field("type", name);
+    fields.add_field_method_get("previousSibling", |_, this| {
+        Ok(this.as_node().previous_sibling().cloned().map(NodeIntoLua))
+    });
+    fields.add_field_method_get("nextSibling", |_, this| {
+        Ok(this.as_node().next_sibling().cloned().map(NodeIntoLua))
+    });
+}
+
+fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
+    methods.add_method("as", |lua, this, kind: String| {
+        let dynamic = this.to_node().clone();
+        match kind.as_str() {
+            "element" => {
+                if let Ok(value) = dom::Element::downcast_rc(dynamic) {
+                    LuaElement(value).into_lua(lua)
+                } else {
+                    Ok(LuaValue::Nil)
+                }
+            }
+            "text" => {
+                if let Ok(value) = dom::Text::downcast_rc(dynamic) {
+                    LuaText(value).into_lua(lua)
+                } else {
+                    Ok(LuaValue::Nil)
+                }
+            }
+            _ => Err(LuaError::runtime("invalid type passed to Node:as cast")),
+        }
+    })
 }
 
 impl UserData for LuaDocument {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         fields.add_field_method_get("root", |_, this| Ok(this.root.clone()));
     }
-    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {}
-}
-
-macro_rules! define_as_method {
-    ($methods: expr) => {
-        $methods.add_method("as", |lua, this, kind: String| {
-            let dynamic = this.0.clone() as NodeRc;
-            match kind.as_str() {
-                "element" => {
-                    if dynamic.borrow_header().kind() == luaxmltree::NodeKind::Element {
-                        LuaElement(unsafe { NodeHeader::rc_as_concrete_unchecked::<luaxmltree::Element>(dynamic) })
-                            .into_lua(lua)
-                    } else {
-                        Ok(LuaValue::Nil)
-                    }
-                }
-                "text" => {
-                    if dynamic.borrow_header().kind() == luaxmltree::NodeKind::Text {
-                        LuaText(unsafe {
-                            NodeHeader::rc_as_concrete_unchecked::<luaxmltree::SimpleNode<String>>(dynamic)
-                        })
-                        .into_lua(lua)
-                    } else {
-                        Ok(LuaValue::Nil)
-                    }
-                }
-                _ => Err(LuaError::runtime("invalid type passed to Node:as cast")),
-            }
-        })
-    };
+    fn add_methods<M: mlua::UserDataMethods<Self>>(_methods: &mut M) {}
 }
 
 #[derive(Clone, FromLua)]
-struct LuaText(luaxmltree::StringRc);
+#[repr(transparent)]
+struct LuaText(RcCell<dom::Text>);
+
+impl_lua_node!(LuaText);
 
 impl UserData for LuaText {
     fn add_fields<F: LuaUserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("type", |_, _| Ok("text"));
-        fields.add_field_method_get("content", |_, this| Ok(this.0.borrow().value.to_owned()));
+        add_node_fields(fields, "text");
+        fields.add_field_method_get("content", |_, this| Ok(this.0.borrow().content.to_owned()));
         fields.add_field_method_set("content", |_, this, new: String| {
-            this.0.borrow_mut().value = new;
+            this.0.borrow_mut().content = new;
             Ok(())
         });
     }
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-        define_as_method!(methods);
+        add_node_methods(methods);
         methods.add_meta_method("__tostring", |_, this, _: ()| {
-            Ok(format!("#text {:?}", &this.0.borrow().value))
+            Ok(format!("#text {:?}", &this.0.borrow().content))
         });
     }
 }
 
 #[derive(Clone, FromLua)]
-struct LuaElement(luaxmltree::ElementRc);
+#[repr(transparent)]
+struct LuaElement(dom::ElementRc);
 
-fn node_into_lua(lua: &Lua, node: NodeRc) -> LuaResult<LuaValue> {
-    let kind = node.borrow_header().kind();
-    match kind {
-        luaxmltree::NodeKind::Element => {
-            LuaElement(unsafe { NodeHeader::rc_as_concrete_unchecked(node) }).into_lua(lua)
+impl_lua_node!(LuaElement);
+
+#[repr(transparent)]
+struct NodeIntoLua(NodeRc);
+
+impl IntoLua for NodeIntoLua {
+    fn into_lua(self, lua: &Lua) -> LuaResult<LuaValue> {
+        let node = self.0;
+        let kind = node.borrow().kind();
+        match kind {
+            dom::NodeKind::Element => LuaElement(unsafe { dom::Element::downcast_rc_unchecked(node) }).into_lua(lua),
+            dom::NodeKind::Comment => todo!(),
+            dom::NodeKind::CData => todo!(),
+            dom::NodeKind::Text => LuaText(unsafe { dom::Text::downcast_rc_unchecked(node) }).into_lua(lua),
+            dom::NodeKind::ProcessingInstruction => todo!(),
         }
-        luaxmltree::NodeKind::Comment => todo!(),
-        luaxmltree::NodeKind::CData => todo!(),
-        luaxmltree::NodeKind::Text => LuaText(unsafe { NodeHeader::rc_as_concrete_unchecked(node) }).into_lua(lua),
-        luaxmltree::NodeKind::ProcessingInstruction => todo!(),
     }
 }
 
@@ -112,26 +170,31 @@ impl NodeImplicitlyConvertible {
     fn into_node(self) -> NodeRc {
         match self {
             NodeImplicitlyConvertible::Element(e) => e.0,
-            NodeImplicitlyConvertible::Text(text) => unsafe {
-                luaxmltree::SimpleNode::create(luaxmltree::NodeKind::Text, text)
-            },
+            NodeImplicitlyConvertible::Text(text) => dom::Text::create(text),
         }
     }
 }
 
 impl UserData for LuaElement {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
-        fields.add_field_method_get("type", |_, _| Ok("element"));
+        add_node_fields(fields, "element");
+
         fields.add_field_method_get("name", |_, this| Ok(this.0.borrow_mut().name.clone()));
         fields.add_field_method_set("name", |_, this, value: String| {
             this.0.borrow_mut().name = value;
             Ok(())
         });
+        fields.add_field_method_get("prefix", |_, this| Ok(this.0.borrow_mut().prefix.clone()));
+        fields.add_field_method_set("prefix", |_, this, value: Option<String>| {
+            this.0.borrow_mut().prefix = value;
+            Ok(())
+        });
+
         fields.add_field_method_get("textContent", |_, this| {
             let this = this.0.borrow();
             let mut output = String::new();
             for child in this.children() {
-                if let Some(content) = child.borrow().as_text().map(|x| x.value.as_str()) {
+                if let Some(content) = dom::Text::downcast_ref(&*child.borrow()).map(|x| x.content.as_str()) {
                     output.push_str(content);
                 }
             }
@@ -140,40 +203,45 @@ impl UserData for LuaElement {
         fields.add_field_method_set("textContent", |_, this, value: String| {
             let mut this = this.0.borrow_mut();
             this.remove_children();
-            this.append_child(unsafe { luaxmltree::SimpleNode::create(luaxmltree::NodeKind::Text, value) });
+            this.append_child(dom::Text::create(value));
             Ok(())
         });
     }
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
-        define_as_method!(methods);
+        add_node_methods(methods);
         methods.add_method("append", |_, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
             for node in nodes {
                 this.0.borrow_mut().append_child(node.into_node());
             }
             Ok(())
         });
-        methods.add_method("children", |_, this, _: ()| Ok(LuaChildren(this.0.borrow().children())));
+        methods.add_method("children", |_, this, _: ()| {
+            Ok(LuaIterator(this.0.borrow().children().filter_map(|value| {
+                dom::Element::downcast_rc(value).ok().map(LuaElement)
+            })))
+        });
+        methods.add_method("childNodes", |_, this, _: ()| {
+            Ok(LuaIterator(this.0.borrow().children().map(NodeIntoLua)))
+        });
         methods.add_meta_method("__tostring", |_, this, _: ()| {
             let mut output = String::new();
-            this.0.borrow().lua_tostring(&mut output);
+            element_tostring(&this.0.borrow(), &mut output);
             Ok(output)
         });
     }
 }
 
-struct LuaChildren(luaxmltree::ElementChildren);
+#[repr(transparent)]
+struct LuaIterator<T>(T);
 
-impl UserData for LuaChildren {
-    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {}
+impl<T: Iterator> UserData for LuaIterator<T>
+where
+    T::Item: IntoLua,
+{
+    fn add_fields<F: UserDataFields<Self>>(_fields: &mut F) {}
 
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method_mut("__call", |lua, this, _: ()| {
-            if let Some(child) = this.0.next() {
-                Ok(Some(node_into_lua(lua, child)?))
-            } else {
-                Ok(None)
-            }
-        });
+        methods.add_meta_method_mut("__call", |_, this, _: ()| Ok(this.0.next()));
     }
 }
 
@@ -192,7 +260,7 @@ fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 }
             };
 
-            Ok(LuaElement(luaxmltree::Element::create(prefix, name, attributes)))
+            Ok(LuaElement(dom::Element::create(prefix, name, attributes)))
         })?,
     )?;
 
@@ -206,19 +274,18 @@ pub fn lua_append(context: &mut xmltree::Element, code: &str) -> Result<()> {
     )
     .context("Failed to initialize Lua")?;
 
-    let luatree = unsafe {
-        luaxmltree::NodeHeader::rc_as_concrete_unchecked::<luaxmltree::Element>(luaxmltree::convert_into(
-            xmltree::Node::Element(std::mem::replace(
-                context,
-                xmltree::Element {
-                    prefix: None,
-                    name: String::new(),
-                    attributes: BTreeMap::new(),
-                    children: Vec::new(),
-                },
-            )),
-        ))
-    };
+    let luatree = dom::Element::from_tree(
+        std::mem::replace(
+            context,
+            xmltree::Element {
+                prefix: None,
+                name: String::new(),
+                attributes: BTreeMap::new(),
+                children: Vec::new(),
+            },
+        ),
+        None,
+    );
 
     let lib_table = lua.create_table()?;
     lua.globals().set("mod", lib_table.clone())?;
@@ -256,7 +323,7 @@ pub fn lua_append(context: &mut xmltree::Element, code: &str) -> Result<()> {
         .exec()
         .context("Failed to execute lua append script")?;
 
-    *context = match luaxmltree::convert_from(luatree) {
+    *context = match dom::to_tree(luatree) {
         xmltree::Node::Element(element) => element,
         _ => unreachable!(),
     };
