@@ -71,8 +71,8 @@ impl dyn Node + '_ {
         self.header().kind
     }
 
-    pub fn previous_sibling(&self) -> Option<&NodeRc> {
-        self.header().previous.as_ref()
+    pub fn previous_sibling(&self) -> Option<NodeRc> {
+        self.header().previous.as_ref().and_then(Weak::upgrade)
     }
 
     pub fn next_sibling(&self) -> Option<&NodeRc> {
@@ -88,7 +88,7 @@ pub trait NodeExt {
     #[expect(dead_code)]
     fn kind(&self) -> NodeKind;
     #[expect(dead_code)]
-    fn previous_sibling(&self) -> Option<&NodeRc>;
+    fn previous_sibling(&self) -> Option<NodeRc>;
     #[expect(dead_code)]
     fn next_sibling(&self) -> Option<&NodeRc>;
     #[expect(dead_code)]
@@ -103,8 +103,8 @@ impl<T: Node> NodeExt for T {
         NodeHeader::get(self).kind
     }
 
-    fn previous_sibling(&self) -> Option<&NodeRc> {
-        NodeHeader::get(self).previous.as_ref()
+    fn previous_sibling(&self) -> Option<NodeRc> {
+        NodeHeader::get(self).previous.as_ref().and_then(Weak::upgrade)
     }
 
     fn next_sibling(&self) -> Option<&NodeRc> {
@@ -116,15 +116,14 @@ impl<T: Node> NodeExt for T {
     }
 
     fn to_rc(&self) -> RcCell<Self> {
-        unsafe {
-            let ref_cell = node_to_refcell(self);
-            Rc::increment_strong_count(ref_cell);
-            Rc::from_raw(ref_cell)
-        }
+        unsafe { node_to_rc(self) }
     }
 
     fn to_weak(&self) -> WeakCell<Self> {
-        unsafe { Weak::from_raw(node_to_refcell(self)) }
+        unsafe {
+            let dangling_weak = std::mem::ManuallyDrop::new(Weak::from_raw(node_to_refcell(self)));
+            (*dangling_weak).clone()
+        }
     }
 }
 
@@ -186,12 +185,15 @@ define_simple_node!(ProcessingInstruction, { target: String, content: String });
 pub type RcCell<T> = Rc<RefCell<T>>;
 pub type WeakCell<T> = Weak<RefCell<T>>;
 pub type NodeRc = RcCell<dyn Node>;
+pub type NodeWeak = WeakCell<dyn Node>;
 pub type ElementRc = RcCell<Element>;
 pub type ElementWeak = WeakCell<Element>;
 
 #[repr(C)]
 struct NodeHeader {
-    previous: Option<NodeRc>,
+    // TODO: this could be a pointer if the reference counting was not
+    //       assymetric
+    previous: Option<NodeWeak>,
     next: Option<NodeRc>,
     parent: Option<ElementWeak>,
     kind: NodeKind,
@@ -218,6 +220,12 @@ fn refcell_offset_of_node_value() -> isize {
 /// Not very
 unsafe fn node_to_refcell<T: Node>(node: &T) -> &RefCell<T> {
     unsafe { &*((node as *const _ as *const u8).offset(-refcell_offset_of_node_value()) as *const RefCell<T>) }
+}
+
+unsafe fn node_to_rc<T: Node>(node: &T) -> RcCell<T> {
+    let ref_cell = node_to_refcell(node);
+    Rc::increment_strong_count(ref_cell);
+    Rc::from_raw(ref_cell)
 }
 
 impl NodeHeader {
@@ -256,6 +264,7 @@ pub struct Element {
     pub attributes: BTreeMap<String, String>,
     first_child: Option<NodeRc>,
     // NOTE: This will be None if the element has only one child
+    // TODO: this could be a raw pointer (I want to avoid this unsafety for now)
     last_child: Option<NodeRc>,
 }
 
@@ -284,22 +293,44 @@ impl Element {
         }))
     }
 
+    pub fn prepend_child(&mut self, child: NodeRc) {
+        let child_clone = child.clone();
+        let mut header = child.borrow_header_mut();
+        assert!(header.parent.is_none());
+        header.parent = Some(self.to_weak());
+
+        if let Some(ref first) = self.first_child {
+            let mut first_header = first.borrow_header_mut();
+            first_header.previous = Some(Rc::downgrade(&child_clone));
+            header.next = Some(first.clone());
+            if self.last_child.is_none() {
+                self.last_child = Some(first.clone());
+            }
+        } else {
+            self.first_child = Some(child_clone);
+        }
+    }
+
     pub fn append_child(&mut self, child: NodeRc) {
         unsafe {
             let child_clone = child.clone();
-            let mut child = child.borrow_mut();
-            let header = child.header_mut();
+            let mut header = child.borrow_header_mut();
             assert!(header.parent.is_none());
             header.parent = Some(self.to_weak());
 
             if let Some(ref last) = self.last_child {
                 let mut last_header = last.borrow_header_mut();
                 {
-                    let mut previous = last_header.previous.as_ref().unwrap_unchecked().borrow_mut();
-                    let previous_header = previous.header_mut();
+                    let previous = last_header
+                        .previous
+                        .as_ref()
+                        .unwrap_unchecked()
+                        .upgrade()
+                        .expect("previous weak should not be dangling");
+                    let mut previous_header = previous.borrow_header_mut();
                     previous_header.next = Some(child_clone.clone());
                 }
-                last_header.previous = Some(child_clone);
+                last_header.previous = Some(Rc::downgrade(&child_clone));
             } else if let Some(ref first) = self.first_child {
                 let mut first_header = first.borrow_header_mut();
                 first_header.next = Some(child_clone.clone());
@@ -336,7 +367,6 @@ impl ElementChildren {
     pub fn fixup_last(&mut self) {
         match &self.first {
             Some(first) if self.last.as_ref().is_some_and(|last| Rc::ptr_eq(first, last)) => self.last = None,
-
             Some(..) => (),
             None => self.last = None,
         }
@@ -362,7 +392,7 @@ impl DoubleEndedIterator for ElementChildren {
     fn next_back(&mut self) -> Option<Self::Item> {
         match self.last.take() {
             Some(node) => {
-                self.last = node.borrow_header().previous.clone();
+                self.last = node.borrow_header().previous.as_ref().and_then(Weak::upgrade);
                 self.fixup_last();
                 Some(node)
             }
@@ -429,11 +459,7 @@ fn children_from_tree(children: Vec<xmltree::Node>, parent: &ElementWeak) -> (Op
             previous.borrow_header_mut().next = Some(node.clone());
         }
 
-        // dbg!({ node.get() as *const _ });
-        // dbg!({ (*node.get()).header() as *const _ });
-        // dbg!({ (*node.get()).header().previous.as_ref().map(Rc::as_ptr) });
-        // dbg!({ (*node.get()).header() });
-        node.borrow_header_mut().previous = previous;
+        node.borrow_header_mut().previous = previous.as_ref().map(Rc::downgrade);
         previous = Some(node.clone());
 
         if first.is_none() {
