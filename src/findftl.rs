@@ -27,7 +27,7 @@ fn steam_library_folders_vdf() -> Result<Option<PathBuf>> {
     }
 }
 
-const FTL_STEAM_APPID: &'static str = "212680";
+const FTL_STEAM_APPID: &str = "212680";
 
 pub fn find_steam_ftl() -> Result<Option<PathBuf>> {
     let Some(folders) =

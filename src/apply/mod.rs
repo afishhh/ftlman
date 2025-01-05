@@ -444,7 +444,7 @@ pub fn apply(
                 if patch.is_remote() {
                     state.lock().apply_stage = Some(ApplyStage::Downloading {
                         is_patch: true,
-                        version: Some(patch.from_name().into()),
+                        version: Some(patch.source_version_name().into()),
                         progress: None,
                     });
                 }

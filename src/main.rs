@@ -289,9 +289,11 @@ impl CurrentTask {
 
 static ERROR_IDX: AtomicU64 = AtomicU64::new(0);
 
-fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl Iterator<Item = S> + ExactSizeIterator) {
-    let mut job = LayoutJob::default();
-    job.wrap = egui::text::TextWrapping::from_wrap_mode_and_width(egui::TextWrapMode::Wrap, ui.available_width());
+fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Item = S>) {
+    let mut job = LayoutJob {
+        wrap: egui::text::TextWrapping::from_wrap_mode_and_width(egui::TextWrapMode::Wrap, ui.available_width()),
+        ..LayoutJob::default()
+    };
 
     let is_single_error = it.len() == 1;
 
@@ -306,7 +308,7 @@ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl Iterator<Item = S> + 
             job.append(&(i + 1).to_string(), 0.0, egui::TextFormat::default());
         }
         job.append(
-            &err.as_ref(),
+            err.as_ref(),
             10.,
             egui::TextFormat::simple(msg_font.clone(), msg_color.into()),
         );
@@ -1215,7 +1217,7 @@ impl ModSource {
     }
 }
 
-impl<'a> OpenModHandle<'a> {
+impl OpenModHandle<'_> {
     pub fn open(&mut self, name: &str) -> Result<Box<dyn Read + '_>> {
         Ok(match self {
             OpenModHandle::Directory { path } => Box::new(std::fs::File::open(path.join(name))?),

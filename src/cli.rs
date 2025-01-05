@@ -77,7 +77,7 @@ pub struct FetchGDriveCommand {
 #[derive(Parser)]
 /// Extracts an SIL archive to a directory.
 ///
-/// For more SIL archive manipulation capabilities please use https://github.com/afishhh/silpkg.
+/// For more SIL archive manipulation capabilities please use <https://github.com/afishhh/silpkg>.
 pub struct ExtractCommand {
     out_path: PathBuf,
     dat_path: PathBuf,
