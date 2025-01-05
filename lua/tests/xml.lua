@@ -14,6 +14,7 @@ local mapped =  mod.iter.map(root:childNodes(), function(node)
     return assert(text).content
   end
 end)
+
 mod.debug.assert_equal(
   mod.iter.collect(mapped),
   { "<first>", "<second>", "third", "<fourth>" }

@@ -16,8 +16,8 @@ end
 --       Have a fuse() adapter maybe
 function mod.iter.zip(a, b)
   return function()
-    na = table.pack(a())
-    nb = table.pack(b())
+    local na = table.pack(a())
+    local nb = table.pack(b())
     if #na == 0 or #nb == 0 then
       return nil
     end
