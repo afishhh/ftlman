@@ -2,9 +2,10 @@ use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use log::info;
+use log::{error, info};
 
 use crate::{
+    lua::{LuaContext, ModLuaRuntime},
     util::{crc32_from_reader, to_human_size_units},
     Mod, ModSource, Settings,
 };
@@ -13,6 +14,7 @@ use crate::{
 pub enum Command {
     Patch(PatchCommand),
     Append(AppendCommand),
+    LuaRun(LuaRunCommand),
     BpsPatch(BpsPatchCommand),
     BpsMeta(BpsMetaCommand),
     Crc32(Crc32Command),
@@ -39,6 +41,11 @@ pub struct PatchCommand {
 pub struct AppendCommand {
     file: PathBuf,
     patch: PathBuf,
+}
+
+#[derive(Parser)]
+pub struct LuaRunCommand {
+    script: PathBuf,
 }
 
 #[derive(Parser)]
@@ -164,6 +171,29 @@ pub fn main(command: Command) -> Result<()> {
             let patch = std::fs::read_to_string(&command.patch).context("Failed to read patch file")?;
 
             std::io::stdout().write_all(crate::apply::apply_one(&source, &patch, kind)?.as_bytes())?;
+
+            Ok(())
+        }
+        Command::LuaRun(command) => {
+            let script_name = command
+                .script
+                .file_name()
+                .and_then(OsStr::to_str)
+                .context("Failed to get patch filename as UTF-8")?;
+
+            let mut runtime = ModLuaRuntime::new().context("Failed to initialize runtime")?;
+            let mut context = LuaContext {
+                document_root: None,
+                print_memory_stats: true,
+            };
+
+            if let Err(error) = runtime.run(
+                &std::fs::read_to_string(&command.script).context("Failed to read string")?,
+                script_name,
+                &mut context,
+            ) {
+                error!("{error}")
+            }
 
             Ok(())
         }
