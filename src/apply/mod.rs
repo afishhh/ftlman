@@ -222,7 +222,7 @@ pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<Str
             let mut runtime = ModLuaRuntime::new().context("Failed to initialize lua runtime")?;
             let mut context = LuaContext {
                 document_root: Some(lower),
-                print_memory_stats: false,
+                print_arena_stats: false,
             };
             runtime.run(patch, "<patch>", &mut context)?;
             Ok(context.document_root.unwrap())

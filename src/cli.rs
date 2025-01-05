@@ -46,6 +46,8 @@ pub struct AppendCommand {
 #[derive(Parser)]
 pub struct LuaRunCommand {
     script: PathBuf,
+    #[clap(long = "print-arena-stats")]
+    print_arena_stats: bool,
 }
 
 #[derive(Parser)]
@@ -184,7 +186,7 @@ pub fn main(command: Command) -> Result<()> {
             let mut runtime = ModLuaRuntime::new().context("Failed to initialize runtime")?;
             let mut context = LuaContext {
                 document_root: None,
-                print_memory_stats: true,
+                print_arena_stats: command.print_arena_stats,
             };
 
             if let Err(error) = runtime.run(
@@ -192,7 +194,8 @@ pub fn main(command: Command) -> Result<()> {
                 script_name,
                 &mut context,
             ) {
-                error!("{error}")
+                error!("{error}");
+                std::process::exit(1)
             }
 
             Ok(())

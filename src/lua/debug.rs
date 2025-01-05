@@ -21,7 +21,7 @@ impl Default for PrettyPrintOptions {
         Self {
             recursive: true,
             colors: None,
-            indent: Some("\t".to_owned()),
+            indent: None,
         }
     }
 }
@@ -242,7 +242,10 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
         "pretty_print",
         lua.create_function(|_, (value, options): (LuaValue, LuaValue)| {
             let options = if options.is_nil() {
-                PrettyPrintOptions::default()
+                PrettyPrintOptions {
+                    indent: Some("\t".to_owned()),
+                    ..Default::default()
+                }
             } else {
                 PrettyPrintOptions::deserialize(mlua::serde::Deserializer::new(options))
                     .context("failed to deserialize argument #2 to mod.debug.pretty_print")?

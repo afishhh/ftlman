@@ -28,7 +28,7 @@ pub struct ModLuaRuntime {
 
 pub struct LuaContext {
     pub document_root: Option<xmltree::Element>,
-    pub print_memory_stats: bool,
+    pub print_arena_stats: bool,
 }
 
 impl ModLuaRuntime {
@@ -118,7 +118,7 @@ impl ModLuaRuntime {
             });
         }
 
-        if context.print_memory_stats {
+        if context.print_arena_stats {
             let mut gc = lua.app_data_mut::<LuaArena>().unwrap();
             println!("allocated bytes: {:?}", gc.metrics().total_allocation());
             println!("allocated bytes (gc only): {:?}", gc.metrics().total_gc_allocation());
