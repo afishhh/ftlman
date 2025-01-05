@@ -300,7 +300,8 @@ impl UserData for LuaElement {
                         let node = node.into_node(mc);
                         if node.borrow().parent().is_some() {
                             return Err(LuaError::runtime(format!(
-                                "Node passed as argument #{i} to Element:prepend already has a parent",
+                                "Node passed as argument #{} to Element:prepend already has a parent",
+                                i + 1
                             )));
                         }
                         this.prepend_child(mc, node);
@@ -318,7 +319,8 @@ impl UserData for LuaElement {
                         let node = node.into_node(mc);
                         if node.borrow().parent().is_some() {
                             return Err(LuaError::runtime(format!(
-                                "Node passed as argument #{i} to Element:append already has a parent",
+                                "Node passed as argument #{} to Element:append already has a parent",
+                                i + 1
                             )));
                         }
                         this.append_child(mc, node);

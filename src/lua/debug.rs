@@ -228,13 +228,31 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
                 PrettyPrintOptions::default()
             } else {
                 PrettyPrintOptions::deserialize(mlua::serde::Deserializer::new(options))
-                    .context("Failed to deserialize argument #2 to mod.debug.pretty_print")?
+                    .context("failed to deserialize argument #2 to mod.debug.pretty_string")?
             };
 
             let mut output = String::new();
             PrettyPrinter::new(options).pretty_print(&mut output, value).unwrap();
 
             Ok(output)
+        })?,
+    )?;
+
+    table.set(
+        "pretty_print",
+        lua.create_function(|_, (value, options): (LuaValue, LuaValue)| {
+            let options = if options.is_nil() {
+                PrettyPrintOptions::default()
+            } else {
+                PrettyPrintOptions::deserialize(mlua::serde::Deserializer::new(options))
+                    .context("failed to deserialize argument #2 to mod.debug.pretty_print")?
+            };
+
+            let mut output = String::new();
+            PrettyPrinter::new(options).pretty_print(&mut output, value).unwrap();
+            println!("{output}");
+
+            Ok(())
         })?,
     )?;
 

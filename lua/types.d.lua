@@ -44,10 +44,6 @@ function mod.table.iter_array(array) end
 ---@return integer
 function mod.table.compare_arrays(a, b) end
 
----@generic T[]
----@return fun(): T?
-function mod.table.compare_arrays(array) end
-
 ---@generic T
 ---@param a T
 ---@param b T
