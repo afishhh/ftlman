@@ -591,7 +591,7 @@ types! {
         fn collect<T>(iterator: Fn() -> T?) -> Array<T>;
         // TODO: MultiType support in return types
         // fn enumerate<T>(iterator: Fn() -> T?, start: number?) -> Fn() -> (integer, ...T)?;
-        // fn zip<T, U>(a: Fn() -> T?, b: Fn() -> T?) -> Fn() -> (integer, ...T);
+        // fn zip<T, U>(a: Fn() -> T?, b: Fn() -> U?) -> Fn() -> (...T, ...U)?;
     }
 
     library [mod.table] "Table" {
