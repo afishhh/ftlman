@@ -71,4 +71,4 @@ strip = "debuginfo"
 lto = "thin"
 
 [workspace]
-members = ["compare_with_slipstream/normalize_xml", "windows_gui_wrapper"]
+members = ["compare_with_slipstream/normalize_xml", "idl", "windows_gui_wrapper"]

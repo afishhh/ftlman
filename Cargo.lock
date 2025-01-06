@@ -2016,6 +2016,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "idl"
+version = "0.1.0"
+
+[[package]]
 name = "idna"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
