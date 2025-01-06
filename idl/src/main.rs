@@ -81,6 +81,7 @@ struct Function {
 #[derive(Debug)]
 struct FunctionItem {
     name: Ident,
+    doc_comment: Option<String>,
     generics: Vec<Ident>,
     function: Function,
 }
@@ -88,7 +89,7 @@ struct FunctionItem {
 #[derive(Debug)]
 struct Field {
     readonly: bool,
-    description: Option<String>,
+    doc_comment: Option<String>,
     name: Ident,
     type_: Type,
 }
@@ -372,7 +373,7 @@ macro_rules! types {
     (@classfield [$current: ident $field: ident $readonly: literal $($description: literal)*] [$($type: tt)*]) => {
         $current.fields.push(Field {
             readonly: $readonly,
-            description: types!(@doc_comment_or_none $($description)?),
+            doc_comment: types!(@doc_comment_or_none $($description)?),
             name: Ident(stringify!($field)),
             type_: $($type)*
         });
@@ -382,36 +383,40 @@ macro_rules! types {
     (@doc_comment_or_none) => { None };
 
     // Methods
-    (@classinner [$current: ident] fn $($rest: tt)*) => {
-        types!(@method_or_function [classinner $current.methods] $($rest)*);
+    (@classinner [$current: ident]
+        $(#[doc = $comment: literal])*
+        fn $($rest: tt)*
+    ) => {
+        types!(@method_or_function [classinner $current.methods [$($comment)*]] $($rest)*);
     };
     (@method_or_function
-        [$next_state: ident $current: ident.$field: ident]
+        [$($args: tt)*]
         $name: ident < $($rest: tt)*
     ) => {
-        types!(@genericslist [method_or_function_params $next_state $current.$field $name] $($rest)*);
+        types!(@genericslist [method_or_function_params $($args)* $name] $($rest)*);
     };
     (@method_or_function
-        [$next_state: ident $current: ident.$field: ident]
+        [$($args: tt)*]
         $name: ident $($rest: tt)*
     ) => {
-        types!(@method_or_function_params [$next_state $current.$field $name] {Vec::new()} > $($rest)*);
+        types!(@method_or_function_params [$($args)* $name] {Vec::new()} > $($rest)*);
     };
     (@method_or_function_params
-        [$next_state: ident $current: ident.$field: ident $name: ident]
+        [$($args: tt)*]
         $generics: tt
         > ($($params: tt)*) -> $($rest: tt)*
     ) => {
-        types!(@type1 [method_or_function_final $next_state $current.$field $name $generics $($params)*] $($rest)*)
+        types!(@type1 [method_or_function_final $($args)* $generics $($params)*] $($rest)*)
     };
     (@method_or_function_final
-        [$next_state: ident $current: ident.$field: ident $method: ident $generics: tt $($params: tt)*]
+        [$next_state: ident $current: ident.$field: ident  [$($comment: literal)*] $method: ident $generics: tt $($params: tt)*]
         [$($return_type: tt)*];
         $($rest: tt)*
     ) => {
         $current.$field.push(FunctionItem {
             name: Ident(stringify!($method)),
             generics: $generics,
+            doc_comment: types!(@doc_comment_or_none $($comment)*),
             function: {
                 let mut function = Function {
                     params: Vec::new(),
@@ -457,8 +462,11 @@ macro_rules! types {
 
         $types.items.push(Item::Library(library));
     };
-    (@libraryinner [$current: ident] fn $($rest: tt)*) => {
-        types!(@method_or_function [libraryinner $current.functions] $($rest)*)
+    (@libraryinner [$current: ident]
+        $(#[doc = $comment: literal])*
+        fn $($rest: tt)*
+    ) => {
+        types!(@method_or_function [libraryinner $current.functions [$($comment)*]] $($rest)*)
     };
     (@libraryinner [$current: ident]) => { };
 
@@ -553,32 +561,49 @@ types! {
 
     class Text: Node {
         #[readonly] type: "text",
+        /// Text content of this text node.
         content: string,
     }
 
     library [mod.xml] "DOM" {
+        /// Create a new `Element` the specified prefixed name and attributes.
         fn element(prefix: string, name: string, attrs: Table<string, string>?)
             -> Element;
+        /// Create a new `Element` the specified name and attributes.
         fn element(name: string, attrs: Table<string, string>?)
             -> Element;
     }
 
     library [mod.util] "Utility" {
         // TODO: T: table (generic constraint)
+        /// Returns `table` with its metatable replaced by one that disallows
+        /// changing it.
         fn readonly<T>(table: T) -> T;
     }
 
     library [mod.iter] "Iterator" {
+        /// Counts the number of elements returned by `iterator`.
         fn count<T>(iterator: Fn() -> T?) -> integer;
+        /// Returns a new iterator that, for each value returned by `iterator`,
+        /// returns the result of passing it to `mapper`.
         fn map<T, U>(iterator: Fn() -> T?, mapper: Fn(v: T) -> U?) -> U?;
-        fn collect<T>(iterator: Fn() -> T?) -> Array<U>;
+        /// Returns all values returned by `iterator` as an array.
+        fn collect<T>(iterator: Fn() -> T?) -> Array<T>;
         // TODO: MultiType support in return types
         // fn enumerate<T>(iterator: Fn() -> T?, start: number?) -> Fn() -> (integer, ...T)?;
         // fn zip<T, U>(a: Fn() -> T?, b: Fn() -> T?) -> Fn() -> (integer, ...T);
     }
 
     library [mod.table] "Table" {
+        /// Returns a new iterator over the array part of table `array`.
         fn iter_array<T>(array: Array<T>) -> Fn() -> T?;
+        /// Lexicographically compares elements of arrays `a` and `b`.
+        ///
+        /// If the arrays are equal returns `0`.
+        /// If array `a` is lexicographically smaller than `b` returns a negative
+        /// number that is the negation of the position where the first mismatch occured.
+        /// If array `a` is lexicographically greater than `b` returns the
+        /// position where the mismatch occurred.
         fn compare_arrays<T>(a: Array<T>, b: Array<T>) -> integer;
     }
 
@@ -589,8 +614,16 @@ types! {
         //     colors: "ansi" | nil,
         //     indent: string | nil
         // }
+        /// Formats `value` in an unspecified human readable format according
+        /// to the options in `options`.
+        /// Returns the result as a string.
+        /// The exact contents of this string must not be relied upon and may change.
         fn pretty_string(value: any, options: table?) -> string;
+        /// Prints `value` in an unspecified human readable format according
+        /// to the options in `options`.
         fn pretty_print(value: any, options: table?) -> nil;
+        /// Raises an error if `a` is not equal to `b` according to an
+        /// unspecified deep equality relation.
         fn assert_equal(a: any, b: any) -> nil;
     }
 }
@@ -740,14 +773,14 @@ fn item_to_luacats(out: &mut impl Write, item: &Item) -> Result<()> {
 
             for &Field {
                 readonly,
-                ref description,
+                ref doc_comment,
                 name,
                 ref type_,
             } in &class.fields
             {
                 write!(out, "---@field {name} ")?;
                 type_to_luacats(out, type_)?;
-                if let Some(d) = description {
+                if let Some(d) = doc_comment {
                     write!(out, " {}", d.trim_end().replace("\n", " "))?;
                 }
                 if readonly {
@@ -756,13 +789,21 @@ fn item_to_luacats(out: &mut impl Write, item: &Item) -> Result<()> {
                 writeln!(out)?;
             }
 
+            writeln!(out, "local {} = {{}}", class.name)?;
+
             for FunctionItem {
                 name,
+                doc_comment,
                 generics,
                 function: fun,
             } in &class.methods
             {
                 writeln!(out)?;
+                if let Some(doc) = doc_comment {
+                    for line in doc.lines() {
+                        writeln!(out, "--- {line}")?;
+                    }
+                }
                 function_to_luacats(out, &format!("{}:{name}", class.name), generics, fun)?;
             }
         }
@@ -778,11 +819,17 @@ fn item_to_luacats(out: &mut impl Write, item: &Item) -> Result<()> {
 
             for FunctionItem {
                 name,
+                doc_comment,
                 generics,
                 function,
             } in &library.functions
             {
                 writeln!(out)?;
+                if let Some(doc) = doc_comment {
+                    for line in doc.lines() {
+                        writeln!(out, "--- {line}")?;
+                    }
+                }
                 function_to_luacats(out, &format!("{current}.{name}"), generics, function)?;
             }
         }
