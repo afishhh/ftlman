@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::{fmt::Display, io::Write};
+use std::{collections::HashSet, fmt::Display, io::Write};
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 struct Ident(&'static str);
@@ -51,7 +51,7 @@ enum MultiType {
     // ...T
     Spread(Ident),
     // (number, string) | (string, number)
-    Union(Ident),
+    Union(Vec<MultiType>),
 }
 
 #[derive(Debug, Clone)]
@@ -112,18 +112,19 @@ struct AliasItem {
 struct Library {
     path: Path,
     name: &'static str,
-    functions: Vec<FunctionItem>,
+    items: Vec<Item>,
 }
 
 #[derive(Debug)]
 enum Item {
     Alias(AliasItem),
-    Library(Library),
+    Function(FunctionItem),
     Class(ClassItem),
 }
 
 #[derive(Debug)]
 struct Types {
+    libraries: Vec<Library>,
     items: Vec<Item>,
 }
 
@@ -169,39 +170,110 @@ fn merge_doc_comment(comment: &'static [&'static str]) -> String {
     result
 }
 
+fn split_paragraphs(text: &str) -> impl Iterator<Item = String> {
+    text.split("\n\n").map(|p| p.trim().replace("\n", " "))
+}
+
 // Glorious TT muncher
 macro_rules! types {
-    // Class declaration
-    (@toplevel [$types: ident] class $name: ident $(: $parent: ident)? { $($tt: tt)* } $($rest: tt)*) => {
-        types!(@class [$types $($parent)?] $name $($tt)*);
-        types!(@toplevel [$types] $($rest)*);
-    };
-    // Type alias declaration
-    (@toplevel [$types: ident] type $name: ident = $($rest: tt)*) => {
-        types!(@type1 [typealias_return $types $name] $($rest)*);
-    };
     // Library declaration
     (@toplevel [$types: ident] library [$($path: tt)*] $name: literal { $($tt: tt)* } $($rest: tt)*) => {
         types!(@library [$types [$($path)*] $name] $($tt)*);
         types!(@toplevel [$types] $($rest)*);
     };
+    (@toplevel [$current: ident] $($rest: tt)+) => {
+        types!(@item toplevel [$current] $($rest)*);
+    };
+
+    // Class declaration
+    (@item $next_state: ident [$current: ident] class $name: ident $(: $parent: ident)? { $($tt: tt)* } $($rest: tt)*) => {
+        types!(@class [$current $($parent)?] $name $($tt)*);
+        types!(@$next_state [$current] $($rest)*);
+    };
+    // Type alias declaration
+    (@item $next_state: ident [$current: ident] type $name: ident = $($rest: tt)*) => {
+        types!(@type1 [typealias_return $next_state $current $name] $($rest)*);
+    };
+    // Function declaration
+    (@method_or_function
+        [$($args: tt)*]
+        $name: ident < $($rest: tt)*
+    ) => {
+        types!(@genericslist [method_or_function_params $($args)* $name] $($rest)*);
+    };
+    (@method_or_function
+        [$($args: tt)*]
+        $name: ident $($rest: tt)*
+    ) => {
+        types!(@method_or_function_params [$($args)* $name] {Vec::new()} > $($rest)*);
+    };
+    (@method_or_function_params
+        [$($args: tt)*]
+        $generics: tt
+        > ($($params: tt)*) -> $($rest: tt)*
+    ) => {
+        types!(@type1 [method_or_function_final $($args)* $generics $($params)*] $($rest)*)
+    };
+    (@method_or_function_final
+        [$next_state: ident $current: ident.$field: ident $({$($fun: tt)*})? [$($comment: literal)*] $method: ident $generics: tt $($params: tt)*]
+        [$($return_type: tt)*];
+        $($rest: tt)*
+    ) => {
+        $current.$field.push($($($fun)*)?(FunctionItem {
+            name: Ident(stringify!($method)),
+            generics: $generics,
+            doc_comment: types!(@doc_comment_or_none $($comment)*),
+            function: {
+                let mut function = Function {
+                    params: Vec::new(),
+                    variadic: None,
+                    output: Box::new($($return_type)*)
+                };
+                types!(@params [function] $($params)*);
+                function
+            }
+        }));
+        types!(@$next_state [$current] $($rest)*)
+    };
+
+    // Function params
+    (@params [$current: ident] ...: $($rest: tt)*) => {
+        // TODO: This should be a @multi_type instead
+        types!(@type1 [variadic_set $current] $($rest)*)
+    };
+    (@params [$current: ident] $name: ident: $($rest: tt)*) => {
+        types!(@type1 [param_return $current $name] $($rest)*)
+    };
+    (@params [$current: ident]) => {};
+    (@variadic_set [$current: ident] [$($rest: tt)*]) => {
+        assert!($current.variadic.is_none());
+        $current.variadic = Some(MultiType::Types(vec![$($rest)*]));
+    };
+    (@param_return [$current: ident $name: ident] [$($type: tt)*], $($rest: tt)*) => {
+        types!(@param_return [$current $name] [$($type)*]);
+        types!(@params [$current] $($rest)*)
+    };
+    (@param_return [$current: ident $name: ident] [$($type: tt)*]) => {
+        $current.params.push((Ident(stringify!($name)), $($type)*));
+    };
+
+    (@typealias_return [$next_state: ident $library: ident $name: ident] [$($type: tt)*]; $($rest: tt)*) => {
+        $library.items.push(Item::Alias(AliasItem {
+            name: Ident(stringify!($name)),
+            inner: $($type)*
+        }));
+        types!(@$next_state [$library] $($rest)*)
+    };
+
 
     // we're done! (finally)
     (@toplevel [$types: ident]) => { };
 
-    (@typealias_return [$types: ident $name: ident] [$($type: tt)*]; $($rest: tt)*) => {
-        $types.items.push(Item::Alias(AliasItem {
-            name: Ident(stringify!($name)),
-            inner: $($type)*
-        }));
-        types!(@toplevel [$types] $($rest)*)
-    };
-
-    (@basic_type any) => { Type::Any };
-    (@basic_type nil) => { Type::Nil };
-    (@basic_type string) => { Type::String };
-    (@basic_type integer) => { Type::Integer };
-    (@basic_type number) => { Type::Number };
+    (@basic_type any Vec::new()) => { Type::Any };
+    (@basic_type nil Vec::new()) => { Type::Nil };
+    (@basic_type string Vec::new()) => { Type::String };
+    (@basic_type integer Vec::new()) => { Type::Integer };
+    (@basic_type number Vec::new()) => { Type::Number };
     (@basic_type Array $($generics: tt)*) => {
         Type::Array({
             let mut generics = $($generics)*;
@@ -213,11 +285,18 @@ macro_rules! types {
     };
     (@basic_type Table $($generics: tt)*) => {
         Type::Table({
-            let mut generics = $($generics)*;
-            assert_eq!(generics.len(), 2);
-            Table {
-                key: Box::new(generics[0].clone()),
-                value: Box::new(generics[1].clone())
+            let mut generics: Vec<Type> = $($generics)*;
+            if generics.is_empty() {
+                Table {
+                    key: Box::new(Type::Any),
+                    value: Box::new(Type::Any),
+                }
+            } else {
+                assert_eq!(generics.len(), 2);
+                Table {
+                    key: Box::new(generics[0].clone()),
+                    value: Box::new(generics[1].clone())
+                }
             }
         })
     };
@@ -389,84 +468,27 @@ macro_rules! types {
     ) => {
         types!(@method_or_function [classinner $current.methods [$($comment)*]] $($rest)*);
     };
-    (@method_or_function
-        [$($args: tt)*]
-        $name: ident < $($rest: tt)*
-    ) => {
-        types!(@genericslist [method_or_function_params $($args)* $name] $($rest)*);
-    };
-    (@method_or_function
-        [$($args: tt)*]
-        $name: ident $($rest: tt)*
-    ) => {
-        types!(@method_or_function_params [$($args)* $name] {Vec::new()} > $($rest)*);
-    };
-    (@method_or_function_params
-        [$($args: tt)*]
-        $generics: tt
-        > ($($params: tt)*) -> $($rest: tt)*
-    ) => {
-        types!(@type1 [method_or_function_final $($args)* $generics $($params)*] $($rest)*)
-    };
-    (@method_or_function_final
-        [$next_state: ident $current: ident.$field: ident  [$($comment: literal)*] $method: ident $generics: tt $($params: tt)*]
-        [$($return_type: tt)*];
-        $($rest: tt)*
-    ) => {
-        $current.$field.push(FunctionItem {
-            name: Ident(stringify!($method)),
-            generics: $generics,
-            doc_comment: types!(@doc_comment_or_none $($comment)*),
-            function: {
-                let mut function = Function {
-                    params: Vec::new(),
-                    variadic: None,
-                    output: Box::new($($return_type)*)
-                };
-                types!(@params [function] $($params)*);
-                function
-            }
-        });
-        types!(@$next_state [$current] $($rest)*)
-    };
-
-    // Function params
-    (@params [$current: ident] ...: $($rest: tt)*) => {
-        // TODO: This should be a @multi_type instead
-        types!(@type1 [variadic_set $current] $($rest)*)
-    };
-    (@params [$current: ident] $name: ident: $($rest: tt)*) => {
-        types!(@type1 [param_return $current $name] $($rest)*)
-    };
-    (@params [$current: ident]) => {};
-    (@variadic_set [$current: ident] [$($rest: tt)*]) => {
-        assert!($current.variadic.is_none());
-        $current.variadic = Some(MultiType::Types(vec![$($rest)*]));
-    };
-    (@param_return [$current: ident $name: ident] [$($type: tt)*], $($rest: tt)*) => {
-        types!(@param_return [$current $name] [$($type)*]);
-        types!(@params [$current] $($rest)*)
-    };
-    (@param_return [$current: ident $name: ident] [$($type: tt)*]) => {
-        $current.params.push((Ident(stringify!($name)), $($type)*));
-    };
 
     (@library [$types: ident [$first: ident $($path: tt)*] $name: literal] $($tt: tt)*) => {
         let mut library = Library {
             name: $name,
             path: types!(@path [Path::new(Ident(stringify!($first)))] $($path)*),
-            functions: Vec::new(),
+            items: Vec::new(),
         };
 
         types!(@libraryinner [library] $($tt)*);
 
-        $types.items.push(Item::Library(library));
+        $types.libraries.push(library);
     };
+    // Function declaration
     (@libraryinner [$current: ident]
         $(#[doc = $comment: literal])*
         fn $($rest: tt)*
     ) => {
-        types!(@method_or_function [libraryinner $current.functions [$($comment)*]] $($rest)*)
+        types!(@method_or_function [libraryinner $current.items {Item::Function} [$($comment)*]] $($rest)*)
+    };
+    (@libraryinner [$current: ident] $($rest: tt)+) => {
+        types!(@item libraryinner [$current] $($rest)*)
     };
     (@libraryinner [$current: ident]) => { };
 
@@ -480,11 +502,12 @@ macro_rules! types {
     (@$state: ident $($tt: tt)*) => {
         compile_error!(concat!(stringify!($state), " state failed to match with params: ", stringify!($($tt)*)))
     };
-    ($($tt: tt)*) => {
+    ($name: ident; $($tt: tt)*) => {
         #[allow(unused_mut)]
         #[allow(clippy::vec_init_then_push)]
-        fn create_types() -> Types {
+        fn $name() -> Types {
             let mut types = Types {
+                libraries: Vec::new(),
                 items: Vec::new()
             };
 
@@ -500,6 +523,8 @@ mod types_test {
     use super::*;
 
     types! {
+        test_types;
+
         class Test {
             string_literal: "element",
             number_literal: 20,
@@ -511,65 +536,85 @@ mod types_test {
 }
 
 types! {
-    type NodeType = "element" | "text";
+    document_section_types;
 
-    class Node {
-        #[readonly] type: NodeType,
-        /// Previous sibling node of this node.
-        #[readonly] previousSibling: Node?,
-        /// Next sibling node of this node.
-        #[readonly] nextSibling: Node?,
-        /// Parent node of this node.
-        #[readonly] parent: Element?,
-        ;
-        fn as(type: "element") -> Element?;
-        fn as(type: "text") -> Text?;
-        // TODO:
-        // fn clone(mode: "deep" | "shallow") -> Node;
+    class Document {
+        root: Element
     }
+}
 
-    class Element: Node {
-        #[readonly] type: "element",
-        /// Name component of this node's XML tag.
-        name: string,
-        /// Prefix component of this node's XML tag.
-        prefix: string,
-        /// First child of this element that is also an element.
-        #[readonly] firstElementChild: Element?,
-        /// Last child of this element that is also an element.
-        #[readonly] lastElementChild: Element?,
-        /// First child node of this element.
-        #[readonly] firstChild: Node?,
-        /// Last child node of this element.
-        #[readonly] lastChild: Node?,
-        // FIXME: Currently this is a lie and only concatenates the direct children.
-        /// Content of all the text nodes in this element's subtree
-        /// concatenated together.
-        textContent: string,
-        ;
-        fn children() -> Fn() -> Element?;
-        fn childNodes() -> Fn() -> Node?;
-        fn append(...: Node | string) -> nil;
-        fn prepend(...: Node | string) -> nil;
-        // TODO:
-        // would execute an append script
-        // maybe mode could also be "lua" or "rawxml"
-        // fn execute(append_mode: "xml", script: string) -> nil;
-        // TODO:
-        // fn clone(mode: "deep" | "shallow") -> Element;
-    }
-
-    class Text: Node {
-        #[readonly] type: "text",
-        /// Text content of this text node.
-        content: string,
-    }
+types! {
+    main_types;
 
     library [mod.xml] "DOM" {
-        /// Create a new `Element` the specified prefixed name and attributes.
+        type NodeType = "element" | "text";
+
+        class Node {
+            #[readonly] type: NodeType,
+            /// Previous sibling node of this node.
+            #[readonly] previousSibling: Node?,
+            /// Next sibling node of this node.
+            #[readonly] nextSibling: Node?,
+            /// Parent node of this node.
+            #[readonly] parent: Element?,
+            ;
+            /// Attempts to cast this `Node` as an `Element`.
+            /// Returns `nil` if this is node is not an `Element`.
+            fn as(type: "element") -> Element?;
+            /// Attempts to cast this `Node` as a `Text` node.
+            /// Returns `nil` if this is node is not a `Text` node.
+            fn as(type: "text") -> Text?;
+            // TODO:
+            // fn clone(mode: "deep" | "shallow") -> Node;
+        }
+
+        class Element: Node {
+            #[readonly] type: "element",
+            /// Name component of this node's XML tag.
+            name: string,
+            /// Prefix component of this node's XML tag.
+            prefix: string,
+            /// First child of this element that is also an element.
+            #[readonly] firstElementChild: Element?,
+            /// Last child of this element that is also an element.
+            #[readonly] lastElementChild: Element?,
+            /// First child node of this element.
+            #[readonly] firstChild: Node?,
+            /// Last child node of this element.
+            #[readonly] lastChild: Node?,
+            // FIXME: Currently this is a lie and only concatenates the direct children.
+            /// Contents of all the text nodes in this element's subtree
+            /// concatenated together.
+            textContent: string,
+            ;
+            /// Returns an iterator over all immediate Element children of this Element.
+            fn children() -> Fn() -> Element?;
+            /// Returns an iterator over all immediate children of this Element.
+            fn childNodes() -> Fn() -> Node?;
+            /// Appends the specified nodes to the end of this Element's child list.
+            /// String values are implicitly converted into text nodes.
+            fn append(...: Node | string) -> nil;
+            /// Prepends the specified nodes to the end of this Element's child list.
+            /// String values are implicitly converted into text nodes.
+            fn prepend(...: Node | string) -> nil;
+            // TODO:
+            // would execute an append script
+            // maybe mode could also be "lua" or "rawxml"
+            // fn execute(append_mode: "xml", script: string) -> nil;
+            // TODO:
+            // fn clone(mode: "deep" | "shallow") -> Element;
+        }
+
+        class Text: Node {
+            #[readonly] type: "text",
+            /// Text content of this text node.
+            content: string,
+        }
+
+        /// Create a new `Element` with the specified prefixed name and attributes.
         fn element(prefix: string, name: string, attrs: Table<string, string>?)
             -> Element;
-        /// Create a new `Element` the specified name and attributes.
+        /// Create a new `Element` with the specified name and attributes.
         fn element(name: string, attrs: Table<string, string>?)
             -> Element;
     }
@@ -586,6 +631,7 @@ types! {
         fn count<T>(iterator: Fn() -> T?) -> integer;
         /// Returns a new iterator that, for each value returned by `iterator`,
         /// returns the result of passing it to `mapper`.
+        /// Iteration stops when either `iterator` or `mapper` first return `nil`.
         fn map<T, U>(iterator: Fn() -> T?, mapper: Fn(v: T) -> U?) -> U?;
         /// Returns all values returned by `iterator` as an array.
         fn collect<T>(iterator: Fn() -> T?) -> Array<T>;
@@ -597,7 +643,7 @@ types! {
     library [mod.table] "Table" {
         /// Returns a new iterator over the array part of table `array`.
         fn iter_array<T>(array: Array<T>) -> Fn() -> T?;
-        /// Lexicographically compares elements of arrays `a` and `b`.
+        /// Lexicographically compares the elements of arrays `a` and `b`.
         ///
         /// If the arrays are equal returns `0`.
         /// If array `a` is lexicographically smaller than `b` returns a negative
@@ -616,12 +662,13 @@ types! {
         // }
         /// Formats `value` in an unspecified human readable format according
         /// to the options in `options`.
+        ///
         /// Returns the result as a string.
         /// The exact contents of this string must not be relied upon and may change.
-        fn pretty_string(value: any, options: table?) -> string;
+        fn pretty_string(value: any, options: Table?) -> string;
         /// Prints `value` in an unspecified human readable format according
         /// to the options in `options`.
-        fn pretty_print(value: any, options: table?) -> nil;
+        fn pretty_print(value: any, options: Table?) -> nil;
         /// Raises an error if `a` is not equal to `b` according to an
         /// unspecified deep equality relation.
         fn assert_equal(a: any, b: any) -> nil;
@@ -693,7 +740,16 @@ fn type_to_luacats(out: &mut impl Write, type_: &Type) -> Result<()> {
     Ok(())
 }
 
-fn function_to_luacats(out: &mut impl Write, name: &str, generics: &[Ident], fun: &Function) -> Result<()> {
+fn function_to_luacats(
+    out: &mut impl Write,
+    prefix: &str,
+    FunctionItem {
+        name,
+        doc_comment,
+        generics,
+        function,
+    }: &FunctionItem,
+) -> Result<()> {
     if !generics.is_empty() {
         writeln!(
             out,
@@ -702,13 +758,13 @@ fn function_to_luacats(out: &mut impl Write, name: &str, generics: &[Ident], fun
         )?;
     }
 
-    for (name, type_) in &fun.params {
+    for (name, type_) in &function.params {
         write!(out, "---@param {name} ")?;
         type_to_luacats(out, type_)?;
         writeln!(out)?;
     }
 
-    if let Some(variadic) = &fun.variadic {
+    if let Some(variadic) = &function.variadic {
         write!(out, "---@params ... ")?;
         match variadic {
             MultiType::Types(vec) => {
@@ -721,12 +777,18 @@ fn function_to_luacats(out: &mut impl Write, name: &str, generics: &[Ident], fun
     }
 
     write!(out, "---@return ")?;
-    type_to_luacats(out, &fun.output)?;
+    type_to_luacats(out, &function.output)?;
     writeln!(out)?;
 
-    write!(out, "function {name}(")?;
+    if let Some(doc) = doc_comment {
+        for line in doc.lines() {
+            writeln!(out, "--- {line}")?;
+        }
+    }
+
+    write!(out, "function {prefix}{name}(")?;
     let mut first = true;
-    for (name, _) in &fun.params {
+    for (name, _) in &function.params {
         if !first {
             write!(out, ", ")?;
         } else {
@@ -736,7 +798,7 @@ fn function_to_luacats(out: &mut impl Write, name: &str, generics: &[Ident], fun
         write!(out, "{name}")?;
     }
 
-    if fun.variadic.is_some() {
+    if function.variadic.is_some() {
         if !first {
             write!(out, ", ")?;
         }
@@ -748,7 +810,7 @@ fn function_to_luacats(out: &mut impl Write, name: &str, generics: &[Ident], fun
     Ok(())
 }
 
-fn item_to_luacats(out: &mut impl Write, item: &Item) -> Result<()> {
+fn item_to_luacats(out: &mut impl Write, prefix: &str, item: &Item) -> Result<()> {
     match item {
         Item::Alias(alias) => {
             let types = match &alias.inner {
@@ -791,47 +853,19 @@ fn item_to_luacats(out: &mut impl Write, item: &Item) -> Result<()> {
 
             writeln!(out, "local {} = {{}}", class.name)?;
 
-            for FunctionItem {
-                name,
-                doc_comment,
-                generics,
-                function: fun,
-            } in &class.methods
-            {
+            for function in &class.methods {
                 writeln!(out)?;
-                if let Some(doc) = doc_comment {
+                if let Some(doc) = &function.doc_comment {
                     for line in doc.lines() {
                         writeln!(out, "--- {line}")?;
                     }
                 }
-                function_to_luacats(out, &format!("{}:{name}", class.name), generics, fun)?;
+                function_to_luacats(out, &format!("{prefix}{}:", class.name), function)?;
             }
         }
-        Item::Library(library) => {
-            let mut current = library.path.0[0].0.to_owned();
-            writeln!(out, "---@diagnostic disable-next-line: lowercase-global")?;
-            writeln!(out, "{current} = {{}}")?;
-            for ident in &library.path.0[1..] {
-                writeln!(out, "{current}.{ident} = {{}}")?;
-                current.push('.');
-                current.push_str(ident.0);
-            }
-
-            for FunctionItem {
-                name,
-                doc_comment,
-                generics,
-                function,
-            } in &library.functions
-            {
-                writeln!(out)?;
-                if let Some(doc) = doc_comment {
-                    for line in doc.lines() {
-                        writeln!(out, "--- {line}")?;
-                    }
-                }
-                function_to_luacats(out, &format!("{current}.{name}"), generics, function)?;
-            }
+        Item::Function(function) => {
+            writeln!(out)?;
+            function_to_luacats(out, prefix, function)?;
         }
     }
 
@@ -843,13 +877,388 @@ fn types_to_luacats(out: &mut impl Write, types: &Types) -> Result<()> {
 
     for item in &types.items {
         writeln!(out)?;
-        item_to_luacats(out, item)?;
+        item_to_luacats(out, "", item)?;
+    }
+
+    for library in &types.libraries {
+        writeln!(out)?;
+
+        let mut current = library.path.0[0].0.to_owned();
+        writeln!(out, "---@diagnostic disable-next-line: lowercase-global")?;
+        writeln!(out, "{current} = {{}}")?;
+        for ident in &library.path.0[1..] {
+            writeln!(out, "{current}.{ident} = {{}}")?;
+            current.push('.');
+            current.push_str(ident.0);
+        }
+
+        for item in &library.items {
+            writeln!(out)?;
+            item_to_luacats(out, &format!("{current}."), item)?;
+        }
     }
 
     Ok(())
 }
 
+const KW_TYPE: &str = r#"<span style="color: orangered">type</span>"#;
+const KW_CLASS: &str = r#"<span style="color: orangered">class</span>"#;
+const KW_FN: &str = r#"<span style="color: orangered">fn</span>"#;
+
+const LIT_STR_START: &str = r#"<span style="color: limegreen">"#;
+const LIT_NUM_START: &str = r#"<span style="color: limegreen">"#;
+const LIT_END: &str = r#"</span>"#;
+
+const ATTR_READONLY: &str = r#"<span style="color: lightseagreen">readonly</span>"#;
+
+const COMMENT_START: &str = r#"<span class="comment" style="color: gray">"#;
+const COMMENT_END: &str = r#"</span>"#;
+
+fn span_class_type(s: &str) -> String {
+    format!("<span style=\"color: gold;\">{s}</span>")
+}
+
+fn span_and_anchor_class_type(s: &str) -> String {
+    format!("<span id=\"class-{s}\">{}</span>", span_class_type(s))
+}
+
+fn span_and_link_class_type(s: &str) -> String {
+    format!(
+        "<a href=\"#class-{s}\" style=\"text-decoration: underline 1px orange;\">{}</a>",
+        span_class_type(s)
+    )
+}
+
+fn span_primitive_type(s: &str) -> String {
+    format!("<span style=\"color: dodgerblue;\">{s}</span>")
+}
+
+fn span_param_name(s: &str) -> String {
+    format!("<span style=\"color: skyblue\">{s}</span>")
+}
+
+fn type_to_kramdown(out: &mut impl Write, type_: &Type, do_not_link: &HashSet<String>) -> Result<()> {
+    match type_ {
+        Type::Any => write!(out, "{}", span_primitive_type("any"))?,
+        Type::Nil => write!(out, "{}", span_primitive_type("nil"))?,
+        Type::Array(Array { value }) => {
+            type_to_kramdown(out, value, do_not_link)?;
+            write!(out, "[]")?;
+        }
+        Type::Table(Table { key, value }) => {
+            write!(out, "{}", span_class_type("Table"))?;
+            if !matches!(**key, Type::Any) || !matches!(**value, Type::Any) {
+                write!(out, "<")?;
+                type_to_kramdown(out, key, do_not_link)?;
+                write!(out, ", ")?;
+                type_to_kramdown(out, value, do_not_link)?;
+                write!(out, ">")?;
+            }
+        }
+        Type::String => write!(out, "{}", span_primitive_type("string"))?,
+        Type::Integer => write!(out, "{}", span_primitive_type("integer"))?,
+        Type::Number => write!(out, "{}", span_primitive_type("number"))?,
+        Type::Literal(literal) => {
+            if literal.starts_with('"') {
+                write!(out, "{LIT_STR_START}")?;
+            } else {
+                write!(out, "{LIT_NUM_START}")?;
+            }
+            write!(out, "{literal}")?;
+            write!(out, "{LIT_END}")?;
+        }
+        Type::Ident(IdentType { name, params }) => {
+            assert!(params.0.is_empty());
+            if do_not_link.contains(name.0) {
+                write!(out, "{}", span_class_type(name.0))?
+            } else {
+                write!(out, "{}", span_and_link_class_type(name.0))?
+            }
+        }
+        Type::Function(function) => {
+            write!(out, "{KW_FN}(")?;
+            let mut first = true;
+            for (name, type_) in &function.params {
+                if !first {
+                    write!(out, ", ")?;
+                } else {
+                    first = false;
+                }
+
+                write!(out, "{}: ", span_param_name(name.0))?;
+                type_to_kramdown(out, type_, do_not_link)?;
+            }
+            write!(out, "): ")?;
+            type_to_kramdown(out, &function.output, do_not_link)?;
+        }
+        Type::Union(vec) => {
+            if let [tp, Type::Nil] = vec.as_slice() {
+                type_to_kramdown(out, tp, do_not_link)?;
+                write!(out, "?")?;
+            } else {
+                write!(out, "(")?;
+                let mut first = true;
+                for type_ in vec {
+                    if !first {
+                        write!(out, " | ")?;
+                    } else {
+                        first = false;
+                    }
+
+                    type_to_kramdown(out, type_, do_not_link)?;
+                }
+                write!(out, ")")?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn write_ntabs(out: &mut impl Write, count: u64) -> Result<()> {
+    for _ in 0..count {
+        write!(out, "\t")?
+    }
+
+    Ok(())
+}
+
+fn doc_comment_to_kramdown(out: &mut impl Write, indent: u64, comment: &str) -> Result<()> {
+    write!(out, "{COMMENT_START}")?;
+    let first_indent = comment
+        .lines()
+        .find(|x| !x.trim().is_empty())
+        .map(|x| x.len() - x.trim_start().len())
+        .unwrap_or(0);
+    for line in split_paragraphs(comment) {
+        write_ntabs(out, indent)?;
+        writeln!(out, "/// {}", &line[first_indent.min(line.len())..])?;
+    }
+    write!(out, "{COMMENT_END}")?;
+
+    Ok(())
+}
+
+fn function_to_kramdown(
+    out: &mut impl Write,
+    indent: u64,
+    prefix: &str,
+    FunctionItem {
+        name,
+        doc_comment,
+        generics,
+        function,
+    }: &FunctionItem,
+) -> Result<()> {
+    if let Some(comment) = doc_comment {
+        doc_comment_to_kramdown(out, indent, comment)?
+    }
+
+    write_ntabs(out, indent)?;
+    write!(out, "{KW_FN} {prefix}{name}")?;
+
+    if !generics.is_empty() {
+        write!(
+            out,
+            "&lt;{}&gt;",
+            generics
+                .iter()
+                .map(|g| span_class_type(g.0))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )?;
+    }
+    let generic_set = generics.iter().map(|x| x.0.to_owned()).collect::<HashSet<String>>();
+
+    write!(out, "(")?;
+    let mut first = true;
+    for (name, type_) in &function.params {
+        if !first {
+            write!(out, ", ")?;
+        } else {
+            first = false;
+        }
+
+        write!(out, "{}: ", span_param_name(name.0))?;
+        type_to_kramdown(out, type_, &generic_set)?;
+    }
+
+    if let Some(type_) = &function.variadic {
+        if !first {
+            write!(out, ", ")?;
+        }
+        write!(out, "...: ")?;
+        let type_ = match type_ {
+            MultiType::Types(vec) => &vec[0],
+            _ => todo!(),
+        };
+        type_to_kramdown(out, type_, &generic_set)?;
+    }
+
+    write!(out, ") -> ")?;
+    type_to_kramdown(out, &function.output, &generic_set)?;
+    writeln!(out, ";")?;
+
+    Ok(())
+}
+
+fn item_to_kramdown(out: &mut impl Write, indent: u64, prefix: &str, item: &Item) -> Result<()> {
+    match item {
+        Item::Alias(alias) => {
+            write!(out, "{KW_TYPE} {} = ", span_and_anchor_class_type(alias.name.0))?;
+            type_to_kramdown(out, &alias.inner, &HashSet::new())?;
+            writeln!(out, ";")?;
+        }
+        Item::Function(function) => {
+            function_to_kramdown(out, indent, prefix, function)?;
+        }
+        Item::Class(class) => {
+            write_ntabs(out, indent)?;
+            write!(out, "{KW_CLASS} {}", span_and_anchor_class_type(class.name.0))?;
+            if let Some(parent) = &class.parent {
+                write!(out, ": {}", span_and_link_class_type(parent.0))?;
+            }
+            writeln!(out, " {{")?;
+
+            for &Field {
+                readonly,
+                ref doc_comment,
+                name,
+                ref type_,
+            } in &class.fields
+            {
+                if let Some(comment) = doc_comment {
+                    doc_comment_to_kramdown(out, indent + 1, comment)?
+                }
+
+                write_ntabs(out, indent + 1)?;
+                if readonly {
+                    write!(out, "{} ", ATTR_READONLY)?;
+                }
+                write!(out, ".{name}: ")?;
+                type_to_kramdown(out, type_, &HashSet::new())?;
+                writeln!(out, ";")?;
+            }
+
+            if !class.methods.is_empty() {
+                writeln!(out)?;
+            }
+
+            for item in &class.methods {
+                function_to_kramdown(out, indent + 1, ":", item)?;
+            }
+
+            write_ntabs(out, indent)?;
+            writeln!(out, "}}")?;
+        }
+    }
+
+    Ok(())
+}
+
+fn items_to_kramdown(out: &mut impl Write, indent: u64, prefix: &str, items: &[Item]) -> Result<()> {
+    if items.is_empty() {
+        return Ok(());
+    }
+
+    write!(out, "<pre>")?;
+    let mut first = true;
+    for item in items {
+        if !first {
+            writeln!(out)?;
+        } else {
+            first = false;
+        }
+
+        item_to_kramdown(out, indent, prefix, item)?;
+    }
+    write!(out, "</pre>")?;
+
+    Ok(())
+}
+
+fn types_to_kramdown(out: &mut impl Write, types: &Types) -> Result<()> {
+    items_to_kramdown(out, 0, "", &types.items)?;
+
+    for library in &types.libraries {
+        writeln!(out)?;
+        writeln!(out)?;
+        writeln!(out, "## {} library", library.name)?;
+        writeln!(out)?;
+        writeln!(out)?;
+
+        let prefix = library.path.0.iter().fold(String::new(), |mut s, i| {
+            s.push_str(i.0);
+            s.push('.');
+            s
+        });
+        items_to_kramdown(out, 0, &prefix, &library.items)?;
+    }
+
+    Ok(())
+}
+
+fn write_kramdown_docs(out: &mut impl Write) -> Result<()> {
+    write!(
+        out,
+        r#"# ftlman scriptable Lua patching API
+
+Since ftlman v0.5 (unreleased) supports running Lua scripts during patching and provides
+a Lua API that allows you to programatically change files in the FTL
+data archive.
+
+## Entrypoints and semantics
+
+Two entrypoints are available to run Lua scripts during patching:
+
+### Lua scripts
+
+WIP: standalone exeuction not tied to a root element, semantics not yet concrete.
+
+### Lua append scripts
+
+Lua append scripts are lua equivalents of `.append.xml` files.
+They have to be named `<some existing xml file without .xml>.append.lua` and will allow you to
+modify the existing xml file whose file stem you substituted.
+
+These scripts will have an additional global defined at runtime called `document`.
+This global will be of type {}, described below.
+Most important of all, `document` lets you access and modify the DOM tree of the XML file
+by accessing the `.root` property.
+All modifications done to the DOM will be written to the existing file after
+the script finishes running.
+"#,
+        span_and_link_class_type("Document")
+    )?;
+
+    types_to_kramdown(out, &document_section_types())?;
+
+    write!(
+        out,
+        r#"
+
+#### Technical remarks
+- This file will be executed alongside `.append.xml` files, and the order in which
+these scripts run is currently unspecified.
+- Note that as with normal `.append.xml` files, these won't be executed if the backing
+XML file doesn't exist.
+
+## Script environment
+
+Apart from the potential `document` global, the `mod` global will always be present
+in the script's environment.
+It serves as the bridge between the mod manager and your scripts. The API
+currently exposed by this global is described under the various "library" sections below.
+
+        "#
+    )?;
+
+    types_to_kramdown(out, &main_types())?;
+
+    Ok(())
+}
+
 fn main() {
-    let types = dbg!(create_types());
-    types_to_luacats(&mut std::io::stdout(), &types).unwrap();
+    // types_to_luacats(&mut std::io::stdout(), &types).unwrap();
+    write_kramdown_docs(&mut std::io::stdout()).unwrap();
 }
