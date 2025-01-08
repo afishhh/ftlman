@@ -35,11 +35,16 @@ end
 
       #container {
         width: 80%;
+        min-height: 100vh;
         padding: 0px 15px;
         border-left: solid 7.5px;
         border-right: solid 7.5px;
         border-color: rgb(45, 45, 57);
         background-color: rgb(13, 17, 23);
+      }
+
+      @media (max-width: 1025px) {
+        #container { width: 100%; border: 0px; }
       }
 
       #content {
