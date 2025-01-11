@@ -219,7 +219,7 @@ pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<Str
         XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
         XmlAppendType::LuaAppend => unwrap_rewrap_single(document, |lower| {
             // TODO: Reuse this
-            let mut runtime = ModLuaRuntime::new().context("Failed to initialize lua runtime")?;
+            let runtime = ModLuaRuntime::new().context("Failed to initialize lua runtime")?;
             let mut context = LuaContext {
                 document_root: Some(lower),
                 print_arena_stats: false,

@@ -7,6 +7,7 @@ use crate::xmltree::{
 };
 
 mod debug;
+pub mod io;
 mod xml;
 
 type LuaArena = gc_arena::Arena<Rootable![DynamicRootSet<'_>]>;
@@ -24,6 +25,7 @@ impl LuaExt for Lua {
 
 pub struct ModLuaRuntime {
     lua: Lua,
+    lib_table: LuaTable,
 }
 
 pub struct LuaContext {
@@ -73,14 +75,36 @@ impl ModLuaRuntime {
         debug::extend_debug_library(&lua, lib_table.get::<LuaTable>("debug")?)
             .context("Failed to load debug builtins")?;
 
-        lua.load("mod = mod.util.readonly(mod)")
-            .exec()
+        lib_table
+            .get::<LuaTable>("util")?
+            .get::<LuaFunction>("readonly")?
+            .call::<()>(&lib_table)
             .context("Failed to make builtin mod table read-only")?;
 
-        Ok(Self { lua })
+        Ok(Self { lua, lib_table })
     }
 
-    pub fn run(&mut self, code: &str, filename: &str, context: &mut LuaContext) -> LuaResult<()> {
+    pub fn with_filesystems<'a, R>(
+        &self,
+        iter: impl IntoIterator<Item = (impl IntoLua, &'a mut (dyn io::LuaFS + 'a))>,
+        scoped: impl FnOnce() -> LuaResult<R>,
+    ) -> LuaResult<R> {
+        self.lua.scope(|scope| {
+            for (name, fs) in iter {
+                let vfs = self.lua.create_table()?;
+                vfs.set(name, scope.create_userdata(fs)?)?;
+                self.lib_table.raw_set("vfs", vfs)?;
+            }
+
+            let result = scoped();
+
+            self.lib_table.raw_remove("vfs")?;
+
+            result
+        })
+    }
+
+    pub fn run(&self, code: &str, filename: &str, context: &mut LuaContext) -> LuaResult<()> {
         let luatree = {
             let arena = self.lua.gc();
             let root = context.document_root.take();
@@ -90,11 +114,8 @@ impl ModLuaRuntime {
 
         let lua = &self.lua;
 
-        lua.load("mod = mod.util.readonly(mod)")
-            .exec()
-            .context("Failed to make builtin mod table read-only")?;
-
         let env = lua.globals().clone();
+
         if let Some(ref root) = luatree {
             env.set(
                 "document",

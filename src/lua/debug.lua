@@ -15,15 +15,15 @@ function mod.debug.assert_equal(a, b)
       error(message)
   end
 
+  local equal = mod.debug._compare(a, b)
+  if not equal then
+    fail()
+  end
+end
 
-  if type(a) == "table" and type(b) == "table" then
-    -- TODO: Make this work with whole tables not arrays
-    local index = math.abs(mod.table.compare_arrays(a, b))
-    if index ~= 0 then fail() end
-  elseif a == nil and b == nil then
-  elseif type(a) == type(b) then
-    if a ~= b then fail() end
-  else
-    error("unimplemented")
+function mod.debug._assert_throws(fun)
+  local success = pcall(fun)
+  if success then
+    error("assertion failed: function didn't throw")
   end
 end

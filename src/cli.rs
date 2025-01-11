@@ -5,7 +5,10 @@ use clap::{Parser, Subcommand};
 use log::{error, info};
 
 use crate::{
-    lua::{LuaContext, ModLuaRuntime},
+    lua::{
+        io::{LuaDirectoryFS, LuaFS},
+        LuaContext, ModLuaRuntime,
+    },
     util::{crc32_from_reader, to_human_size_units},
     Mod, ModSource, Settings,
 };
@@ -48,6 +51,8 @@ pub struct LuaRunCommand {
     script: PathBuf,
     #[clap(long = "print-arena-stats")]
     print_arena_stats: bool,
+    #[clap(long = "filesystem", long = "fs", number_of_values = 2, value_names = &["NAME", "FILESYSTEM"])]
+    filesystem: Vec<String>,
 }
 
 #[derive(Parser)]
@@ -183,20 +188,37 @@ pub fn main(command: Command) -> Result<()> {
                 .and_then(OsStr::to_str)
                 .context("Failed to get patch filename as UTF-8")?;
 
-            let mut runtime = ModLuaRuntime::new().context("Failed to initialize runtime")?;
-            let mut context = LuaContext {
-                document_root: None,
-                print_arena_stats: command.print_arena_stats,
-            };
+            let code = std::fs::read_to_string(&command.script).context("Failed to read string")?;
+            let runtime = ModLuaRuntime::new().context("Failed to initialize runtime")?;
 
-            if let Err(error) = runtime.run(
-                &std::fs::read_to_string(&command.script).context("Failed to read string")?,
-                script_name,
-                &mut context,
-            ) {
-                error!("{error}");
-                std::process::exit(1)
-            }
+            let mut filesystems = command
+                .filesystem
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .map(LuaDirectoryFS::new)
+                .collect::<Result<Vec<_>, _>>()
+                .context("Failed to create directory filesystem")?;
+            let fsiter = command
+                .filesystem
+                .iter()
+                .step_by(2)
+                .zip(filesystems.iter_mut())
+                .map(|(name, fs)| (name.as_str(), fs as &mut dyn LuaFS));
+
+            runtime.with_filesystems(fsiter, || {
+                let mut context = LuaContext {
+                    document_root: None,
+                    print_arena_stats: command.print_arena_stats,
+                };
+
+                if let Err(error) = runtime.run(&code, script_name, &mut context) {
+                    error!("{error}");
+                    std::process::exit(1)
+                }
+
+                Ok(())
+            })?;
 
             Ok(())
         }

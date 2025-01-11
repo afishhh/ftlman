@@ -206,6 +206,70 @@ impl PrettyPrinter {
     }
 }
 
+struct Comparer {}
+
+impl Comparer {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    // TODO: location tracking
+    pub fn compare(&mut self, a: LuaValue, b: LuaValue) -> LuaResult<Result<(), String>> {
+        fn compare_simple<T: PartialEq>(a: T, b: T, err: &str) -> LuaResult<Result<(), String>> {
+            if a == b {
+                Ok(Ok(()))
+            } else {
+                Ok(Err(err.to_owned()))
+            }
+        }
+
+        match (&a, &b) {
+            (LuaNil, LuaNil) => Ok(Ok(())),
+            (LuaValue::Boolean(a), LuaValue::Boolean(b)) => compare_simple(a, b, "booleans have different values"),
+            (LuaValue::LightUserData(a), LuaValue::LightUserData(b)) => {
+                compare_simple(a, b, "values point to different userdata objects")
+            }
+            (LuaValue::Integer(a), LuaValue::Integer(b)) => compare_simple(a, b, "integers have different values"),
+            (LuaValue::Number(a), LuaValue::Number(b)) => compare_simple(a, b, "numbers have different values"),
+            (LuaValue::String(a), LuaValue::String(b)) => compare_simple(a, b, "strings have different values"),
+            (LuaValue::Table(a), LuaValue::Table(b)) => {
+                let count_a = a.pairs::<LuaValue, LuaValue>().count();
+                let mut compared = 0;
+                for result in b.pairs::<LuaValue, LuaValue>() {
+                    let (key, value_b) = result?;
+                    let value_a = a.raw_get::<LuaValue>(key)?;
+
+                    if let Err(e) = self.compare(value_b, value_a)? {
+                        return Ok(Err(e));
+                    }
+
+                    compared += 1;
+                }
+
+                if count_a != compared {
+                    return Ok(Err("tables contain a different number of elements".to_owned()));
+                }
+
+                Ok(Ok(()))
+            }
+            (LuaValue::Function(a), LuaValue::Function(b)) => {
+                compare_simple(a.to_pointer(), b.to_pointer(), "values point to different functions")
+            }
+            (LuaValue::Thread(a), LuaValue::Thread(b)) => compare_simple(a, b, "values point to different threads"),
+            (LuaValue::UserData(a), LuaValue::UserData(b)) => compare_simple(
+                a.to_pointer(),
+                b.to_pointer(),
+                "values point to different userdata objects",
+            ),
+            (LuaValue::Error(_), LuaValue::Error(_)) => unreachable!(),
+            (LuaValue::Other(..), LuaValue::Other(..)) => {
+                compare_simple(a.to_pointer(), b.to_pointer(), "unknown value differs")
+            }
+            (_, _) => Ok(Err("values have different types".into())),
+        }
+    }
+}
+
 pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
     #[cfg(debug_assertions)]
     table.set(
@@ -256,6 +320,14 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
             println!("{output}");
 
             Ok(())
+        })?,
+    )?;
+
+    table.set(
+        "_compare",
+        lua.create_function(|_lua, (a, b): (LuaValue, LuaValue)| {
+            let mut comparer = Comparer::new();
+            Ok(comparer.compare(a, b)?.is_ok())
         })?,
     )?;
 
