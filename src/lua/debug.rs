@@ -67,8 +67,79 @@ impl Colors {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TablePrinterState {
+    Initial,
+    FirstElement,
+    Remaining,
+}
+
+struct TablePrinter {
+    first: bool,
+}
+
+impl TablePrinter {
+    fn new() -> Self {
+        Self { first: true }
+    }
+
+    fn table_pairs(
+        &mut self,
+        printer: &mut PrettyPrinter,
+        output: &mut impl Write,
+        level: u64,
+        table: &LuaTable,
+    ) -> std::fmt::Result {
+        let mut it = table.pairs::<LuaValue, LuaValue>();
+        while let Some((key, value)) = it.next().transpose().unwrap() {
+            if !self.first {
+                output.write_char(',')?;
+            } else {
+                output.write_char('{')?;
+                self.first = false;
+                printer.level += 1;
+            }
+
+            if let Some(indent) = printer.options.indent.as_ref() {
+                writeln!(output)?;
+                printer.write_indent(output, indent)?;
+            } else {
+                output.write_char(' ')?;
+            }
+
+            write!(output, "[")?;
+            printer.rec(output, key, level + 1)?;
+            write!(output, "]")?;
+
+            write!(output, " = ")?;
+            printer.rec(output, value, level + 1)?;
+        }
+
+        Ok(())
+    }
+
+    fn finish(self, printer: &mut PrettyPrinter, output: &mut impl Write) -> std::fmt::Result {
+        if self.first {
+            output.write_char('{')?;
+        }
+
+        if !self.first {
+            printer.level -= 1;
+            if let Some(indent) = printer.options.indent.as_ref() {
+                writeln!(output)?;
+                printer.write_indent(output, indent)?;
+            } else {
+                output.write_char(' ')?;
+            }
+        }
+
+        output.write_char('}')
+    }
+}
+
 pub struct PrettyPrinter {
     seen: HashSet<*const c_void>,
+    level: u32,
     options: PrettyPrintOptions,
 }
 
@@ -76,12 +147,13 @@ impl PrettyPrinter {
     pub fn new(options: PrettyPrintOptions) -> Self {
         Self {
             seen: HashSet::new(),
+            level: 0,
             options,
         }
     }
 
-    fn write_indent(output: &mut impl Write, indent: &str, level: u64) -> std::fmt::Result {
-        for _ in 0..level {
+    fn write_indent(&self, output: &mut impl Write, indent: &str) -> std::fmt::Result {
+        for _ in 0..self.level {
             output.write_str(indent)?;
         }
 
@@ -133,44 +205,18 @@ impl PrettyPrinter {
 
                     write!(output, "table@{:?}", table.to_pointer())
                 } else {
-                    output.write_char('{')?;
-                    let mut it = table.pairs::<LuaValue, LuaValue>();
-                    // TODO: Fail gracefully
-                    let mut first = true;
-                    while let Some((key, value)) = it.next().transpose().unwrap() {
-                        if !first {
-                            output.write_char(',')?;
-                        } else {
-                            first = false;
-                        }
+                    let mut printer = TablePrinter::new();
 
-                        if let Some(indent) = self.options.indent.as_ref() {
-                            writeln!(output)?;
-                            Self::write_indent(output, indent, level + 1)?;
-                        } else {
-                            output.write_char(' ')?;
-                        }
+                    printer.table_pairs(self, output, level, table)?;
 
-                        write!(output, "[")?;
-                        self.rec(output, key, level + 1)?;
-                        write!(output, "]")?;
-
-                        write!(output, " = ")?;
-                        self.rec(output, value, level + 1)?;
-                    }
-
-                    if !first {
-                        if let Some(indent) = self.options.indent.as_ref() {
-                            writeln!(output)?;
-                            Self::write_indent(output, indent, level)?;
-                        } else {
-                            output.write_char(' ')?;
+                    if let Some(metatable) = table.metatable() {
+                        // Theoretically this could be made recursive, but that's too much effort :)
+                        if let Ok(base) = metatable.raw_get::<LuaTable>("__index") {
+                            printer.table_pairs(self, output, level, &base)?;
                         }
                     }
 
-                    output.write_char('}')?;
-
-                    Ok(())
+                    printer.finish(self, output)
                 }
             }
             LuaValue::LightUserData(..) | LuaValue::Function(..) | LuaValue::Thread(..) => {
