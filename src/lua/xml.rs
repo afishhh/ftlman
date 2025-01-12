@@ -304,7 +304,7 @@ impl UserData for LuaElement {
         fields.add_field_method_get("textContent", |_, this| {
             let this = unsafe { *this.0.as_ptr() };
             let mut output = String::new();
-            for child in this.borrow().children() {
+            for child in this.borrow().descendants() {
                 if let Some(content) = dom::Text::downcast_ref(&*child.borrow()).map(|x| x.content.as_str()) {
                     output.push_str(content);
                 }

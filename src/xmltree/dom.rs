@@ -389,6 +389,12 @@ impl<'gc> Element<'gc> {
             last: self.last_child,
         }
     }
+
+    pub fn descendants(&self) -> ElementDescendants<'gc> {
+        ElementDescendants {
+            stack: vec![self.children()],
+        }
+    }
 }
 
 // Only guarantees consistent iteration order if no modifications occur
@@ -438,6 +444,33 @@ impl DoubleEndedIterator for ElementChildren<'_> {
 }
 
 impl FusedIterator for ElementChildren<'_> {}
+
+#[derive(Collect)]
+#[collect(no_drop)]
+pub struct ElementDescendants<'gc> {
+    stack: Vec<ElementChildren<'gc>>,
+}
+
+impl<'gc> Iterator for ElementDescendants<'gc> {
+    type Item = GcNode<'gc>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let current = self.stack.last_mut()?;
+            if let Some(next) = current.next() {
+                if let Some(element) = Element::downcast_gc(next) {
+                    self.stack.push(element.borrow().children());
+                }
+
+                return Some(next);
+            } else {
+                self.stack.pop();
+            }
+        }
+    }
+}
+
+impl FusedIterator for ElementDescendants<'_> {}
 
 impl<'gc> Element<'gc> {
     pub fn from_tree(
