@@ -219,18 +219,41 @@ impl IntoLua for DynamicIntoLua {
 }
 
 #[derive(Clone)]
-enum NodeImplicitlyConvertible {
+enum LuaConcreteNode {
     Element(LuaElement),
+    Text(LuaText),
+}
+
+#[derive(Clone)]
+enum NodeImplicitlyConvertible {
+    Node(LuaConcreteNode),
     String(String),
 }
 
 impl FromLua for NodeImplicitlyConvertible {
     fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
         let type_name = value.type_name();
-        match LuaElement::from_lua(value.clone(), lua) {
-            Ok(element) => Ok(Self::Element(element)),
+        match LuaConcreteNode::from_lua(value.clone(), lua) {
+            Ok(element) => Ok(Self::Node(element)),
             Err(_) => match String::from_lua(value, lua) {
                 Ok(content) => Ok(Self::String(content)),
+                Err(_) => Err(mlua::Error::FromLuaConversionError {
+                    from: type_name,
+                    to: "XML Node".to_string(),
+                    message: None,
+                }),
+            },
+        }
+    }
+}
+
+impl FromLua for LuaConcreteNode {
+    fn from_lua(value: mlua::Value, lua: &mlua::Lua) -> mlua::Result<Self> {
+        let type_name = value.type_name();
+        match LuaElement::from_lua(value.clone(), lua) {
+            Ok(element) => Ok(Self::Element(element)),
+            Err(_) => match LuaText::from_lua(value, lua) {
+                Ok(content) => Ok(Self::Text(content)),
                 Err(_) => Err(mlua::Error::FromLuaConversionError {
                     from: type_name,
                     to: "XML Node".to_string(),
@@ -244,8 +267,17 @@ impl FromLua for NodeImplicitlyConvertible {
 impl NodeImplicitlyConvertible {
     fn into_node<'gc>(self, mc: &Mutation<'gc>) -> GcNode<'gc> {
         match self {
-            NodeImplicitlyConvertible::Element(e) => unsize_node!(unsafe { *e.0.as_ptr() }),
+            NodeImplicitlyConvertible::Node(e) => e.into_node(mc),
             NodeImplicitlyConvertible::String(text) => unsize_node!(dom::Text::create(mc, text)),
+        }
+    }
+}
+
+impl LuaConcreteNode {
+    fn into_node<'gc>(self, _mc: &Mutation<'gc>) -> GcNode<'gc> {
+        match self {
+            LuaConcreteNode::Element(e) => unsize_node!(unsafe { *e.0.as_ptr() }),
+            LuaConcreteNode::Text(t) => unsize_node!(unsafe { *t.0.as_ptr() }),
         }
     }
 }
@@ -462,6 +494,41 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                     dom::Element::create(mc, prefix, name, Option::unwrap_or_default(attributes)),
                 )
             })))
+        })?,
+    )?;
+
+    table.raw_set(
+        "parse",
+        lua.create_function(|lua, xml: LuaString| {
+            lua.gc().mutate(|mc, roots| {
+                let xml_bytes = xml.as_bytes();
+                let xml_text = std::str::from_utf8(&xml_bytes)
+                    .into_lua_err()
+                    .context("input XML must be valid UTF-8")?;
+
+                match crate::xmltree::Element::parse_sloppy(xml_text).into_lua_err()? {
+                    Some(root) => Ok(LuaElement(roots.stash(mc, dom::Element::from_tree(mc, root, None)))),
+                    None => Err(LuaError::runtime("XML text contained no root element")),
+                }
+            })
+        })?,
+    )?;
+
+    table.raw_set(
+        "stringify",
+        lua.create_function(|lua, node: LuaElement| {
+            lua.gc().mutate(|_mc, _| {
+                let mut output = Vec::new();
+                crate::xmltree::Element::write_with_indent(
+                    &unsafe { (*node.0.as_ptr()).as_ref_cell().borrow().to_tree() },
+                    std::io::Cursor::new(&mut output),
+                    b' ',
+                    4,
+                )
+                .into_lua_err()?;
+
+                Ok(lua.create_string(&output))
+            })
         })?,
     )?;
 
