@@ -373,11 +373,13 @@ struct LuaPkgFS<'a>(&'a mut Pkg<File>, VirtualFileTree);
 impl LuaFS for LuaPkgFS<'_> {
     fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>> {
         self.1.stat(path, || {
-            // TODO: This can be implemented more efficiently in silpkg
-            //       by reading metadata instead
-            let mut f = self.0.open(path)?;
+            let length = match self.0.metadata(path) {
+                Some(metadata) => metadata.uncompressed_size,
+                None => return Err(std::io::ErrorKind::NotFound.into()),
+            };
+
             Ok(LuaFileStats {
-                length: Some(f.seek(std::io::SeekFrom::End(0))?),
+                length: Some(length.into()),
                 kind: LuaFileType::File,
             })
         })
