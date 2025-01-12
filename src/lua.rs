@@ -16,6 +16,7 @@ trait LuaExt {
     fn gc(&self) -> mlua::AppDataRef<LuaArena>;
     fn protect_table(&self, table: &LuaTable) -> LuaResult<()>;
     fn create_protected_table(&self) -> LuaResult<LuaTable>;
+    fn create_overlay_table(&self, lower: &LuaTable) -> LuaResult<LuaTable>;
 }
 
 impl LuaExt for Lua {
@@ -42,6 +43,26 @@ impl LuaExt for Lua {
         let table = self.create_table()?;
         self.protect_table(&table)?;
         Ok(table)
+    }
+
+    fn create_overlay_table(&self, lower: &LuaTable) -> LuaResult<LuaTable> {
+        let upper = self.create_table()?;
+        let metatable = self.create_table()?;
+        metatable.raw_set("__index", lower)?;
+
+        let upper_clone = upper.clone();
+        // NOTE: The table parameter is intentionally ignore to avoid providing
+        //       a "raw_set on anything primitive".
+        metatable.raw_set(
+            "__newindex",
+            self.create_function(move |_, (_t, k, v): (LuaTable, LuaValue, LuaValue)| upper_clone.raw_set(k, v))?,
+        )?;
+
+        metatable.raw_set("__metatable", LuaValue::Boolean(true))?;
+
+        upper.set_metatable(Some(metatable));
+
+        Ok(upper)
     }
 }
 
@@ -70,6 +91,11 @@ impl ModLuaRuntime {
         // While this could potentially be useful, it bypasses
         // protected metatables so for now it's disabled.
         lua.globals().raw_remove("rawset")?;
+        lua.protect_table(&lua.globals().raw_get::<LuaTable>("string")?)?;
+        lua.protect_table(&lua.globals().raw_get::<LuaTable>("table")?)?;
+        lua.protect_table(&lua.globals().raw_get::<LuaTable>("math")?)?;
+        // This is replaced by the script environment table later.
+        lua.globals().raw_remove("_G")?;
 
         // This function causes HRTB deduction problems so no, I cannot replace the closure.
         #[allow(clippy::redundant_closure)]
@@ -145,7 +171,8 @@ impl ModLuaRuntime {
 
         let lua = &self.lua;
 
-        let env = lua.globals().clone();
+        let env = lua.create_overlay_table(&lua.globals())?;
+        env.raw_set("_G", &env)?;
 
         if let Some(ref root) = luatree {
             env.set(
