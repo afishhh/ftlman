@@ -1,4 +1,4 @@
-use std::fmt::Write as _;
+use std::{collections::BTreeMap, fmt::Write as _};
 
 use gc_arena::{
     lock::{GcRefLock, RefLock},
@@ -23,6 +23,30 @@ fn append_qualified_name(element: &dom::Element, output: &mut String) {
         output.push(':');
     }
     output.push_str(&element.name);
+}
+
+fn validate_xml_name(name: &str) -> LuaResult<()> {
+    const ALLOWED_PUNCTUATION: [char; 2] = ['-', '_'];
+
+    let mut it = name.chars();
+
+    if let Some(illegal) = it
+        .next()
+        .filter(|c| !c.is_ascii_alphabetic() && !ALLOWED_PUNCTUATION.contains(c))
+    {
+        return Err(LuaError::runtime(format!(
+            "{illegal:?} is not allowed at the start of an XML name"
+        )));
+    }
+
+    if let Some(illegal) = name
+        .chars()
+        .find(|c| !c.is_ascii_alphanumeric() && !ALLOWED_PUNCTUATION.contains(c))
+    {
+        return Err(LuaError::runtime(format!("{illegal:?} is not allowed in an XML name")));
+    }
+
+    Ok(())
 }
 
 fn element_tostring(element: &dom::Element, output: &mut String) {
@@ -289,6 +313,7 @@ impl UserData for LuaElement {
         fields.add_field_method_get("name", |_, this| Ok(unsafe { *this.0.as_ptr() }.borrow().name.clone()));
         fields.add_field_method_set("name", |_, this, value: String| {
             // SAFETY: No write barrier has to be triggered as no Gc pointers are modified.
+            validate_xml_name(&value)?;
             unsafe { (*this.0.as_ptr()).as_ref_cell() }.borrow_mut().name = value;
             Ok(())
         });
@@ -297,6 +322,9 @@ impl UserData for LuaElement {
         });
         fields.add_field_method_set("prefix", |_, this, value: Option<String>| {
             // SAFETY: See above
+            if let Some(pfx) = value.as_ref() {
+                validate_xml_name(pfx)?;
+            }
             unsafe { (*this.0.as_ptr()).as_ref_cell() }.borrow_mut().prefix = value;
             Ok(())
         });
@@ -385,7 +413,7 @@ impl UserData for LuaElement {
             }))
         });
 
-        methods.add_method("fistChild", |lua, this, _: ()| {
+        methods.add_method("firstChild", |lua, this, _: ()| {
             lua.gc().mutate(|mc, roots| {
                 roots
                     .fetch(&this.0)
@@ -397,7 +425,7 @@ impl UserData for LuaElement {
             })
         });
 
-        methods.add_method("fistChild", |lua, this, _: ()| {
+        methods.add_method("firstChild", |lua, this, _: ()| {
             lua.gc().mutate(|mc, roots| {
                 roots
                     .fetch(&this.0)
@@ -479,14 +507,25 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
     table.raw_set(
         "element",
         lua.create_function(|lua, args: LuaMultiValue| {
-            let (prefix, name, attributes) = match FromLuaMulti::from_lua_multi(args.clone(), lua) {
-                Ok(result) => result,
-                Err(_) => {
-                    // TODO: error message doesn't mention previous overload
-                    let (name, attributes) = FromLuaMulti::from_lua_multi(args, lua)?;
-                    (None, name, attributes)
+            let (prefix, name, attributes): (Option<String>, String, Option<BTreeMap<String, String>>) =
+                match FromLuaMulti::from_lua_multi(args.clone(), lua) {
+                    Ok(result) => result,
+                    Err(_) => {
+                        // TODO: error message doesn't mention previous overload
+                        let (name, attributes) = FromLuaMulti::from_lua_multi(args, lua)?;
+                        (None, name, attributes)
+                    }
+                };
+
+            if let Some(pfx) = prefix.as_ref() {
+                validate_xml_name(pfx)?;
+            }
+            validate_xml_name(&name)?;
+            if let Some(attrs) = attributes.as_ref() {
+                for key in attrs.keys() {
+                    validate_xml_name(key)?;
                 }
-            };
+            }
 
             Ok(LuaElement(lua.gc().mutate(|mc, roots| {
                 roots.stash(
