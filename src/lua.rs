@@ -27,7 +27,12 @@ impl LuaExt for Lua {
 
     fn protect_table(&self, table: &LuaTable) -> LuaResult<()> {
         let metatable = self.create_table()?;
-        metatable.raw_set("__index", table)?;
+
+        let cloned = table.clone();
+        metatable.raw_set(
+            "__index",
+            self.create_function(move |_, (_, key): (LuaValue, LuaValue)| cloned.raw_get::<LuaValue>(key))?,
+        )?;
         metatable.raw_set(
             "__newindex",
             self.create_function(|_, _: ()| Err::<(), _>(LuaError::runtime("attempt to update a protected table")))?,
