@@ -14,12 +14,34 @@ type LuaArena = gc_arena::Arena<Rootable![DynamicRootSet<'_>]>;
 
 trait LuaExt {
     fn gc(&self) -> mlua::AppDataRef<LuaArena>;
+    fn protect_table(&self, table: &LuaTable) -> LuaResult<()>;
+    fn create_protected_table(&self) -> LuaResult<LuaTable>;
 }
 
 impl LuaExt for Lua {
     fn gc(&self) -> mlua::AppDataRef<LuaArena> {
         self.app_data_ref::<LuaArena>()
             .expect("lua object should contain a dynamic gc arena")
+    }
+
+    fn protect_table(&self, table: &LuaTable) -> LuaResult<()> {
+        let metatable = self.create_table()?;
+        metatable.raw_set("__index", table)?;
+        metatable.raw_set(
+            "__newindex",
+            self.create_function(|_, _: ()| Err::<(), _>(LuaError::runtime("attempt to update a protected table")))?,
+        )?;
+        metatable.raw_set("__metatable", LuaValue::Boolean(true))?;
+
+        table.set_metatable(Some(metatable));
+
+        Ok(())
+    }
+
+    fn create_protected_table(&self) -> LuaResult<LuaTable> {
+        let table = self.create_table()?;
+        self.protect_table(&table)?;
+        Ok(table)
     }
 }
 
@@ -43,6 +65,11 @@ impl ModLuaRuntime {
 
         lua.globals().raw_remove("dofile")?;
         lua.globals().raw_remove("require")?;
+        lua.globals().raw_remove("collectgarbage")?;
+        lua.globals().raw_remove("loadfile")?;
+        // While this could potentially be useful, it bypasses
+        // protected metatables so for now it's disabled.
+        lua.globals().raw_remove("rawset")?;
 
         // This function causes HRTB deduction problems so no, I cannot replace the closure.
         #[allow(clippy::redundant_closure)]
@@ -67,6 +94,13 @@ impl ModLuaRuntime {
         load_builtin_lib!("table.lua");
         load_builtin_lib!("debug.lua");
 
+        for result in lib_table.pairs() {
+            let (_, value): (LuaValue, LuaValue) = result?;
+            if let Some(table) = value.as_table() {
+                lua.protect_table(table)?;
+            }
+        }
+
         lib_table.set(
             "xml",
             xml::create_xml_lib(&lua).context("Failed to create xml library table")?,
@@ -75,10 +109,7 @@ impl ModLuaRuntime {
         debug::extend_debug_library(&lua, lib_table.get::<LuaTable>("debug")?)
             .context("Failed to load debug builtins")?;
 
-        lib_table
-            .get::<LuaTable>("util")?
-            .get::<LuaFunction>("readonly")?
-            .call::<()>(&lib_table)
+        lua.protect_table(&lib_table)
             .context("Failed to make builtin mod table read-only")?;
 
         Ok(Self { lua, lib_table })
@@ -91,7 +122,7 @@ impl ModLuaRuntime {
     ) -> LuaResult<R> {
         self.lua.scope(|scope| {
             for (name, fs) in iter {
-                let vfs = self.lua.create_table()?;
+                let vfs = self.lua.create_protected_table()?;
                 vfs.set(name, scope.create_userdata(fs)?)?;
                 self.lib_table.raw_set("vfs", vfs)?;
             }

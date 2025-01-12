@@ -272,8 +272,8 @@ impl Comparer {
 
 pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
     #[cfg(debug_assertions)]
-    table.set(
-        "full_gc",
+    table.raw_set(
+        "_full_gc",
         lua.create_function(|lua, _: ()| {
             lua.gc_collect()?;
             lua.gc_collect()?;
@@ -285,7 +285,7 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
         })?,
     )?;
 
-    table.set(
+    table.raw_set(
         "pretty_string",
         lua.create_function(|_, (value, options): (LuaValue, LuaValue)| {
             let options = if options.is_nil() {
@@ -302,7 +302,7 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
         })?,
     )?;
 
-    table.set(
+    table.raw_set(
         "pretty_print",
         lua.create_function(|_, (value, options): (LuaValue, LuaValue)| {
             let options = if options.is_nil() {
@@ -323,7 +323,7 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
         })?,
     )?;
 
-    table.set(
+    table.raw_set(
         "_compare",
         lua.create_function(|_lua, (a, b): (LuaValue, LuaValue)| {
             let mut comparer = Comparer::new();

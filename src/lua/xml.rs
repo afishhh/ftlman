@@ -442,9 +442,9 @@ impl UserData for LuaElementChildren {
 }
 
 pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
-    let table = lua.create_table()?;
+    let table = lua.create_protected_table()?;
 
-    table.set(
+    table.raw_set(
         "element",
         lua.create_function(|lua, args: LuaMultiValue| {
             let (prefix, name, attributes) = match FromLuaMulti::from_lua_multi(args.clone(), lua) {
