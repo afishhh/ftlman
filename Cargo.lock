@@ -2016,10 +2016,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "idl"
-version = "0.1.0"
-
-[[package]]
 name = "idna"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3424,9 +3420,9 @@ dependencies = [
 
 [[package]]
 name = "silpkg"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89ba2df6f62bc3dd2dd22ca7374423517f63da47aed11b65df4fd28423db5a5f"
+checksum = "6a5bf6ffafc8132f5e07b67e68f58525bc24a89cfe6324796b086864eca82a0d"
 dependencies = [
  "bitflags 2.6.0",
  "flate2",

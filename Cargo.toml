@@ -24,7 +24,7 @@ poll-promise = { version = "0.3" }
 crc32fast = "1"
 
 # Used to read/write SIL archives and mod files/dirs
-silpkg = "0.1"
+silpkg = "0.1.2"
 zip = "2"
 walkdir = "2"
 
@@ -71,4 +71,4 @@ strip = "debuginfo"
 lto = "thin"
 
 [workspace]
-members = ["compare_with_slipstream/normalize_xml", "idl", "windows_gui_wrapper"]
+members = ["compare_with_slipstream/normalize_xml", "windows_gui_wrapper"]
