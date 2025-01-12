@@ -67,13 +67,6 @@ impl Colors {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum TablePrinterState {
-    Initial,
-    FirstElement,
-    Remaining,
-}
-
 struct TablePrinter {
     first: bool,
 }
@@ -323,9 +316,11 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
         lua.create_function(|lua, _: ()| {
             lua.gc_collect()?;
             lua.gc_collect()?;
-            let arena = lua.gc();
-            println!("gc arena total allocation: {:?}", arena.metrics().total_allocation());
-            println!("gc arena allocation debt: {:?}", arena.metrics().allocation_debt());
+            {
+                let arena = lua.gc();
+                println!("gc arena total allocation: {:?}", arena.metrics().total_allocation());
+                println!("gc arena allocation debt: {:?}", arena.metrics().allocation_debt());
+            }
             lua.app_data_mut::<LuaArena>().unwrap().collect_all();
             Ok(())
         })?,
