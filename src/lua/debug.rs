@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ffi::c_void, fmt::Write};
+use std::{collections::HashSet, ffi::c_void, fmt::Write, io::IsTerminal};
 
 use mlua::prelude::*;
 use serde::Deserialize;
@@ -89,7 +89,7 @@ impl PrettyPrinter {
     }
 
     fn rec(&mut self, output: &mut impl Write, value: LuaValue, level: u64) -> std::fmt::Result {
-        if !value.to_pointer().is_null() && !self.seen.insert(value.to_pointer()) {
+        if !value.to_pointer().is_null() && !value.is_string() && !self.seen.insert(value.to_pointer()) {
             if let Some(colors) = self.options.colors {
                 output.write_str(colors.start_pointer())?;
             }
@@ -308,6 +308,11 @@ pub fn extend_debug_library(lua: &Lua, table: LuaTable) -> LuaResult<()> {
             let options = if options.is_nil() {
                 PrettyPrintOptions {
                     indent: Some("\t".to_owned()),
+                    colors: if std::io::stdout().is_terminal() {
+                        Some(Colors::Ansi)
+                    } else {
+                        None
+                    },
                     ..Default::default()
                 }
             } else {
