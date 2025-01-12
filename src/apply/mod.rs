@@ -1,6 +1,8 @@
 use std::{
     borrow::Cow,
-    io::{Cursor, Read, Write},
+    collections::{btree_map::Entry, BTreeMap},
+    fs::File,
+    io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -10,13 +12,17 @@ use lazy_static::lazy_static;
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
+use silpkg::sync::Pkg;
 use zip::ZipArchive;
 
 use crate::{
     cache::CACHE,
     hyperspace,
-    lua::{LuaContext, ModLuaRuntime},
-    xmltree, HyperspaceState, Mod, ModSource, Settings, SharedState,
+    lua::{
+        io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
+        LuaContext, ModLuaRuntime,
+    },
+    xmltree, HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
 
 mod append;
@@ -194,40 +200,280 @@ fn read_encoded_text(mut reader: impl Read) -> Result<String> {
 pub enum XmlAppendType {
     Append,
     RawAppend,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppendType {
+    Xml(XmlAppendType),
     LuaAppend,
 }
 
-impl XmlAppendType {
-    pub fn from_filename(name: &str) -> Option<(&str, XmlAppendType)> {
-        const XML_APPEND_SUFFIXES: &[(&str, XmlAppendType)] = &[
-            (".xml.append", XmlAppendType::Append),
-            (".append.xml", XmlAppendType::Append),
-            (".rawappend.xml", XmlAppendType::RawAppend),
-            (".xml.rawappend", XmlAppendType::RawAppend),
-            (".append.lua", XmlAppendType::LuaAppend),
+impl AppendType {
+    pub fn from_filename(name: &str) -> Option<(&str, AppendType)> {
+        const APPEND_SUFFIXES: &[(&str, AppendType)] = &[
+            (".xml.append", AppendType::Xml(XmlAppendType::Append)),
+            (".append.xml", AppendType::Xml(XmlAppendType::Append)),
+            (".rawappend.xml", AppendType::Xml(XmlAppendType::RawAppend)),
+            (".xml.rawappend", AppendType::Xml(XmlAppendType::RawAppend)),
+            (".append.lua", AppendType::LuaAppend),
         ];
 
-        XML_APPEND_SUFFIXES
+        APPEND_SUFFIXES
             .iter()
             .find_map(|x| name.strip_suffix(x.0).map(|stem| (stem, x.1)))
     }
 }
 
-pub fn apply_one(document: &str, patch: &str, kind: XmlAppendType) -> Result<String> {
+pub fn apply_one_xml(document: &str, patch: &str, kind: XmlAppendType) -> Result<String> {
     Ok(match kind {
         XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
         XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
-        XmlAppendType::LuaAppend => unwrap_rewrap_single(document, |lower| {
-            // TODO: Reuse this
-            let runtime = ModLuaRuntime::new().context("Failed to initialize lua runtime")?;
-            let mut context = LuaContext {
-                document_root: Some(lower),
-                print_arena_stats: false,
-            };
-            runtime.run(patch, "<patch>", &mut context)?;
-            Ok(context.document_root.unwrap())
-        })?,
     })
+}
+
+pub fn apply_one_lua(document: &str, patch: &str, runtime: &ModLuaRuntime) -> Result<String> {
+    unwrap_rewrap_single(document, |lower| {
+        let mut context = LuaContext {
+            document_root: Some(lower),
+            print_arena_stats: false,
+        };
+        runtime.run(patch, "<patch>", &mut context)?;
+        Ok(context.document_root.unwrap())
+    })
+}
+
+enum VirtualFileTree {
+    File,
+    Directory(BTreeMap<String, VirtualFileTree>),
+}
+
+impl VirtualFileTree {
+    fn from_paths(paths: impl IntoIterator<Item = impl AsRef<str>>) -> Result<VirtualFileTree> {
+        let mut root: BTreeMap<String, VirtualFileTree> = BTreeMap::new();
+
+        for path in paths {
+            let mut current = &mut root;
+            let mut it = path.as_ref().split('.');
+            let last = it.next_back().unwrap();
+            for component in it {
+                match current
+                    .entry(component.to_owned())
+                    .or_insert_with(|| VirtualFileTree::Directory(BTreeMap::new()))
+                {
+                    VirtualFileTree::File => bail!("Invalid file tree in pkg archive: file overlaps directory"),
+                    VirtualFileTree::Directory(next) => current = next,
+                }
+            }
+
+            match current.entry(last.to_owned()) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(VirtualFileTree::File);
+                }
+                Entry::Occupied(_) => {
+                    bail!("Invalid file tree in pkg archive: duplicate file or directory overlaps file")
+                }
+            }
+        }
+
+        Ok(VirtualFileTree::Directory(root))
+    }
+
+    fn traverse(&mut self, path: &str) -> Option<&mut VirtualFileTree> {
+        let mut current = match self {
+            VirtualFileTree::File => return None,
+            VirtualFileTree::Directory(map) => map,
+        };
+        let mut it = path.split('.');
+        let last = it.next_back().unwrap();
+        for component in it {
+            match current.get_mut(component)? {
+                VirtualFileTree::File => return None,
+                VirtualFileTree::Directory(next) => current = next,
+            }
+        }
+        current.get_mut(last)
+    }
+
+    fn stat(
+        &mut self,
+        path: &str,
+        on_file: impl FnOnce() -> std::io::Result<LuaFileStats>,
+    ) -> std::io::Result<Option<LuaFileStats>> {
+        match self.traverse(path) {
+            Some(VirtualFileTree::Directory(_)) => Ok(Some(LuaFileStats {
+                length: None,
+                kind: LuaFileType::Directory,
+            })),
+            Some(VirtualFileTree::File) => on_file().map(Some),
+            None => Ok(None),
+        }
+    }
+
+    fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>> {
+        match self.traverse(path) {
+            Some(VirtualFileTree::Directory(children)) => Ok(children
+                .iter()
+                .map(|(key, value)| LuaDirEnt {
+                    filename: key.clone(),
+                    kind: match value {
+                        VirtualFileTree::File => LuaFileType::File,
+                        VirtualFileTree::Directory(..) => LuaFileType::Directory,
+                    },
+                })
+                .collect()),
+            Some(VirtualFileTree::File) => Err(std::io::ErrorKind::NotADirectory.into()),
+            None => Err(std::io::ErrorKind::NotFound.into()),
+        }
+    }
+
+    fn read(&mut self, path: &str, on_file: impl FnOnce() -> std::io::Result<Vec<u8>>) -> std::io::Result<Vec<u8>> {
+        match self.traverse(path) {
+            Some(VirtualFileTree::Directory(_)) => Err(std::io::ErrorKind::IsADirectory.into()),
+            Some(VirtualFileTree::File) => on_file(),
+            None => Err(std::io::ErrorKind::NotFound.into()),
+        }
+    }
+
+    fn traverse_for_write(&mut self, path: &str) -> std::io::Result<Entry<'_, String, VirtualFileTree>> {
+        let mut current = match self {
+            VirtualFileTree::File => return Err(std::io::ErrorKind::NotADirectory.into()),
+            VirtualFileTree::Directory(map) => map,
+        };
+        let mut it = path.split('.');
+        let last = it.next_back().unwrap();
+        for component in it {
+            match current
+                .entry(component.to_owned())
+                .or_insert_with(|| VirtualFileTree::Directory(BTreeMap::new()))
+            {
+                VirtualFileTree::File => return Err(std::io::ErrorKind::NotADirectory.into()),
+                VirtualFileTree::Directory(next) => current = next,
+            }
+        }
+
+        Ok(current.entry(last.to_owned()))
+    }
+
+    fn write(&mut self, path: &str, on_file: impl FnOnce() -> std::io::Result<()>) -> std::io::Result<()> {
+        match self.traverse_for_write(path)? {
+            Entry::Occupied(entry) if matches!(entry.get(), VirtualFileTree::Directory(..)) => {
+                Err(std::io::ErrorKind::IsADirectory.into())
+            }
+            entry => {
+                on_file()?;
+                entry.or_insert(VirtualFileTree::File);
+                Ok(())
+            }
+        }
+    }
+}
+
+struct LuaPkgFS<'a>(&'a mut Pkg<File>, VirtualFileTree);
+
+impl LuaFS for LuaPkgFS<'_> {
+    fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>> {
+        self.1.stat(path, || {
+            // TODO: This can be implemented more efficiently in silpkg
+            //       by reading metadata instead
+            let mut f = self.0.open(path)?;
+            Ok(LuaFileStats {
+                length: Some(f.seek(std::io::SeekFrom::End(0))?),
+                kind: LuaFileType::File,
+            })
+        })
+    }
+
+    fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>> {
+        self.1.ls(path)
+    }
+
+    fn read_whole(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        self.1.read(path, || {
+            let mut out = Vec::new();
+            let mut reader = self.0.open(path)?;
+            reader.read_to_end(&mut out)?;
+            Ok(out)
+        })
+    }
+
+    fn write_whole(&mut self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        self.1.write(path, || {
+            let temporary_name = format!("_ftlman_atomic_write_{path}");
+
+            let mut write = || -> std::io::Result<()> {
+                let mut writer = self.0.insert(
+                    temporary_name.clone(),
+                    silpkg::Flags {
+                        compression: silpkg::EntryCompression::None,
+                    },
+                )?;
+                writer.write_all(data)?;
+                Ok(())
+            };
+
+            match write() {
+                Ok(_) => self.0.replace(&temporary_name, path.to_owned()).map_err(Into::into),
+                Err(error) => {
+                    _ = self.0.remove(&temporary_name);
+                    Err(error)
+                }
+            }
+        })
+    }
+}
+
+struct LuaZipFS<'a, S: Read + Seek>(&'a mut ZipArchive<S>, VirtualFileTree);
+
+impl<S: Read + Seek> LuaFS for LuaZipFS<'_, S> {
+    fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>> {
+        self.1.stat(path, || {
+            let f = self.0.by_name(path)?;
+            let length = f.size();
+            Ok(LuaFileStats {
+                length: Some(length),
+                kind: LuaFileType::File,
+            })
+        })
+    }
+
+    fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>> {
+        self.1.ls(path)
+    }
+
+    fn read_whole(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        self.1.read(path, || {
+            let mut out = Vec::new();
+            let mut reader = self.0.by_name(path)?;
+            reader.read_to_end(&mut out)?;
+            Ok(out)
+        })
+    }
+
+    fn write_whole(&mut self, _path: &str, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::ErrorKind::ReadOnlyFilesystem.into())
+    }
+}
+
+fn make_lua_filesystems<'a, 'b>(
+    pkg: &'a mut Pkg<File>,
+    mod_handle: &'b mut OpenModHandle,
+) -> Result<(LuaPkgFS<'a>, Box<dyn LuaFS + 'b>)> {
+    let pkg_vft =
+        VirtualFileTree::from_paths(pkg.paths()).context("Failed to create virtual file tree for package archive")?;
+
+    Ok((
+        LuaPkgFS(pkg, pkg_vft),
+        match mod_handle {
+            OpenModHandle::Directory { path } => Box::new(
+                LuaDirectoryFS::new(path.clone()).context("Failed to create virtual filesystem for directory")?,
+            ),
+            OpenModHandle::Zip { archive } => {
+                let zip_vft = VirtualFileTree::from_paths(archive.file_names())
+                    .context("Failed to create virtual file tree for zip file")?;
+                Box::new(LuaZipFS(archive, zip_vft))
+            }
+        },
+    ))
 }
 
 pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(ApplyStage), repack: bool) -> Result<()> {
@@ -252,6 +498,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
             .context("Failed to open ftl.dat")?
     };
 
+    let lua = ModLuaRuntime::new().context("Failed to initiailize Lua runtime")?;
     let mut pkg = silpkg::sync::Pkg::parse(data_file).context("Failed to parse ftl.dat")?;
 
     const INSERT_FLAGS: silpkg::Flags = silpkg::Flags {
@@ -282,7 +529,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 files_total: path_count,
             });
 
-            let xml_append_type = XmlAppendType::from_filename(&name);
+            let xml_append_type = AppendType::from_filename(&name);
 
             if let Some((real_stem, operation)) = xml_append_type {
                 let real_name = format!("{real_stem}.xml");
@@ -307,8 +554,24 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 )
                 .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
-                let new_text = apply_one(&original_text, &append_text, operation)
-                    .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
+                let new_text = match operation {
+                    AppendType::Xml(xml_append_type) => apply_one_xml(&original_text, &append_text, xml_append_type),
+                    AppendType::LuaAppend => {
+                        let (mut pkgfs, mut modfs) = make_lua_filesystems(&mut pkg, &mut handle)?;
+                        match lua.with_filesystems(
+                            [
+                                ("pkg", &mut pkgfs as &mut dyn LuaFS),
+                                ("mod", &mut *modfs as &mut dyn LuaFS),
+                            ],
+                            || Ok(apply_one_lua(&original_text, &append_text, &lua)),
+                        ) {
+                            Ok(Ok(text)) => Ok(text),
+                            Ok(Err(other_error)) => Err(other_error),
+                            Err(lua_error) => Err(lua_error.into()),
+                        }
+                    }
+                }
+                .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
 
                 match pkg.remove(&real_name) {
                     Ok(()) => {}

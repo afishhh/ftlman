@@ -239,7 +239,7 @@ impl WindowState for Sandbox {
                     if self.patcher.as_ref().is_none_or(|p| p.ready().is_some()) {
                         let ctx = ctx.clone();
                         self.patcher = Some(Promise::spawn_thread("sandbox patcher", move || {
-                            let result = apply::apply_one(&document, &patch, apply::XmlAppendType::Append);
+                            let result = apply::apply_one_xml(&document, &patch, apply::XmlAppendType::Append);
                             // FIXME: Improve handling of background patching
                             ctx.request_repaint_after_secs(0.01);
                             result

@@ -172,12 +172,22 @@ pub fn main(command: Command) -> Result<()> {
                 .and_then(OsStr::to_str)
                 .context("Failed to get patch filename as UTF-8")?;
             let (_, kind) =
-                crate::apply::XmlAppendType::from_filename(patch_name).context("Failed to determine append type")?;
+                crate::apply::AppendType::from_filename(patch_name).context("Failed to determine append type")?;
 
             let source = std::fs::read_to_string(&command.file).context("Failed to read source file")?;
             let patch = std::fs::read_to_string(&command.patch).context("Failed to read patch file")?;
 
-            std::io::stdout().write_all(crate::apply::apply_one(&source, &patch, kind)?.as_bytes())?;
+            let patched = match kind {
+                crate::apply::AppendType::Xml(xml_append_type) => {
+                    crate::apply::apply_one_xml(&source, &patch, xml_append_type)?
+                }
+                crate::apply::AppendType::LuaAppend => {
+                    let runtime = ModLuaRuntime::new().context("Failed to initialize Lua runtime")?;
+                    crate::apply::apply_one_lua(&source, &patch, &runtime)?
+                }
+            };
+
+            std::io::stdout().write_all(patched.as_bytes())?;
 
             Ok(())
         }

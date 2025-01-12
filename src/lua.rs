@@ -109,7 +109,7 @@ impl ModLuaRuntime {
         lua.set_app_data(arena);
 
         let lib_table = lua.create_table()?;
-        lua.globals().set("mod", lib_table.clone())?;
+        lua.globals().raw_set("mod", lib_table.clone())?;
 
         macro_rules! load_builtin_lib {
             ($filename: literal) => {
@@ -132,7 +132,7 @@ impl ModLuaRuntime {
             }
         }
 
-        lib_table.set(
+        lib_table.raw_set(
             "xml",
             xml::create_xml_lib(&lua).context("Failed to create xml library table")?,
         )?;
@@ -152,11 +152,11 @@ impl ModLuaRuntime {
         scoped: impl FnOnce() -> LuaResult<R>,
     ) -> LuaResult<R> {
         self.lua.scope(|scope| {
+            let vfs = self.lua.create_protected_table()?;
             for (name, fs) in iter {
-                let vfs = self.lua.create_protected_table()?;
-                vfs.set(name, scope.create_userdata(fs)?)?;
-                self.lib_table.raw_set("vfs", vfs)?;
+                vfs.raw_set(name, scope.create_userdata(fs)?)?;
             }
+            self.lib_table.raw_set("vfs", vfs)?;
 
             let result = scoped();
 

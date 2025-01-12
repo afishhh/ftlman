@@ -7,7 +7,7 @@ use mlua::prelude::*;
 use serde::Serialize;
 
 #[derive(Serialize)]
-enum LuaFileType {
+pub enum LuaFileType {
     #[serde(rename = "dir")]
     Directory,
     #[serde(rename = "file")]
@@ -30,23 +30,23 @@ impl From<FileType> for LuaFileType {
 
 #[derive(Serialize)]
 pub struct LuaFileStats {
-    length: Option<u64>,
+    pub length: Option<u64>,
     #[serde(rename = "type")]
-    kind: LuaFileType,
+    pub kind: LuaFileType,
 }
 
 #[derive(Serialize)]
 pub struct LuaDirEnt {
-    filename: String,
+    pub filename: String,
     #[serde(rename = "type")]
-    kind: LuaFileType,
+    pub kind: LuaFileType,
 }
 
 pub trait LuaFS {
-    fn stat(&mut self, path: String) -> LuaResult<Option<LuaFileStats>>;
-    fn ls(&mut self, path: String) -> LuaResult<Vec<LuaDirEnt>>;
-    fn read_whole(&mut self, path: String) -> LuaResult<Vec<u8>>;
-    fn write_whole(&mut self, path: String, data: &[u8]) -> LuaResult<()>;
+    fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>>;
+    fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>>;
+    fn read_whole(&mut self, path: &str) -> std::io::Result<Vec<u8>>;
+    fn write_whole(&mut self, path: &str, data: &[u8]) -> std::io::Result<()>;
 }
 
 pub struct LuaDirectoryFS(PathBuf);
@@ -79,17 +79,17 @@ impl LuaDirectoryFS {
         }
     }
 
-    fn resolve_path_if_exists(&self, path: &str) -> LuaResult<Option<PathBuf>> {
+    fn resolve_path_if_exists(&self, path: &str) -> std::io::Result<Option<PathBuf>> {
         match self.resolve_path(path) {
             Ok(canonical) => Ok(Some(canonical)),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(Into::into(e)),
+            Err(e) => Err(e),
         }
     }
 }
 
 impl LuaFS for LuaDirectoryFS {
-    fn stat(&mut self, path: String) -> LuaResult<Option<LuaFileStats>> {
+    fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>> {
         match self.resolve_path_if_exists(&path) {
             Ok(Some(path)) => {
                 let metadata = path.metadata()?;
@@ -104,17 +104,20 @@ impl LuaFS for LuaDirectoryFS {
         }
     }
 
-    fn ls(&mut self, path: String) -> LuaResult<Vec<LuaDirEnt>> {
+    fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>> {
         let mut result = Vec::new();
 
-        for entry in self.resolve_path(&path)?.read_dir()? {
+        for entry in self.resolve_path(path)?.read_dir()? {
             let entry = entry?;
             // TODO: Maybe just expose the WTF-8 with as_encoded_bytes instead?
             result.push(LuaDirEnt {
                 filename: entry
                     .file_name()
                     .to_str()
-                    .ok_or_else(|| LuaError::runtime("non-utf8 filename encountered"))?
+                    .ok_or_else(|| {
+                        // TODO: https://github.com/rust-lang/rust/pull/134076
+                        std::io::Error::new(std::io::ErrorKind::InvalidInput, "invalid unicode in filename")
+                    })?
                     .to_owned(),
                 kind: entry.file_type()?.into(),
             })
@@ -123,48 +126,49 @@ impl LuaFS for LuaDirectoryFS {
         Ok(result)
     }
 
-    fn read_whole(&mut self, path: String) -> LuaResult<Vec<u8>> {
+    fn read_whole(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
         self.resolve_path(&path).and_then(std::fs::read).map_err(Into::into)
     }
 
-    fn write_whole(&mut self, _path: String, _data: &[u8]) -> LuaResult<()> {
-        Err(LuaError::runtime("writing to a directory backed vfs is not supported"))
+    fn write_whole(&mut self, _path: &str, _data: &[u8]) -> std::io::Result<()> {
+        Err(std::io::ErrorKind::ReadOnlyFilesystem.into())
     }
 }
 
-fn check_path(path: &str) -> LuaResult<()> {
+fn check_path(path: &str) -> LuaResult<&str> {
     // A primitive way to disallow relative paths.
     // this is not a security feature, only to allow future modifications to how
     // a relative path might be handled.
-    if !path.starts_with('/') {
-        return Err(LuaError::runtime("paths must start with '/'"));
+    match path.strip_prefix('/') {
+        Some(stripped) => Ok(stripped),
+        None => Err(LuaError::runtime("paths must start with '/'")),
     }
-
-    Ok(())
 }
 
 impl LuaUserData for &mut dyn LuaFS {
     fn add_fields<F: LuaUserDataFields<Self>>(_fields: &mut F) {}
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
         methods.add_method_mut("stat", |lua, this, path: String| {
-            check_path(&path)?;
-            this.stat(path)
+            this.stat(check_path(&path)?)
+                .map_err(LuaError::external)
                 .map(|r| lua.to_value_with(&r, mlua::SerializeOptions::new().serialize_none_to_null(false)))
         });
 
         methods.add_method_mut("ls", |lua, this, path: String| {
-            check_path(&path)?;
-            this.ls(path).map(|r| lua.to_value(&r))
+            this.ls(check_path(&path)?)
+                .map_err(LuaError::external)
+                .map(|r| lua.to_value(&r))
         });
 
         methods.add_method_mut("read", |lua, this, path: String| {
-            check_path(&path)?;
-            this.read_whole(path).map(|v| lua.create_string(v))
+            this.read_whole(check_path(&path)?)
+                .map_err(LuaError::external)
+                .map(|v| lua.create_string(v))
         });
 
         methods.add_method_mut("write", |_, this, (path, content): (String, LuaString)| {
-            check_path(&path)?;
-            this.write_whole(path, &content.as_bytes())
+            this.write_whole(check_path(&path)?, &content.as_bytes())
+                .map_err(LuaError::external)
         });
     }
 }
