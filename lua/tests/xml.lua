@@ -6,18 +6,28 @@ local fourth = mod.xml.element("fourth", { ["active"] = "false" })
 root:prepend(first, second)
 root:append("third", fourth)
 
-local mapped =  mod.iter.map(root:childNodes(), function(node)
+local function mapNode(node)
   local element = node:as("element")
   if element then return "<" .. element.name .. ">"
   else
     local text = node:as("text")
     return assert(text).content
   end
-end)
+end
 
 mod.debug.assert_equal(
-  mod.iter.collect(mapped),
+  mod.iter.collect(mod.iter.map(root:childNodes(), mapNode)),
   { "<first>", "<second>", "third", "<fourth>" }
+)
+
+local hi = mod.xml.element("hi")
+local guys = mod.xml.element("guys")
+second:after("greeting:", hi)
+fourth.previousSibling:before(guys, "!")
+
+mod.debug.assert_equal(
+  mod.iter.collect(mod.iter.map(root:childNodes(), mapNode)),
+  { "<first>", "<second>", "greeting:", "<hi>", "<guys>", "!", "third", "<fourth>" }
 )
 
 mod.debug.assert_equal(

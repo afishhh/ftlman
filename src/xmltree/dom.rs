@@ -133,6 +133,37 @@ impl<'gc, T: Node<'gc> + ?Sized> NodeExt<'gc> for T {
     }
 }
 
+pub fn node_insert_before<'gc>(this: GcNode<'gc>, mc: &Mutation<'gc>, node: GcNode<'gc>) {
+    let mut header = this.borrow_header_mut(mc);
+    if let Some(previous) = header.previous {
+        let mut previous_header = previous.borrow_header_mut(mc);
+        previous_header.next = Some(node);
+        header.previous = Some(node);
+        node.borrow_header_mut(mc).parent = header.parent;
+        let mut inserted_header = node.borrow_header_mut(mc);
+        inserted_header.parent = header.parent;
+        inserted_header.previous = Some(previous);
+        inserted_header.next = Some(this);
+    } else if let Some(parent) = header.parent {
+        parent.borrow_mut(mc).prepend_child(mc, node);
+    }
+}
+
+pub fn node_insert_after<'gc>(this: GcNode<'gc>, mc: &Mutation<'gc>, node: GcNode<'gc>) {
+    let mut header = this.borrow_header_mut(mc);
+    if let Some(next) = header.next {
+        let mut next_header = next.borrow_header_mut(mc);
+        next_header.previous = Some(node);
+        header.next = Some(node);
+        let mut inserted_header = node.borrow_header_mut(mc);
+        inserted_header.parent = header.parent;
+        inserted_header.previous = Some(this);
+        inserted_header.next = Some(next);
+    } else if let Some(parent) = header.parent {
+        parent.borrow_mut(mc).append_child(mc, node);
+    }
+}
+
 trait RefCellNodeExt<'gc> {
     fn borrow_header(&self) -> Ref<NodeHeader<'gc>>;
     fn borrow_header_mut(&self, mc: &Mutation<'gc>) -> RefMut<NodeHeader<'gc>>;

@@ -6,7 +6,9 @@ use gc_arena::{
 };
 use mlua::{prelude::*, FromLua, UserData, UserDataFields};
 
-use crate::xmltree::dom::{self, ElementChildren, GcElement, GcNode, GcText, NodeExt, NodeTraits};
+use crate::xmltree::dom::{
+    self, node_insert_after, node_insert_before, ElementChildren, GcElement, GcNode, GcText, NodeExt, NodeTraits,
+};
 
 use super::{unsize_node, LuaExt};
 
@@ -143,11 +145,56 @@ fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
         Ok(())
     });
 
-    // methods.add_method("before", |_, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
-    //     for node in nodes.into_iter().rev() {
-    //         this.as_node_mut()
-    //     }
-    // });
+    // TODO: factor this stuff out into a generic function or smth
+    methods.add_method(
+        "before",
+        |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
+            lua.gc().mutate(|mc, _| {
+                let this = unsafe { this.get_node() };
+                if this.borrow().parent().is_none() {
+                    return Err(LuaError::runtime("cannot insert nodes before orphan node"));
+                }
+
+                for (i, node) in nodes.into_iter().enumerate() {
+                    let node = node.into_node(mc);
+                    if node.borrow().parent().is_some() {
+                        return Err(LuaError::runtime(format!(
+                            "Node passed as argument #{} to Element:before already has a parent",
+                            i + 1
+                        )));
+                    }
+                    node_insert_before(this, mc, node);
+                }
+
+                Ok(())
+            })
+        },
+    );
+
+    methods.add_method(
+        "after",
+        |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
+            lua.gc().mutate(|mc, _| {
+                let this = unsafe { this.get_node() };
+                if this.borrow().parent().is_none() {
+                    return Err(LuaError::runtime("cannot insert nodes after orphan node"));
+                }
+
+                for (i, node) in nodes.into_iter().enumerate().rev() {
+                    let node = node.into_node(mc);
+                    if node.borrow().parent().is_some() {
+                        return Err(LuaError::runtime(format!(
+                            "Node passed as argument #{} to Element:after already has a parent",
+                            i + 1
+                        )));
+                    }
+                    node_insert_after(this, mc, node);
+                }
+
+                Ok(())
+            })
+        },
+    );
 }
 
 impl UserData for LuaDocument {
