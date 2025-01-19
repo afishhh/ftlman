@@ -7,11 +7,10 @@ local it = mod.iter.enumerate(
   ),
   3
 )
-mod.debug.assert_equal(table.pack(it()), {3, "a", "b"})
-mod.debug.assert_equal(table.pack(it()), {4,  "b", "d"})
-mod.debug.assert_equal(table.pack(it()), {5, "c", 7.5})
+mod.debug.assert_equal(table.pack(it()), {3, "a", "b", ["n"] = 3})
+mod.debug.assert_equal(table.pack(it()), {4,  "b", "d", ["n"] = 3})
+mod.debug.assert_equal(table.pack(it()), {5, "c", 7.5, ["n"] = 3})
 mod.debug.assert_equal(it(), nil)
-
 
 local count = mod.iter.count(mod.iter.zip(
     mod.table.iter_array(a),

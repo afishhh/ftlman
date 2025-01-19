@@ -4,7 +4,7 @@ function mod.iter.enumerate(iterator, start)
   local i = start or 1
   return function()
     local values = table.pack(iterator())
-    if #values > 0 then
+    if #values ~= 0 then
       local tmp = i
       i = i + 1
       return tmp, table.unpack(values)
@@ -19,9 +19,9 @@ function mod.iter.zip(a, b)
     local na = table.pack(a())
     local nb = table.pack(b())
     if #na == 0 or #nb == 0 then
-      return nil
+      return
     end
-    
+
     return table.unpack(na), table.unpack(nb)
   end
 end
@@ -34,6 +34,14 @@ function mod.iter.collect(iterator)
   return result
 end
 
+local function pack2(...)
+  return {...}
+end
+
+function mod.iter._collectpack(iterator)
+  return mod.iter.collect(mod.iter.map(iterator, pack2))
+end
+
 function mod.iter.count(iterator)
   local count = 0
   for value in iterator do
@@ -44,9 +52,9 @@ end
 
 function mod.iter.map(iterator, mapper)
   return function()
-    next = iterator()
-    if next ~= nil then
-      return mapper(next)
+    local value = table.pack(iterator())
+    if #value ~= 0 then
+      return mapper(table.unpack(value))
     end
   end
 end

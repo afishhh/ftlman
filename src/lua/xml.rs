@@ -306,6 +306,12 @@ impl LuaConcreteNode {
     }
 }
 
+impl LuaElement {
+    unsafe fn get<'gc>(&self) -> dom::GcElement<'gc> {
+        unsafe { *self.0.as_ptr() }
+    }
+}
+
 impl UserData for LuaElement {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         add_node_fields(fields, "element");
@@ -314,7 +320,7 @@ impl UserData for LuaElement {
         fields.add_field_method_set("name", |_, this, value: String| {
             // SAFETY: No write barrier has to be triggered as no Gc pointers are modified.
             validate_xml_name(&value)?;
-            unsafe { (*this.0.as_ptr()).as_ref_cell() }.borrow_mut().name = value;
+            unsafe { this.get().as_ref_cell() }.borrow_mut().name = value;
             Ok(())
         });
         fields.add_field_method_get("prefix", |_, this| {
@@ -325,8 +331,22 @@ impl UserData for LuaElement {
             if let Some(pfx) = value.as_ref() {
                 validate_xml_name(pfx)?;
             }
-            unsafe { (*this.0.as_ptr()).as_ref_cell() }.borrow_mut().prefix = value;
+            unsafe { this.get().as_ref_cell() }.borrow_mut().prefix = value;
             Ok(())
+        });
+
+        fields.add_field_method_get("attrs", |_, this| {
+            Ok(LuaAttributes {
+                element: this.clone(),
+                raw: false,
+            })
+        });
+
+        fields.add_field_method_get("rawattrs", |_, this| {
+            Ok(LuaAttributes {
+                element: this.clone(),
+                raw: true,
+            })
         });
 
         fields.add_field_method_get("textContent", |_, this| {
@@ -339,6 +359,7 @@ impl UserData for LuaElement {
             }
             Ok(output)
         });
+
         fields.add_field_method_set("textContent", |lua, this, value: String| {
             lua.gc().mutate(|mc, roots| {
                 let mut this = roots.fetch(&this.0).borrow_mut(mc);
@@ -348,6 +369,7 @@ impl UserData for LuaElement {
             Ok(())
         });
     }
+
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         add_node_methods(methods);
 
@@ -370,6 +392,7 @@ impl UserData for LuaElement {
                 })
             },
         );
+
         methods.add_method(
             "append",
             |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
@@ -444,22 +467,140 @@ impl UserData for LuaElement {
                 ))
             }))
         });
+
         methods.add_method("childNodes", |lua, this, _: ()| {
             Ok(lua.gc().mutate(|mc, roots| {
                 LuaChildNodes(roots.stash(mc, Gc::new(mc, RefLock::new(roots.fetch(&this.0).borrow().children()))))
             }))
         });
+
         methods.add_meta_method("__tostring", |_, this, _: ()| {
             let mut output = String::new();
-            element_tostring(unsafe { &(*this.0.as_ptr()).borrow() }, &mut output);
+            element_tostring(unsafe { &this.get().borrow() }, &mut output);
             Ok(output)
         });
 
         #[cfg(debug_assertions)]
         methods.add_method("debug", |_, this, _: ()| {
             let mut output = String::new();
-            write!(output, "{:#?}", unsafe { *this.0.as_ptr() }.borrow()).unwrap();
+            write!(output, "{:#?}", unsafe { this.get().borrow() }).unwrap();
             Ok(output)
+        });
+    }
+}
+
+#[derive(Clone)]
+struct LuaAttributes {
+    element: LuaElement,
+    /// Whether to parse values like "10", "3.14", or "true" into the appriopriate
+    /// datatype automatically.
+    raw: bool,
+}
+
+impl LuaAttributes {
+    fn process_value(&self, lua: &Lua, value: &str) -> LuaResult<LuaValue> {
+        if self.raw {
+            lua.create_string(value).map(LuaValue::String)
+        } else {
+            match value {
+                "true" => return Ok(LuaValue::Boolean(true)),
+                "false" => return Ok(LuaValue::Boolean(false)),
+                _ => (),
+            };
+
+            if let Ok(integer) = LuaInteger::from_str_radix(value, 10) {
+                Ok(LuaValue::Integer(integer))
+            } else if let Ok(number) = value.parse() {
+                Ok(LuaValue::Number(number))
+            } else {
+                lua.create_string(value).map(LuaValue::String)
+            }
+        }
+    }
+
+    fn into_iterator(self, lua: &Lua) -> LuaResult<LuaFunction> {
+        let mut current = unsafe { self.element.get().borrow() }
+            .attributes
+            .first_key_value()
+            .map(|(key, _)| key.clone());
+
+        lua.create_function_mut(move |lua, _: ()| {
+            if let Some(previous) = current.take() {
+                let e = unsafe { self.element.get().borrow() };
+                let mut it = e.attributes.range(previous..);
+                match it.next() {
+                    Some((key, value)) => {
+                        let lua_key = lua.create_string(key)?;
+                        current = it.next().map(|(key, _)| key.clone());
+                        (lua_key, self.process_value(lua, value)?).into_lua_multi(lua)
+                    }
+                    None => LuaValue::Nil.into_lua_multi(lua),
+                }
+            } else {
+                LuaValue::Nil.into_lua_multi(lua)
+            }
+        })
+    }
+}
+
+impl UserData for LuaAttributes {
+    fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
+        methods.add_meta_method("__call", |lua, this, _: ()| this.clone().into_iterator(lua));
+
+        methods.add_meta_method_mut("__index", |lua, this, key: LuaString| {
+            let Ok(key) = key.to_str() else {
+                return Ok(LuaValue::Nil);
+            };
+
+            let element = unsafe { *this.element.0.as_ptr() }.borrow();
+            let Some(value) = element.attributes.get(&*key) else {
+                return Ok(LuaValue::Nil);
+            };
+
+            this.process_value(lua, value)
+        });
+
+        methods.add_meta_method_mut("__newindex", |_, this, (key, value): (String, LuaValue)| {
+            validate_xml_name(&key)?;
+
+            let gc = unsafe { this.element.get() };
+            let mut element = unsafe { gc.as_ref_cell().borrow_mut() };
+
+            if value.is_nil() {
+                element.attributes.remove(&key);
+                return Ok(());
+            }
+
+            let string_value = if this.raw || value.is_string() {
+                if let LuaValue::String(string) = value {
+                    if let Ok(value) = string.to_str() {
+                        value.to_owned()
+                    } else {
+                        return Err(LuaError::runtime("invalid UTF-8 assigned to attribute"));
+                    }
+                } else {
+                    return Err(LuaError::runtime(format!(
+                        "cannot assign {} to raw element attribute",
+                        value.type_name()
+                    )));
+                }
+            } else {
+                match value {
+                    LuaValue::Boolean(value) => value.to_string(),
+                    LuaValue::Integer(value) => value.to_string(),
+                    LuaValue::Number(value) => value.to_string(),
+                    other => {
+                        return Err(LuaError::runtime(format!(
+                            "cannot assign {} to element attribute",
+                            other.type_name()
+                        )));
+                    }
+                }
+            };
+
+            element.attributes.insert(key, string_value);
+
+            Ok(())
         });
     }
 }
