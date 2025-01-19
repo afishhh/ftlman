@@ -2,9 +2,13 @@ use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf};
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use log::info;
+use log::{error, info};
 
 use crate::{
+    lua::{
+        io::{LuaDirectoryFS, LuaFS},
+        LuaContext, ModLuaRuntime,
+    },
     util::{crc32_from_reader, to_human_size_units},
     Mod, ModSource, Settings,
 };
@@ -13,6 +17,7 @@ use crate::{
 pub enum Command {
     Patch(PatchCommand),
     Append(AppendCommand),
+    LuaRun(LuaRunCommand),
     BpsPatch(BpsPatchCommand),
     BpsMeta(BpsMetaCommand),
     Crc32(Crc32Command),
@@ -45,6 +50,15 @@ pub struct AppendCommand {
 }
 
 #[derive(Parser)]
+pub struct LuaRunCommand {
+    script: PathBuf,
+    #[clap(long = "print-arena-stats")]
+    print_arena_stats: bool,
+    #[clap(long = "filesystem", long = "fs", number_of_values = 2, value_names = &["NAME", "FILESYSTEM"])]
+    filesystem: Vec<String>,
+}
+
+#[derive(Parser)]
 /// Patches a file according to a BPS patch file.
 pub struct BpsPatchCommand {
     file: PathBuf,
@@ -73,7 +87,7 @@ pub struct FetchGDriveCommand {
 #[derive(Parser)]
 /// Extracts an SIL archive to a directory.
 ///
-/// For more SIL archive manipulation capabilities please use https://github.com/afishhh/silpkg.
+/// For more SIL archive manipulation capabilities please use <https://github.com/afishhh/silpkg>.
 pub struct ExtractCommand {
     out_path: PathBuf,
     dat_path: PathBuf,
@@ -161,12 +175,63 @@ pub fn main(command: Command) -> Result<()> {
                 .and_then(OsStr::to_str)
                 .context("Failed to get patch filename as UTF-8")?;
             let (_, kind) =
-                crate::apply::XmlAppendType::from_filename(patch_name).context("Failed to determine append type")?;
+                crate::apply::AppendType::from_filename(patch_name).context("Failed to determine append type")?;
 
             let source = std::fs::read_to_string(&command.document).context("Failed to read source file")?;
             let patch = std::fs::read_to_string(&command.patch).context("Failed to read patch file")?;
 
-            std::io::stdout().write_all(crate::apply::apply_one(&source, &patch, kind)?.as_bytes())?;
+            let patched = match kind {
+                crate::apply::AppendType::Xml(xml_append_type) => {
+                    crate::apply::apply_one_xml(&source, &patch, xml_append_type)?
+                }
+                crate::apply::AppendType::LuaAppend => {
+                    let runtime = ModLuaRuntime::new().context("Failed to initialize Lua runtime")?;
+                    crate::apply::apply_one_lua(&source, &patch, &runtime)?
+                }
+            };
+
+            std::io::stdout().write_all(patched.as_bytes())?;
+
+            Ok(())
+        }
+        Command::LuaRun(command) => {
+            let script_name = command
+                .script
+                .file_name()
+                .and_then(OsStr::to_str)
+                .context("Failed to get patch filename as UTF-8")?;
+
+            let code = std::fs::read_to_string(&command.script).context("Failed to read string")?;
+            let runtime = ModLuaRuntime::new().context("Failed to initialize runtime")?;
+
+            let mut filesystems = command
+                .filesystem
+                .iter()
+                .skip(1)
+                .step_by(2)
+                .map(LuaDirectoryFS::new)
+                .collect::<Result<Vec<_>, _>>()
+                .context("Failed to create directory filesystem")?;
+            let fsiter = command
+                .filesystem
+                .iter()
+                .step_by(2)
+                .zip(filesystems.iter_mut())
+                .map(|(name, fs)| (name.as_str(), fs as &mut dyn LuaFS));
+
+            runtime.with_filesystems(fsiter, || {
+                let mut context = LuaContext {
+                    document_root: None,
+                    print_arena_stats: command.print_arena_stats,
+                };
+
+                if let Err(error) = runtime.run(&code, script_name, &mut context) {
+                    error!("{error}");
+                    std::process::exit(1)
+                }
+
+                Ok(())
+            })?;
 
             Ok(())
         }

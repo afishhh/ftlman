@@ -104,7 +104,7 @@ const PATCHES: &[Patch] = &[
 ];
 
 impl Patch {
-    pub fn from_name(&self) -> &'static str {
+    pub fn source_version_name(&self) -> &'static str {
         self.from.name()
     }
 
@@ -183,12 +183,7 @@ impl Installer {
         let size = exe_path.metadata().context("Failed to stat FTL executable")?.len();
 
         fn find_patch(from: Version) -> Option<&'static Patch> {
-            for patch in PATCHES.iter() {
-                if patch.from == from {
-                    return Some(patch);
-                }
-            }
-            None
+            PATCHES.iter().find(|&patch| patch.from == from)
         }
 
         let version = Version::from_executable_size(size);

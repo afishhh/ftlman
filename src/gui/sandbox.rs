@@ -22,6 +22,7 @@ pub struct Sandbox {
     current_file: Option<CurrentFile>,
     patcher: Option<Promise<Result<String, Error>>>,
     output: Option<Output>,
+    output_find_box: Option<String>,
 
     // Whether the patch XML was changed since the last update was ran.
     needs_update: bool,
@@ -61,13 +62,14 @@ impl Sandbox {
             current_file: None,
             patcher: None,
             output: None,
+            output_find_box: Some("9".to_string()),
             needs_update: false,
         }
     }
 
     pub fn open(&mut self, path: &Path) -> Result<()> {
         let pkg = Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?;
-        self.pkg_names = pkg.paths().cloned().filter(|name| name.ends_with(".xml")).collect();
+        self.pkg_names = pkg.paths().filter(|&name| name.ends_with(".xml")).cloned().collect();
         self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
         self.pkg = Some(pkg);
@@ -105,7 +107,7 @@ impl WindowState for Sandbox {
         egui::SidePanel::left("sandbox files").max_width(225.0).show(ctx, |ui| {
             ui.add_space(ui.spacing().window_margin.top);
 
-            ui.with_layout(ui.layout().clone().with_cross_justify(true), |ui| {
+            ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
 
                 ui.horizontal(|ui| {
@@ -161,7 +163,7 @@ impl WindowState for Sandbox {
             })
         }
 
-        let theme = syntax_highlighting::CodeTheme::from_style(&*ctx.style());
+        let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
         let mut layouter = move |ui: &Ui, text: &str, width: f32| {
             let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, "xml");
             layout_job.wrap.max_width = width;
@@ -184,6 +186,26 @@ impl WindowState for Sandbox {
                                         .code_editor(),
                                 )
                             });
+
+                            if let Some(needle) = self.output_find_box.as_mut() {
+                                let mut corner_ui = ui.new_child(
+                                    egui::UiBuilder::new()
+                                        .max_rect(egui::Rect::from_min_max(
+                                            ui.max_rect().max
+                                                - egui::vec2(
+                                                    ui.available_width(),
+                                                    ui.available_height().max(32.0)
+                                                ),
+                                            ui.max_rect().max 
+                                            // Move slightly to the left so that it doesn't
+                                            // overlap the scroll bar
+                                            - egui::vec2(16.0, 0.0),
+                                        ))
+                                        .layout(egui::Layout::right_to_left(egui::Align::Max)),
+                                );
+
+                                corner_ui.text_edit_singleline(needle);
+                            };
                         }
                         Output::Error(error) => {
                             // This prevents errors from shrinking the panel
@@ -217,7 +239,7 @@ impl WindowState for Sandbox {
                     if self.patcher.as_ref().is_none_or(|p| p.ready().is_some()) {
                         let ctx = ctx.clone();
                         self.patcher = Some(Promise::spawn_thread("sandbox patcher", move || {
-                            let result = apply::apply_one(&document, &patch, apply::XmlAppendType::Append);
+                            let result = apply::apply_one_xml(&document, &patch, apply::XmlAppendType::Append);
                             // FIXME: Improve handling of background patching
                             ctx.request_repaint_after_secs(0.01);
                             result

@@ -27,7 +27,7 @@ fn take_varint(patch: &mut &[u8]) -> Result<usize> {
         data += shift;
     }
 
-    return Ok(data);
+    Ok(data)
 }
 
 fn take_signed_varint(patch: &mut &[u8]) -> Result<isize> {

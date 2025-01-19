@@ -215,13 +215,11 @@ impl Widget for PathEdit<'_> {
 
                 let ui = &mut child_ui;
 
-                if self.open_directory_button {
-                    if ui.small_button("🗁").clicked() {
-                        let path = Path::new(self.buffer.as_str());
-                        if path.is_dir() {
-                            if let Err(e) = open::that_detached(path) {
-                                log::error!("Failed to open {path:?}: {e}");
-                            }
+                if self.open_directory_button && ui.small_button("🗁").clicked() {
+                    let path = Path::new(self.buffer.as_str());
+                    if path.is_dir() {
+                        if let Err(e) = open::that_detached(path) {
+                            log::error!("Failed to open {path:?}: {e}");
                         }
                     }
                 }

@@ -24,7 +24,7 @@ poll-promise = { version = "0.3" }
 crc32fast = "1"
 
 # Used to read/write SIL archives and mod files/dirs
-silpkg = "0.1"
+silpkg = "0.1.2"
 zip = "2"
 walkdir = "2"
 
@@ -45,6 +45,9 @@ semver = { version = "1", features = ["serde"] }
 # This dependency could be removed but it's pretty small.
 open = "5.3.1"
 egui_extras = { version = "0.29.1", features = ["syntect"] }
+
+mlua = { version = "0.10", features = ["lua54", "macros", "vendored", "error-send", "serialize"] }
+gc-arena = "0.5.3"
 
 # For loading system fonts on Linux
 [target.'cfg(target_os = "linux")'.dependencies]
