@@ -37,7 +37,7 @@ For instructions on installing Rust go to https://www.rust-lang.org/tools/instal
 
 After installing Rust, open a terminal then execute the following command:
 ```command
-cargo install --git https://github.com/afishhh/ftlman
+cargo install --locked --git https://github.com/afishhh/ftlman ftlman
 ```
 
 > [!NOTE]
