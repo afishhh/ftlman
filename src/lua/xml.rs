@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Write as _};
+use std::{collections::BTreeMap, fmt::Write as _, ops::Deref};
 
 use gc_arena::{
     lock::{GcRefLock, RefLock},
@@ -592,7 +592,13 @@ impl LuaAttributes {
 
 impl UserData for LuaAttributes {
     fn add_methods<M: LuaUserDataMethods<Self>>(methods: &mut M) {
-        methods.add_meta_method("__call", |lua, this, _: ()| this.clone().into_iterator(lua));
+        methods.add_meta_method("__call", |lua, this, this2: LuaUserDataRef<LuaElement>| {
+            if !std::ptr::eq(this.element.0.as_ptr(), this2.deref().0.as_ptr()) {
+                return Err(LuaError::runtime("LuaAttributes called with mismatched self pointer"));
+            }
+
+            this.clone().into_iterator(lua)
+        });
 
         methods.add_meta_method_mut("__index", |lua, this, key: LuaString| {
             let Ok(key) = key.to_str() else {

@@ -71,3 +71,11 @@ mod.debug.assert_equal(
   attrs,
   { { "a2", "10" }, { "pi", "3.14" } }
 )
+
+mod.debug._assert_throws(
+  function() second.attrs() end
+)
+
+mod.debug._assert_throws(
+  function() second.rawattrs() end
+)
