@@ -3,11 +3,13 @@ use std::{collections::HashSet, ffi::c_void, fmt::Write, io::IsTerminal};
 use mlua::prelude::*;
 use serde::Deserialize;
 
+#[cfg(debug_assertions)]
 use super::{LuaArena, LuaExt};
 
 const fn true_fn() -> bool {
     true
 }
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct PrettyPrintOptions {
     #[serde(default = "true_fn")]

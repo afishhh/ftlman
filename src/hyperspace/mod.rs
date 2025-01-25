@@ -76,6 +76,7 @@ impl HyperspaceRelease {
         &self.release.body
     }
 
+    #[expect(dead_code)]
     pub fn version(&self) -> Option<&semver::Version> {
         self.version.as_ref()
     }
