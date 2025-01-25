@@ -1,6 +1,6 @@
 use std::{ops::DerefMut, sync::Arc};
 
-use eframe::egui::{self, ViewportClass, ViewportId};
+use eframe::egui::{self, Vec2, ViewportClass, ViewportId};
 use parking_lot::Mutex;
 
 pub trait WindowState: Send + 'static {
@@ -28,14 +28,19 @@ impl<S: WindowState> DeferredWindow<S> {
 
     pub fn render(&self, context: &egui::Context, title: &str, default_size: egui::Vec2) {
         if self.state.lock().is_open() {
+            let size = context
+                .memory_mut(|m| m.data.get_persisted::<Vec2>(self.id.0))
+                .unwrap_or(default_size);
+
             let state = self.state.clone();
             let parent = context.clone();
+            let id = self.id.0;
             context.show_viewport_deferred(
                 self.id,
                 egui::ViewportBuilder::default()
                     .with_title(title)
                     .with_active(true)
-                    .with_inner_size(default_size),
+                    .with_inner_size(size),
                 move |context, class| {
                     if class != ViewportClass::Deferred {
                         panic!("Platform does not seem to support creating windows");
@@ -43,6 +48,9 @@ impl<S: WindowState> DeferredWindow<S> {
 
                     let mut state = state.lock();
                     state.render(context);
+
+                    let screen_rect = context.input(|i| i.screen_rect);
+                    context.memory_mut(|m| m.data.insert_persisted(id, screen_rect.size()));
 
                     if context.input(|r| r.viewport().close_requested()) {
                         state.close();

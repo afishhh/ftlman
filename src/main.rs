@@ -1078,7 +1078,7 @@ impl eframe::App for App {
                 });
         }
 
-        self.sandbox.render(ctx, "XML Sandbox", egui::vec2(500., 500.));
+        self.sandbox.render(ctx, "XML Sandbox", egui::vec2(620., 480.));
     }
 }
 
