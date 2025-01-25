@@ -1249,16 +1249,20 @@ impl OpenModHandle<'_> {
                     let entry = result?;
 
                     if entry.file_type().is_file() {
-                        out.push(
-                            entry
-                                .path()
-                                .strip_prefix(&path)
-                                .unwrap()
-                                .to_str()
-                                // TODO: don't unwrap this
-                                .unwrap()
-                                .to_string(),
-                        );
+                        let components = entry.path().strip_prefix(&path).unwrap().components();
+                        let mut output = String::new();
+                        for component in components {
+                            if !output.is_empty() {
+                                output.push('/');
+                            }
+
+                            match component {
+                                std::path::Component::Normal(os_str) => output.push_str(os_str.to_str().unwrap()),
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        out.push(output);
                     }
                 }
 
