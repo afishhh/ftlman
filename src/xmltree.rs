@@ -232,13 +232,21 @@ fn write<W: Write>(writer: &mut quick_xml::Writer<W>, element: &Element) -> Resu
         })
     }
 
-    writer.write_event(quick_xml::events::Event::Start(start.borrow()))?;
+    if element
+        .children
+        .iter()
+        .all(|child| child.as_text().is_some_and(|text| text.is_empty()))
+    {
+        writer.write_event(quick_xml::events::Event::Empty(start.borrow()))?;
+    } else {
+        writer.write_event(quick_xml::events::Event::Start(start.borrow()))?;
 
-    for node in element.children.iter() {
-        write_node!(writer, node, Element(element) => write(writer, element)?);
+        for node in element.children.iter() {
+            write_node!(writer, node, Element(element) => write(writer, element)?);
+        }
+
+        writer.write_event(quick_xml::events::Event::End(start.to_end()))?;
     }
-
-    writer.write_event(quick_xml::events::Event::End(start.to_end()))?;
 
     Ok(())
 }
