@@ -301,16 +301,29 @@ impl WindowState for Sandbox {
                                             *regex = Regex::new(needle).ok().filter(|_| !needle.is_empty());
                                             do_scroll = regex.is_some() && text_r.changed();
 
+                                            let current_range = self.output_find_matches.get(*idx).cloned();
+                                            let mut new_idx = None;
+
                                             self.output_find_matches.clear();
                                             if let (Some(Output::ResultXml(output)), Some(re)) =
                                                 (self.output.as_ref(), regex)
                                             {
                                                 for m in re.find_iter(output) {
-                                                    self.output_find_matches.push(m.range());
+                                                    let range = m.range();
+
+                                                    if new_idx.is_none()
+                                                        && current_range
+                                                            .as_ref()
+                                                            .is_some_and(|current| range.start >= current.start)
+                                                    {
+                                                        new_idx = Some(self.output_find_matches.len());
+                                                    }
+
+                                                    self.output_find_matches.push(range);
                                                 }
                                             }
 
-                                            *idx = (*idx).clamp(0, self.output_find_matches.len());
+                                            *idx = new_idx.unwrap_or(0);
                                             self.output_find_invalidated = false;
                                             ui.ctx().request_repaint();
                                         }
