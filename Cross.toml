@@ -12,6 +12,12 @@ pre-build = [
 
 [target.x86_64-apple-darwin]
 image = "ghcr.io/cross-rs/x86_64-apple-darwin-cross:local"
+env.passthrough = [
+  "MACOSX_DEPLOYMENT_TARGET=10.12"
+]
 
 [target.aarch64-apple-darwin]
 image = "ghcr.io/cross-rs/aarch64-apple-darwin-cross:local"
+env.passthrough = [
+  "MACOSX_DEPLOYMENT_TARGET=10.12"
+]
