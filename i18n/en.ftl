@@ -42,8 +42,14 @@ pathedit-tooltip =
 findftl-failed-title = FTL directory autodetection failed
 
 sandbox-button = XML Sandbox
+sandbox-title = {sandbox-button}
 sandbox-open-failed = Failed to open XML Sandbox
 sandbox-editor-hint = Type append xml here to apply it to the selected file
+sandbox-mode-label = Mode
+sandbox-mode-xml = XML append
+sandbox-mode-lua = Lua append
+sandbox-patch = Patch
+sandbox-patch-on-change = Patch on change
 
 settings-button = Settings
 settings-title = {settings-button}

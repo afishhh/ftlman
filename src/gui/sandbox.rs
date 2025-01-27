@@ -1,4 +1,4 @@
-use std::{ops::Range, path::Path, sync::Arc};
+use std::{borrow::Cow, ops::Range, path::Path, sync::Arc};
 
 use anyhow::{Error, Result};
 use eframe::egui::{
@@ -23,10 +23,10 @@ enum PatchMode {
 }
 
 impl PatchMode {
-    fn name(&self) -> &'static str {
+    fn name(&self) -> Cow<'static, str> {
         match self {
-            PatchMode::XmlAppend => "XML append",
-            PatchMode::LuaAppend => "Lua append",
+            PatchMode::XmlAppend => l!("sandbox-mode-xml"),
+            PatchMode::LuaAppend => l!("sandbox-mode-lua"),
         }
     }
 
@@ -162,14 +162,14 @@ impl WindowState for Sandbox {
         egui::TopBottomPanel::top("sandbox header").show(ctx, |ui| {
             ui.add_space(5.);
             ui.horizontal(|ui| {
-                let height = ui.heading("XML Sandbox").rect.height();
+                let height = ui.heading(l!("sandbox-title")).rect.height();
                 ui.allocate_ui_with_layout(
                     egui::vec2(ui.available_width(), height),
                     Layout::right_to_left(egui::Align::Center),
                     |ui| {
-                        self.needs_update |= ui.button("Patch").clicked();
+                        self.needs_update |= ui.button(l!("sandbox-patch")).clicked();
 
-                        egui::ComboBox::new("sandbox mode combobox", "Mode")
+                        egui::ComboBox::new("sandbox mode combobox", l!("sandbox-mode-label"))
                             .selected_text(self.patch_mode.name())
                             .show_ui(ui, |ui| {
                                 for mode in PATCH_MODES {
@@ -179,7 +179,7 @@ impl WindowState for Sandbox {
                                 }
                             });
 
-                        ui.checkbox(&mut self.patch_on_change, "Patch on change")
+                        ui.checkbox(&mut self.patch_on_change, l!("sandbox-patch-on-change"))
                     },
                 )
             });

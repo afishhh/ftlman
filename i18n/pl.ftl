@@ -40,8 +40,12 @@ pathedit-tooltip =
 findftl-failed-title = Wykrywanie folderu FTL nie powiodło się
 
 sandbox-button = Piaskownica XML
+sandbox-title = {sandbox-button}
 sandbox-open-failed = Nie udało się otworzyć Piaskownicy XML
 sandbox-editor-hint = Wpisz tutaj append XML aby zaaplikować go do wybranego pliku
+sandbox-mode-label = Tryb
+sandbox-patch-on-change = Wykonaj przy zmianie
+sandbox-patch = Wykonaj
 
 settings-button = Ustawienia
 settings-title = {settings-button}
