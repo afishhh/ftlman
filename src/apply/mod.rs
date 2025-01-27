@@ -253,7 +253,7 @@ impl VirtualFileTree {
 
         for path in paths {
             let mut current = &mut root;
-            let mut it = path.as_ref().split('.');
+            let mut it = path.as_ref().split('/');
             let last = it.next_back().unwrap();
             for component in it {
                 match current
@@ -283,7 +283,7 @@ impl VirtualFileTree {
             VirtualFileTree::File => return None,
             VirtualFileTree::Directory(map) => map,
         };
-        let mut it = path.split('.');
+        let mut it = path.split('/');
         let last = it.next_back().unwrap();
         for component in it {
             match current.get_mut(component)? {
@@ -339,7 +339,7 @@ impl VirtualFileTree {
             VirtualFileTree::File => return Err(std::io::ErrorKind::NotADirectory.into()),
             VirtualFileTree::Directory(map) => map,
         };
-        let mut it = path.split('.');
+        let mut it = path.split('/');
         let last = it.next_back().unwrap();
         for component in it {
             match current
