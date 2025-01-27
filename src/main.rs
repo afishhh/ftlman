@@ -285,6 +285,13 @@ impl CurrentTask {
             CurrentTask::None => true,
         }
     }
+
+    pub fn is_apply(&self) -> bool {
+        match self {
+            CurrentTask::Apply(p) => p.ready().is_none(),
+            _ => false,
+        }
+    }
 }
 
 static ERROR_IDX: AtomicU64 = AtomicU64::new(0);
@@ -476,6 +483,8 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_visuals(self.visuals.clone());
 
+        let is_sandbox_open = self.sandbox.state().is_open();
+
         egui::TopBottomPanel::top("app_main_top_panel").show(ctx, |ui| {
             ui.add_space(5.);
 
@@ -494,7 +503,7 @@ impl eframe::App for App {
 
                     if ui
                         .add_enabled(
-                            !self.sandbox.state().is_open() && self.settings.ftl_directory.is_some(),
+                            !is_sandbox_open && self.settings.ftl_directory.is_some() && !self.current_task.is_apply(),
                             egui::Button::new(l!("sandbox-button")),
                         )
                         .clicked()
@@ -502,6 +511,8 @@ impl eframe::App for App {
                         if let Err(e) = self.sandbox.state().open(self.settings.ftl_directory.as_ref().unwrap()) {
                             self.error_popups
                                 .push(ErrorPopup::create_and_log(l!("sandbox-open-failed").into_owned(), &e))
+                        } else {
+                            ctx.request_repaint();
                         }
                     }
                 })
@@ -516,7 +527,7 @@ impl eframe::App for App {
                     ui.label(l!("mods-title"));
 
                     let mut lock = self.shared.lock();
-                    let modifiable = !lock.locked && self.current_task.is_idle();
+                    let modifiable = !lock.locked && self.current_task.is_idle() && !is_sandbox_open;
 
                     ui.add_enabled_ui(modifiable, |ui| {
                         if ui.button(l!("mods-unselect-all")).clicked() {
