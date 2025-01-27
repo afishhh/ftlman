@@ -79,17 +79,38 @@ impl Sandbox {
     }
 
     pub fn open(&mut self, path: &Path) -> Result<()> {
-        let pkg = Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?;
+        let previously_open_name = self.current_file.as_ref().map(|c| self.pkg_names[c.index].clone());
+
+        let mut pkg = Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?;
         self.pkg_names = pkg.paths().filter(|&name| name.ends_with(".xml")).cloned().collect();
         self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
+        self.current_file = previously_open_name.and_then(|previous_name| {
+            self.pkg_names
+                .iter()
+                .position(|c| c == &previous_name)
+                .and_then(|index| {
+                    // TODO: it would be really nice if this was a function
+                    //       when partial borrowing finally?
+                    let content = match pkg
+                        .open(&self.pkg_names[index])
+                        .map_err(Error::from)
+                        .and_then(|r| std::io::read_to_string(r).map_err(Error::from))
+                    {
+                        Ok(content) => Arc::new(content),
+                        Err(err) => {
+                            self.output = Some(Output::Error(err));
+                            return None;
+                        }
+                    };
+
+                    Some(CurrentFile { index, content })
+                })
+        });
+        self.output = None;
+        self.patcher = None;
+        self.needs_update = true;
         self.pkg = Some(pkg);
-        if let Some(current) = self.current_file.as_ref().map(|c| c.index) {
-            if self.pkg_names.len() <= current {
-                self.current_file = None;
-                self.output = None;
-            }
-        }
 
         Ok(())
     }
