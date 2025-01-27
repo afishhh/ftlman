@@ -46,7 +46,9 @@ pub struct Sandbox {
 
     search_text: String,
     patch_text: String,
+
     patch_mode: PatchMode,
+    patch_on_change: bool,
 
     current_file: Option<CurrentFile>,
     patcher: Option<Promise<Result<String, Error>>>,
@@ -92,7 +94,10 @@ impl Sandbox {
             filtered_pkg_names: Vec::new(),
             search_text: String::new(),
             patch_text: String::new(),
+
             patch_mode: PatchMode::XmlAppend,
+            patch_on_change: true,
+
             current_file: None,
             patcher: None,
             output: None,
@@ -162,6 +167,8 @@ impl WindowState for Sandbox {
                     egui::vec2(ui.available_width(), height),
                     Layout::right_to_left(egui::Align::Center),
                     |ui| {
+                        self.needs_update |= ui.button("Patch").clicked();
+
                         egui::ComboBox::new("sandbox mode combobox", "Mode")
                             .selected_text(self.patch_mode.name())
                             .show_ui(ui, |ui| {
@@ -171,13 +178,13 @@ impl WindowState for Sandbox {
                                     }
                                 }
                             });
+
+                        ui.checkbox(&mut self.patch_on_change, "Patch on change")
                     },
                 )
             });
             ui.add_space(5.);
         });
-
-        let mut rerun_patch = self.needs_update;
 
         egui::SidePanel::left("sandbox files").max_width(225.0).show(ctx, |ui| {
             ui.add_space(ui.spacing().window_margin.top);
@@ -220,7 +227,7 @@ impl WindowState for Sandbox {
                                     }
                                 };
 
-                                rerun_patch = true;
+                                self.needs_update = true;
                                 self.current_file = Some(CurrentFile { index: *i, content });
                                 ctx.request_repaint();
                             }
@@ -240,7 +247,7 @@ impl WindowState for Sandbox {
         }
 
         let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
-        let mut layouter = move |ui: &Ui, text: &str, width: f32, language: &'static str| {
+        let layouter = move |ui: &Ui, text: &str, width: f32, language: &'static str| {
             let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, language);
             layout_job.wrap.max_width = width;
             ui.fonts(|f| f.layout_job(layout_job))
@@ -411,7 +418,7 @@ impl WindowState for Sandbox {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(document) = self.current_file.as_ref().map(|c| c.content.clone()) {
-                if egui::ScrollArea::vertical()
+                let changed = egui::ScrollArea::vertical()
                     .show(ui, |ui| {
                         ui.add_sized(
                             ui.available_size(),
@@ -423,9 +430,10 @@ impl WindowState for Sandbox {
                         )
                     })
                     .inner
-                    .changed()
-                    || rerun_patch
-                {
+                    .changed();
+                self.needs_update |= changed & self.patch_on_change;
+
+                if self.needs_update {
                     let patch = self.patch_text.clone();
                     let ctx = ctx.clone();
                     if self.patcher.as_ref().is_none_or(|p| p.ready().is_some()) {
@@ -444,6 +452,7 @@ impl WindowState for Sandbox {
                             ctx.request_repaint_after_secs(0.01);
                             result
                         }));
+                        self.needs_update = false;
                     } else {
                         self.needs_update = true;
                     }
