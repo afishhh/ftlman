@@ -527,7 +527,7 @@ impl eframe::App for App {
                     ui.label(l!("mods-title"));
 
                     let mut lock = self.shared.lock();
-                    let modifiable = !lock.locked && self.current_task.is_idle() && !is_sandbox_open;
+                    let modifiable = !lock.locked && self.current_task.is_idle();
 
                     ui.add_enabled_ui(modifiable, |ui| {
                         if ui.button(l!("mods-unselect-all")).clicked() {
@@ -541,7 +541,7 @@ impl eframe::App for App {
                     ui.with_layout(egui::Layout::right_to_left(eframe::emath::Align::Min), |ui| {
                         let apply = ui
                             .add_enabled(
-                                modifiable && self.settings.ftl_directory.is_some(),
+                                modifiable && self.settings.ftl_directory.is_some() && !is_sandbox_open,
                                 egui::Button::new(l!("mods-apply-button")),
                             )
                             .on_hover_text_at_pointer(l!("mods-apply-tooltip"));
