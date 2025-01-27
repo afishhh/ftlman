@@ -10,9 +10,33 @@ use poll_promise::Promise;
 use regex::Regex;
 use silpkg::sync::Pkg;
 
-use crate::{apply, l, render_error_chain};
+use crate::{apply, l, lua::ModLuaRuntime, render_error_chain};
 
 use super::WindowState;
+
+const PATCH_MODES: [PatchMode; 2] = [PatchMode::XmlAppend, PatchMode::LuaAppend];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PatchMode {
+    XmlAppend,
+    LuaAppend,
+}
+
+impl PatchMode {
+    fn name(&self) -> &'static str {
+        match self {
+            PatchMode::XmlAppend => "XML append",
+            PatchMode::LuaAppend => "Lua append",
+        }
+    }
+
+    fn language(&self) -> &'static str {
+        match self {
+            PatchMode::XmlAppend => "xml",
+            PatchMode::LuaAppend => "lua",
+        }
+    }
+}
 
 pub struct Sandbox {
     // If None then the window is closed.
@@ -22,6 +46,7 @@ pub struct Sandbox {
 
     search_text: String,
     patch_text: String,
+    patch_mode: PatchMode,
 
     current_file: Option<CurrentFile>,
     patcher: Option<Promise<Result<String, Error>>>,
@@ -67,6 +92,7 @@ impl Sandbox {
             filtered_pkg_names: Vec::new(),
             search_text: String::new(),
             patch_text: String::new(),
+            patch_mode: PatchMode::XmlAppend,
             current_file: None,
             patcher: None,
             output: None,
@@ -130,7 +156,24 @@ impl WindowState for Sandbox {
 
         egui::TopBottomPanel::top("sandbox header").show(ctx, |ui| {
             ui.add_space(5.);
-            ui.heading("XML Sandbox");
+            ui.horizontal(|ui| {
+                let height = ui.heading("XML Sandbox").rect.height();
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), height),
+                    Layout::right_to_left(egui::Align::Center),
+                    |ui| {
+                        egui::ComboBox::new("sandbox mode combobox", "Mode")
+                            .selected_text(self.patch_mode.name())
+                            .show_ui(ui, |ui| {
+                                for mode in PATCH_MODES {
+                                    if ui.selectable_label(self.patch_mode == mode, mode.name()).clicked() {
+                                        self.patch_mode = mode;
+                                    }
+                                }
+                            });
+                    },
+                )
+            });
             ui.add_space(5.);
         });
 
@@ -197,8 +240,8 @@ impl WindowState for Sandbox {
         }
 
         let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
-        let mut layouter = move |ui: &Ui, text: &str, width: f32| {
-            let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, "xml");
+        let mut layouter = move |ui: &Ui, text: &str, width: f32, language: &'static str| {
+            let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, language);
             layout_job.wrap.max_width = width;
             ui.fonts(|f| f.layout_job(layout_job))
         };
@@ -306,7 +349,7 @@ impl WindowState for Sandbox {
                                     selection_cursor = Some(ccrange);
                                 }
 
-                                let mut galley = layouter(ui, xml, ui.available_width());
+                                let mut galley = layouter(ui, xml, ui.available_width(), "xml");
                                 let selection_crange = selection_cursor.map(|ccrange| egui::text::CursorRange {
                                     primary: galley.from_ccursor(ccrange.primary),
                                     secondary: galley.from_ccursor(ccrange.secondary),
@@ -375,7 +418,7 @@ impl WindowState for Sandbox {
                             egui::TextEdit::multiline(&mut self.patch_text)
                                 .id(egui::Id::new("xml sandbox patch editor"))
                                 .hint_text(l!("sandbox-editor-hint"))
-                                .layouter(&mut layouter)
+                                .layouter(&mut |ui, text, width| layouter(ui, text, width, self.patch_mode.language()))
                                 .code_editor(),
                         )
                     })
@@ -387,8 +430,16 @@ impl WindowState for Sandbox {
                     let ctx = ctx.clone();
                     if self.patcher.as_ref().is_none_or(|p| p.ready().is_some()) {
                         let ctx = ctx.clone();
+                        let mode = self.patch_mode;
                         self.patcher = Some(Promise::spawn_thread("sandbox patcher", move || {
-                            let result = apply::apply_one_xml(&document, &patch, apply::XmlAppendType::Append);
+                            let result = match mode {
+                                PatchMode::XmlAppend => {
+                                    apply::apply_one_xml(&document, &patch, apply::XmlAppendType::Append)
+                                }
+                                PatchMode::LuaAppend => ModLuaRuntime::new()
+                                    .map_err(anyhow::Error::from)
+                                    .and_then(|rt| apply::apply_one_lua(&document, &patch, &rt)),
+                            };
                             // FIXME: Improve handling of background patching
                             ctx.request_repaint_after_secs(0.01);
                             result
