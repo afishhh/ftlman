@@ -32,6 +32,22 @@ function _fetch_mod_wget() {
 		wget -O "$@"
 }
 
+function _fetch_mod_local() { true; }
+
+function zip_dir_to_file() {
+	if hash 7z 2>/dev/null; then
+		7z a -r "$2" "$1"/*
+	else
+		echo "No supported zip program is available" >&2
+		exit 1
+	fi
+}
+
+function _fetch_mod_ziplocal() {
+	[[ -e "$1" ]] ||
+		zip_dir_to_file "$2" "$1"
+}
+
 function download_mod() {
 	fetcher="$1"
 	name="$2"
