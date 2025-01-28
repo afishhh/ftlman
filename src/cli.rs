@@ -50,6 +50,7 @@ pub struct AppendCommand {
 }
 
 #[derive(Parser)]
+// Runs a lua script using ftlman's lua runtime.
 pub struct LuaRunCommand {
     script: PathBuf,
     #[clap(long = "print-arena-stats")]
