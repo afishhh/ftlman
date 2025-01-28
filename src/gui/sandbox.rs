@@ -1,20 +1,171 @@
-use std::{borrow::Cow, ops::Range, path::Path, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    ops::Range,
+    path::Path,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
+    },
+};
 
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use eframe::egui::{
     self, scroll_area, text::CCursor, text_selection::visuals::paint_text_selection, vec2, Color32, Id, Layout,
     TextEdit, Ui,
 };
 use egui_extras::syntax_highlighting;
-use poll_promise::Promise;
+use log::info;
 use regex::Regex;
 use silpkg::sync::Pkg;
 
-use crate::{apply, l, lua::ModLuaRuntime, render_error_chain};
+use crate::{
+    apply::{self, LuaPkgFS},
+    l,
+    lua::{
+        io::{LuaFS, LuaFileStats, LuaFileType},
+        ModLuaRuntime,
+    },
+    render_error_chain,
+};
 
 use super::WindowState;
 
-const PATCH_MODES: [PatchMode; 2] = [PatchMode::XmlAppend, PatchMode::LuaAppend];
+struct PkgOverlayFS<'a> {
+    pkg: LuaPkgFS<'a>,
+    overlay: HashMap<String, Vec<u8>>,
+}
+
+impl LuaFS for PkgOverlayFS<'_> {
+    fn stat(&mut self, path: &str) -> std::io::Result<Option<crate::lua::io::LuaFileStats>> {
+        self.overlay.get(path).map_or_else(
+            || self.pkg.stat(path),
+            |b| {
+                Ok(Some(LuaFileStats {
+                    length: Some(b.len() as u64),
+                    kind: LuaFileType::File,
+                }))
+            },
+        )
+    }
+
+    fn ls(&mut self, path: &str) -> std::io::Result<Vec<crate::lua::io::LuaDirEnt>> {
+        self.pkg.1.ls(path)
+    }
+
+    fn read_whole(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
+        self.overlay
+            .get(path)
+            .map_or_else(|| self.pkg.read_whole(path), |b| Ok(b.clone()))
+    }
+
+    fn write_whole(&mut self, path: &str, data: &[u8]) -> std::io::Result<()> {
+        self.pkg.1.write(path, || {
+            self.overlay.insert(path.to_owned(), data.to_vec());
+            Ok(())
+        })
+    }
+}
+
+struct Shared {
+    output: Mutex<Option<Output>>,
+    running: AtomicBool,
+}
+
+type SharedArc = Arc<Shared>;
+
+enum PatchWorkerCommand {
+    Patch {
+        mode: PatchMode,
+        patch: String,
+        source_path: String,
+        waker: egui::Context,
+    },
+}
+
+struct PatchWorker {
+    pkg: Pkg<std::fs::File>,
+
+    receiver: mpsc::Receiver<PatchWorkerCommand>,
+    shared: SharedArc,
+}
+
+impl PatchWorker {
+    fn start(pkg: Pkg<std::fs::File>, output: SharedArc) -> mpsc::SyncSender<PatchWorkerCommand> {
+        let (csend, crecv) = mpsc::sync_channel(0);
+
+        std::thread::spawn({
+            move || {
+                (Self {
+                    pkg,
+                    receiver: crecv,
+                    shared: output,
+                })
+                .main()
+            }
+        });
+
+        csend
+    }
+
+    fn main(&mut self) {
+        while let Ok(command) = self.receiver.recv() {
+            match command {
+                PatchWorkerCommand::Patch {
+                    mode,
+                    patch,
+                    source_path,
+                    waker,
+                } => {
+                    let source_text = match self
+                        .pkg
+                        .open(&source_path)
+                        .map_err(std::io::Error::from)
+                        .and_then(std::io::read_to_string)
+                    {
+                        Ok(text) => text,
+                        Err(err) => {
+                            let mut lock = self.shared.output.lock().unwrap();
+                            *lock = Some(Output::Error(err.into()));
+                            self.shared.running.store(false, Ordering::Release);
+                            continue;
+                        }
+                    };
+
+                    let result = match mode {
+                        PatchMode::XmlAppend => {
+                            apply::apply_one_xml(&source_text, &patch, apply::XmlAppendType::Append)
+                        }
+                        PatchMode::LuaAppend => ModLuaRuntime::new().map_err(anyhow::Error::from).and_then(|rt| {
+                            let mut overlay = PkgOverlayFS {
+                                pkg: LuaPkgFS::new(&mut self.pkg).context("Failed to create archive filesystem")?,
+                                overlay: HashMap::new(),
+                            };
+                            match rt.with_filesystems([("pkg", &mut overlay as &mut dyn LuaFS)], || {
+                                Ok(apply::apply_one_lua(&source_text, &patch, &rt))
+                            }) {
+                                Ok(Ok(ok)) => Ok(ok),
+                                Err(err) => Err(anyhow::Error::from(err)),
+                                Ok(Err(err)) => Err(err),
+                            }
+                        }),
+                    };
+
+                    *self.shared.output.lock().unwrap() = Some(match result {
+                        Ok(patched) => Output::ResultXml {
+                            content: patched,
+                            find_invalidated: true,
+                        },
+                        Err(error) => Output::Error(error),
+                    });
+                    self.shared.running.store(false, Ordering::Release);
+                    waker.request_repaint();
+                }
+            }
+        }
+        info!("Sandbox patch worker shutting down")
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PatchMode {
@@ -23,6 +174,8 @@ enum PatchMode {
 }
 
 impl PatchMode {
+    const ALL: [PatchMode; 2] = [PatchMode::XmlAppend, PatchMode::LuaAppend];
+
     fn name(&self) -> Cow<'static, str> {
         match self {
             PatchMode::XmlAppend => l!("sandbox-mode-xml"),
@@ -40,7 +193,9 @@ impl PatchMode {
 
 pub struct Sandbox {
     // If None then the window is closed.
-    pkg: Option<Pkg<std::fs::File>>,
+    pkg: Option<mpsc::SyncSender<PatchWorkerCommand>>,
+    shared: SharedArc,
+
     pkg_names: Vec<String>,
     filtered_pkg_names: Vec<(usize, String)>,
 
@@ -50,12 +205,9 @@ pub struct Sandbox {
     patch_mode: PatchMode,
     patch_on_change: bool,
 
-    current_file: Option<CurrentFile>,
-    patcher: Option<Promise<Result<String, Error>>>,
-    output: Option<Output>,
+    current_file: Option<usize>,
     output_find_box: (String, Option<Regex>, usize),
     output_find_matches: Vec<Range<usize>>,
-    output_find_invalidated: bool,
     // HACK: I don't even want to write about this anymore.
     output_scroll_id: Option<Id>,
 
@@ -64,13 +216,8 @@ pub struct Sandbox {
 }
 
 enum Output {
-    ResultXml(String),
+    ResultXml { content: String, find_invalidated: bool },
     Error(Error),
-}
-
-struct CurrentFile {
-    index: usize,
-    content: Arc<String>,
 }
 
 // HACK?: kind of hard to refactor into a function
@@ -99,49 +246,29 @@ impl Sandbox {
             patch_on_change: true,
 
             current_file: None,
-            patcher: None,
-            output: None,
+            shared: Arc::new(Shared {
+                output: Mutex::new(None),
+                running: AtomicBool::new(false),
+            }),
             output_find_box: (String::new(), None, 0),
             output_find_matches: Vec::new(),
-            output_find_invalidated: false,
             output_scroll_id: None,
             needs_update: false,
         }
     }
 
     pub fn open(&mut self, path: &Path) -> Result<()> {
-        let previously_open_name = self.current_file.as_ref().map(|c| self.pkg_names[c.index].clone());
+        let previously_open_name = self.current_file.map(|c| self.pkg_names[c].clone());
 
-        let mut pkg = Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?;
+        let pkg = Pkg::parse(std::fs::File::open(path.join("ftl.dat"))?)?;
         self.pkg_names = pkg.paths().filter(|&name| name.ends_with(".xml")).cloned().collect();
         self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
-        self.current_file = previously_open_name.and_then(|previous_name| {
-            self.pkg_names
-                .iter()
-                .position(|c| c == &previous_name)
-                .and_then(|index| {
-                    // TODO: it would be really nice if this was a function
-                    //       when partial borrowing finally?
-                    let content = match pkg
-                        .open(&self.pkg_names[index])
-                        .map_err(Error::from)
-                        .and_then(|r| std::io::read_to_string(r).map_err(Error::from))
-                    {
-                        Ok(content) => Arc::new(content),
-                        Err(err) => {
-                            self.output = Some(Output::Error(err));
-                            return None;
-                        }
-                    };
-
-                    Some(CurrentFile { index, content })
-                })
-        });
-        self.output = None;
-        self.patcher = None;
+        *self.shared.output.lock().unwrap() = None;
+        self.current_file =
+            previously_open_name.and_then(|previous_name| self.pkg_names.iter().position(|c| c == &previous_name));
         self.needs_update = true;
-        self.pkg = Some(pkg);
+        self.pkg = Some(PatchWorker::start(pkg, self.shared.clone()));
 
         Ok(())
     }
@@ -172,7 +299,7 @@ impl WindowState for Sandbox {
                         egui::ComboBox::new("sandbox mode combobox", l!("sandbox-mode-label"))
                             .selected_text(self.patch_mode.name())
                             .show_ui(ui, |ui| {
-                                for mode in PATCH_MODES {
+                                for mode in PatchMode::ALL {
                                     if ui.selectable_label(self.patch_mode == mode, mode.name()).clicked() {
                                         self.patch_mode = mode;
                                     }
@@ -208,27 +335,15 @@ impl WindowState for Sandbox {
                     ui.spacing().interact_size.y,
                     self.filtered_pkg_names.len(),
                     |ui, range| {
-                        for (i, name) in self.filtered_pkg_names.iter().skip(range.start).take(range.len()) {
+                        for &(i, ref name) in self.filtered_pkg_names.iter().skip(range.start).take(range.len()) {
                             if !name.contains(&self.search_text) {
                                 continue;
                             }
 
-                            let is_current = self.current_file.as_ref().is_some_and(|n| n.index == *i);
+                            let is_current = self.current_file.is_some_and(|n| n == i);
                             if ui.selectable_label(is_current, name).clicked() && !is_current {
-                                let content = match pkg
-                                    .open(name)
-                                    .map_err(Error::from)
-                                    .and_then(|r| std::io::read_to_string(r).map_err(Error::from))
-                                {
-                                    Ok(content) => Arc::new(content),
-                                    Err(err) => {
-                                        self.output = Some(Output::Error(err));
-                                        continue;
-                                    }
-                                };
-
                                 self.needs_update = true;
-                                self.current_file = Some(CurrentFile { index: *i, content });
+                                self.current_file = Some(i);
                                 ctx.request_repaint();
                             }
                         }
@@ -237,15 +352,6 @@ impl WindowState for Sandbox {
             });
         });
 
-        if let Some(promise) = self.patcher.take_if(|p| p.ready().is_some()) {
-            self.output = Some(match promise.try_take() {
-                Ok(Ok(patched)) => Output::ResultXml(patched),
-                Ok(Err(error)) => Output::Error(error),
-                Err(_) => unreachable!(),
-            });
-            self.output_find_invalidated = true;
-        }
-
         let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
         let layouter = move |ui: &Ui, text: &str, width: f32, language: &'static str| {
             let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, language);
@@ -253,14 +359,17 @@ impl WindowState for Sandbox {
             ui.fonts(|f| f.layout_job(layout_job))
         };
 
-        if let Some(output) = self.output.as_ref() {
+        if let Some(output) = &mut *self.shared.output.lock().unwrap() {
             egui::SidePanel::right("sandbox output")
                 .min_width(300.0)
                 .show(ctx, |ui| {
                     ui.add_space(ui.spacing().window_margin.top);
 
                     match output {
-                        Output::ResultXml(xml) => {
+                        Output::ResultXml {
+                            content: xml,
+                            find_invalidated,
+                        } => {
                             let top = ui.next_widget_position();
 
                             ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
@@ -296,7 +405,7 @@ impl WindowState for Sandbox {
 
                                         let text_r = text_out.response;
 
-                                        if text_r.changed() || self.output_find_invalidated {
+                                        if text_r.changed() || *find_invalidated {
                                             // FIXME: this is a silent error
                                             *regex = Regex::new(needle).ok().filter(|_| !needle.is_empty());
                                             do_scroll = regex.is_some() && text_r.changed();
@@ -305,10 +414,8 @@ impl WindowState for Sandbox {
                                             let mut new_idx = None;
 
                                             self.output_find_matches.clear();
-                                            if let (Some(Output::ResultXml(output)), Some(re)) =
-                                                (self.output.as_ref(), regex)
-                                            {
-                                                for m in re.find_iter(output) {
+                                            if let Some(re) = regex {
+                                                for m in re.find_iter(xml) {
                                                     let range = m.range();
 
                                                     if new_idx.is_none()
@@ -324,7 +431,7 @@ impl WindowState for Sandbox {
                                             }
 
                                             *idx = new_idx.unwrap_or(0);
-                                            self.output_find_invalidated = false;
+                                            *find_invalidated = false;
                                             ui.ctx().request_repaint();
                                         }
 
@@ -430,45 +537,36 @@ impl WindowState for Sandbox {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(document) = self.current_file.as_ref().map(|c| c.content.clone()) {
-                let changed = egui::ScrollArea::vertical()
-                    .show(ui, |ui| {
-                        ui.add_sized(
-                            ui.available_size(),
-                            egui::TextEdit::multiline(&mut self.patch_text)
-                                .id(egui::Id::new("xml sandbox patch editor"))
-                                .hint_text(l!("sandbox-editor-hint"))
-                                .layouter(&mut |ui, text, width| layouter(ui, text, width, self.patch_mode.language()))
-                                .code_editor(),
-                        )
-                    })
-                    .inner
-                    .changed();
-                self.needs_update |= changed & self.patch_on_change;
+            let changed = egui::ScrollArea::vertical()
+                .show(ui, |ui| {
+                    ui.add_sized(
+                        ui.available_size(),
+                        egui::TextEdit::multiline(&mut self.patch_text)
+                            .id(egui::Id::new("xml sandbox patch editor"))
+                            .hint_text(l!("sandbox-editor-hint"))
+                            .layouter(&mut |ui, text, width| layouter(ui, text, width, self.patch_mode.language()))
+                            .code_editor(),
+                    )
+                })
+                .inner
+                .changed();
 
-                if self.needs_update {
-                    let patch = self.patch_text.clone();
-                    let ctx = ctx.clone();
-                    if self.patcher.as_ref().is_none_or(|p| p.ready().is_some()) {
-                        let ctx = ctx.clone();
-                        let mode = self.patch_mode;
-                        self.patcher = Some(Promise::spawn_thread("sandbox patcher", move || {
-                            let result = match mode {
-                                PatchMode::XmlAppend => {
-                                    apply::apply_one_xml(&document, &patch, apply::XmlAppendType::Append)
-                                }
-                                PatchMode::LuaAppend => ModLuaRuntime::new()
-                                    .map_err(anyhow::Error::from)
-                                    .and_then(|rt| apply::apply_one_lua(&document, &patch, &rt)),
-                            };
-                            // FIXME: Improve handling of background patching
-                            ctx.request_repaint_after_secs(0.01);
-                            result
-                        }));
-                        self.needs_update = false;
-                    } else {
-                        self.needs_update = true;
+            if let Some(current_index) = self.current_file {
+                self.needs_update |= changed & self.patch_on_change;
+                if self.needs_update && !self.shared.running.swap(true, Ordering::AcqRel) {
+                    if pkg
+                        .send(PatchWorkerCommand::Patch {
+                            mode: self.patch_mode,
+                            patch: self.patch_text.clone(),
+                            waker: ctx.clone(),
+                            source_path: self.pkg_names[current_index].clone(),
+                        })
+                        .is_err()
+                    {
+                        *self.shared.output.lock().unwrap() =
+                            Some(Output::Error(anyhow!("Patch thread disconnected!")));
                     }
+                    self.needs_update = false;
                 }
             }
         });
