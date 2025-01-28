@@ -5,8 +5,9 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc,
     },
+    time::Instant,
 };
 
 use anyhow::{anyhow, Context, Error, Result};
@@ -15,7 +16,7 @@ use eframe::egui::{
     TextEdit, Ui,
 };
 use egui_extras::syntax_highlighting;
-use log::info;
+use log::debug;
 use parking_lot::Mutex;
 use regex::Regex;
 use silpkg::sync::Pkg;
@@ -118,6 +119,7 @@ impl PatchWorker {
                     source_path,
                     waker,
                 } => {
+                    let start = Instant::now();
                     let source_text = match self
                         .pkg
                         .open(&source_path)
@@ -150,6 +152,8 @@ impl PatchWorker {
                             }
                         }),
                     };
+                    let end = Instant::now();
+                    debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
 
                     *self.shared.output.lock() = Some(match result {
                         Ok(patched) => Output::ResultXml {
@@ -163,7 +167,7 @@ impl PatchWorker {
                 }
             }
         }
-        info!("Sandbox patch worker shutting down")
+        debug!("Sandbox patch worker shutting down")
     }
 }
 
