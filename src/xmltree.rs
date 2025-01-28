@@ -251,6 +251,12 @@ fn write<W: Write>(writer: &mut quick_xml::Writer<W>, element: &Element) -> Resu
     Ok(())
 }
 
+fn write_node<W: Write>(writer: &mut quick_xml::Writer<W>, node: &Node) -> Result<(), quick_xml::Error> {
+    write_node!(writer, node, Element(element) => write(writer, element)?);
+
+    Ok(())
+}
+
 impl Element {
     pub fn parse_all_sloppy(text: &str) -> Result<Vec<Node>, quick_xml::Error> {
         let mut reader = quick_xml::Reader::from_str(text);
@@ -331,5 +337,11 @@ impl Element {
         } else {
             self.name.to_string()
         }
+    }
+}
+
+impl Node {
+    pub fn write_to<W: Write>(&self, writer: &mut quick_xml::Writer<W>) -> Result<(), quick_xml::Error> {
+        write_node(writer, self)
     }
 }

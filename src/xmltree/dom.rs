@@ -596,6 +596,10 @@ fn children_from_tree<'gc>(
     (first, last)
 }
 
+pub fn from_tree<'gc>(mc: &Mutation<'gc>, node: xmltree::Node) -> GcNode<'gc> {
+    from_tree_rec(mc, node, None)
+}
+
 pub fn to_tree(node: GcNode) -> xmltree::Node {
     let node = node.borrow();
     match node.kind() {

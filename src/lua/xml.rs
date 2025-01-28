@@ -238,24 +238,36 @@ impl_lua_node!(LuaElement);
 #[repr(transparent)]
 struct DynamicIntoLua(pub DynamicNode);
 
+fn todo_gc_into_lua<'gc>(
+    mc: &Mutation<'gc>,
+    roots: &DynamicRootSet<'gc>,
+    lua: &Lua,
+    node: GcNode<'gc>,
+) -> LuaResult<Option<LuaValue>> {
+    let kind = node.borrow().kind();
+
+    match kind {
+        dom::NodeKind::Element => LuaElement(roots.stash(mc, unsafe { dom::Element::downcast_gc_unchecked(node) }))
+            .into_lua(lua)
+            .map(Some),
+        dom::NodeKind::Text => LuaText(roots.stash(mc, unsafe { dom::Text::downcast_gc_unchecked(node) }))
+            .into_lua(lua)
+            .map(Some),
+        // TODO:
+        _ => Ok(None),
+    }
+}
+
 fn gc_into_lua<'gc>(
     mc: &Mutation<'gc>,
     roots: &DynamicRootSet<'gc>,
     lua: &Lua,
     node: GcNode<'gc>,
 ) -> LuaResult<LuaValue> {
-    let kind = node.borrow().kind();
-
-    match kind {
-        dom::NodeKind::Element => {
-            LuaElement(roots.stash(mc, unsafe { dom::Element::downcast_gc_unchecked(node) })).into_lua(lua)
-        }
-        dom::NodeKind::Comment => todo!(),
-        dom::NodeKind::CData => todo!(),
-        dom::NodeKind::Text => {
-            LuaText(roots.stash(mc, unsafe { dom::Text::downcast_gc_unchecked(node) })).into_lua(lua)
-        }
-        dom::NodeKind::ProcessingInstruction => todo!(),
+    match todo_gc_into_lua(mc, roots, lua, node) {
+        Ok(Some(ok)) => Ok(ok),
+        Ok(None) => todo!(),
+        Err(err) => Err(err),
     }
 }
 
@@ -738,27 +750,30 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 let xml_text = std::str::from_utf8(&xml_bytes)
                     .into_lua_err()
                     .context("input XML must be valid UTF-8")?;
+                let unwrapped = crate::apply::unwrap_xml_text(xml_text);
 
-                match crate::xmltree::Element::parse_sloppy(xml_text).into_lua_err()? {
-                    Some(root) => Ok(LuaElement(roots.stash(mc, dom::Element::from_tree(mc, root, None)))),
-                    None => Err(LuaError::runtime("XML text contained no root element")),
+                let mut result = LuaMultiValue::new();
+                let nodes = crate::xmltree::Element::parse_all_sloppy(&unwrapped).into_lua_err()?;
+                for node in nodes {
+                    if let Some(value) = todo_gc_into_lua(mc, roots, lua, dom::from_tree(mc, node))? {
+                        result.push_back(value);
+                    }
                 }
+                Ok(result)
             })
         })?,
     )?;
 
     table.raw_set(
         "stringify",
-        lua.create_function(|lua, node: LuaElement| {
-            lua.gc().mutate(|_mc, _| {
+        lua.create_function(|lua, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
+            lua.gc().mutate(|mc, _| {
                 let mut output = Vec::new();
-                crate::xmltree::Element::write_with_indent(
-                    &unsafe { (*node.0.as_ptr()).as_ref_cell().borrow().to_tree() },
-                    std::io::Cursor::new(&mut output),
-                    b' ',
-                    4,
-                )
-                .into_lua_err()?;
+                let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(&mut output), b' ', 4);
+
+                for node in nodes {
+                    dom::to_tree(node.into_node(mc)).write_to(&mut writer).into_lua_err()?;
+                }
 
                 Ok(lua.create_string(&output))
             })
