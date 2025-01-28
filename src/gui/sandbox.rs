@@ -16,6 +16,7 @@ use eframe::egui::{
 };
 use egui_extras::syntax_highlighting;
 use log::info;
+use parking_lot::Mutex;
 use regex::Regex;
 use silpkg::sync::Pkg;
 
@@ -125,8 +126,7 @@ impl PatchWorker {
                     {
                         Ok(text) => text,
                         Err(err) => {
-                            let mut lock = self.shared.output.lock().unwrap();
-                            *lock = Some(Output::Error(err.into()));
+                            *self.shared.output.lock() = Some(Output::Error(err.into()));
                             self.shared.running.store(false, Ordering::Release);
                             continue;
                         }
@@ -151,7 +151,7 @@ impl PatchWorker {
                         }),
                     };
 
-                    *self.shared.output.lock().unwrap() = Some(match result {
+                    *self.shared.output.lock() = Some(match result {
                         Ok(patched) => Output::ResultXml {
                             content: patched,
                             find_invalidated: true,
@@ -264,7 +264,7 @@ impl Sandbox {
         self.pkg_names = pkg.paths().filter(|&name| name.ends_with(".xml")).cloned().collect();
         self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
-        *self.shared.output.lock().unwrap() = None;
+        *self.shared.output.lock() = None;
         self.current_file =
             previously_open_name.and_then(|previous_name| self.pkg_names.iter().position(|c| c == &previous_name));
         self.needs_update = true;
@@ -360,7 +360,7 @@ impl WindowState for Sandbox {
             ui.fonts(|f| f.layout_job(layout_job))
         };
 
-        if let Some(output) = &mut *self.shared.output.lock().unwrap() {
+        if let Some(output) = &mut *self.shared.output.lock() {
             egui::SidePanel::right("sandbox output")
                 .min_width(300.0)
                 .show(ctx, |ui| {
@@ -568,8 +568,7 @@ impl WindowState for Sandbox {
                         })
                         .is_err()
                     {
-                        *self.shared.output.lock().unwrap() =
-                            Some(Output::Error(anyhow!("Patch thread disconnected!")));
+                        *self.shared.output.lock() = Some(Output::Error(anyhow!("Patch thread disconnected!")));
                     }
                     self.needs_update = false;
                 }
