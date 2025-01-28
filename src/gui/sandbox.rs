@@ -391,8 +391,12 @@ impl WindowState for Sandbox {
                                         let button_rr = ui.button("➡");
                                         // This is a left arrow in the egui font
                                         let button_lr = ui.button("⬅");
-                                        if !self.output_find_matches.is_empty() {
-                                            ui.label(format!("{}/{}", *idx + 1, self.output_find_matches.len()));
+                                        if !needle.is_empty() && regex.is_some() {
+                                            ui.label(format!(
+                                                "{}/{}",
+                                                *idx + usize::from(!self.output_find_matches.is_empty()),
+                                                self.output_find_matches.len()
+                                            ));
                                         }
                                         let text_out = ui
                                             .centered_and_justified(|ui| {
