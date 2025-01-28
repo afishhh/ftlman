@@ -205,7 +205,9 @@ macro_rules! write_node {
     ($writer: ident, $node: expr, Element($element_name: ident) => $element: expr) => {
         match $node {
             Node::Element($element_name) => $element,
-            Node::Comment(comment) => $writer.write_event(Event::Comment(BytesText::new(comment)))?,
+            Node::Comment(comment) => $writer.write_event(Event::Comment(BytesText::from_escaped(
+                quick_xml::escape::minimal_escape(comment),
+            )))?,
             Node::CData(cdata) => $writer.write_event(Event::CData(BytesCData::new(cdata)))?,
             Node::Text(text) => $writer.write_event(Event::Text(BytesText::from_escaped(
                 quick_xml::escape::minimal_escape(text),
