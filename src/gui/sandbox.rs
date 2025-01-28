@@ -302,6 +302,7 @@ impl WindowState for Sandbox {
                                 for mode in PatchMode::ALL {
                                     if ui.selectable_label(self.patch_mode == mode, mode.name()).clicked() {
                                         self.patch_mode = mode;
+                                        self.needs_update = true;
                                     }
                                 }
                             });
