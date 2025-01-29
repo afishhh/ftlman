@@ -665,8 +665,11 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                         .open(&name)
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
                     if name.ends_with(".txt") {
-                        pkg.insert(name.clone(), INSERT_FLAGS)?
-                            .write_all(read_encoded_text(reader)?.as_bytes())
+                        pkg.insert(name.clone(), INSERT_FLAGS)?.write_all(
+                            read_encoded_text(reader)
+                                .with_context(|| format!("Failed to decode {name} from mod {}", m.filename()))?
+                                .as_bytes(),
+                        )
                     } else {
                         std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?).map(|_| ())
                     }
