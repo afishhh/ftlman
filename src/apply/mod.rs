@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{btree_map::Entry, BTreeMap},
+    collections::{btree_map::Entry, BTreeMap, HashSet},
     fs::File,
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
@@ -30,11 +30,12 @@ mod append;
 lazy_static! {
     // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
     static ref WRAPPER_TAG_REGEX: Regex =
-        Regex::new("(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap();
+        Regex::new(r"(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap();
     static ref MOD_NAMESPACE_TAG_REGEX: Regex =
         Regex::new("<mod(|-append|-overwrite):.+>").unwrap();
     static ref IGNORED_FILES_REGEX: Regex =
-        Regex::new("[.]DS_Store$|(?:^|/)thumbs[.]db$|(?:^|/)[.]dropbox$|(?:^|/)~|~$|(?:^|/)#.+#$").unwrap();
+        Regex::new(r"[.]DS_Store$|(^|/)thumbs[.]db$|(^|/)[.]dropbox$|^~|~$|(^|/)#.+#$").unwrap();
+    static ref KNOWN_TOP_LEVEL_DIRS: Regex = Regex::new(r"^(audio|data|fonts|img|mod-appendix)/").unwrap();
 }
 
 #[derive(Debug)]
@@ -517,6 +518,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
         info!("Applying mod {}", mod_name);
 
         let mut handle = m.source.open()?;
+        let mut skipped_top_level_dirs = HashSet::new();
         let paths = handle.paths()?;
         let path_count = paths.len();
 
@@ -527,6 +529,17 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 (m.is_hyperspace_ftl && name == "example_layout_syntax.xml")
             {
                 trace!("Skipping {name}");
+                continue;
+            }
+
+            if !KNOWN_TOP_LEVEL_DIRS.is_match(&name) {
+                let mut dir = name;
+                dir.truncate(dir.find('/').unwrap_or(dir.len()));
+                // POV: HashSet::get_or_insert is unstable
+                if !skipped_top_level_dirs.contains(&dir) {
+                    warn!("Skipping unrecognized top-level directory {dir}");
+                    skipped_top_level_dirs.insert(dir);
+                }
                 continue;
             }
 
