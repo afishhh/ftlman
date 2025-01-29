@@ -552,7 +552,10 @@ impl WindowState for Sandbox {
                         ui.available_size(),
                         egui::TextEdit::multiline(&mut self.patch_text)
                             .id(egui::Id::new("xml sandbox patch editor"))
-                            .hint_text(l!("sandbox-editor-hint"))
+                            .hint_text(match self.patch_mode {
+                                PatchMode::XmlAppend => l!("sandbox-editor-hint-xml-append"),
+                                PatchMode::LuaAppend => l!("sandbox-editor-hint-lua-append"),
+                            })
                             .layouter(&mut |ui, text, width| layouter(ui, text, width, self.patch_mode.language()))
                             .code_editor(),
                     )
