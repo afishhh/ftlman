@@ -185,6 +185,10 @@ fn value_true() -> bool {
     true
 }
 
+fn value_false() -> bool {
+    false
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     mod_directory: PathBuf,
@@ -198,6 +202,8 @@ pub struct Settings {
     ftl_is_zip: bool,
     #[serde(default = "value_true")]
     repack_ftl_data: bool,
+    #[serde(default = "value_false")]
+    disable_hs_installer: bool,
     #[serde(default)]
     theme: ThemeSetting,
 }
@@ -242,6 +248,7 @@ impl Default for Settings {
             dirs_are_mods: true,
             ftl_is_zip: true,
             repack_ftl_data: true,
+            disable_hs_installer: false,
             theme: ThemeSetting {
                 colors: ThemeColorscheme::Dark,
                 opacity: 1.,
@@ -695,7 +702,9 @@ impl eframe::App for App {
                                         false
                                     }
                                     None => {
-                                        self.hyperspace_installer = Some(hyperspace::Installer::create(ftl_directory));
+                                        if !self.settings.disable_hs_installer {
+                                            self.hyperspace_installer = Some(hyperspace::Installer::create(ftl_directory));
+                                        }
                                         false
                                     },
                                 } {
@@ -1047,6 +1056,18 @@ impl eframe::App for App {
 
                     ui.checkbox(&mut self.settings.repack_ftl_data, l!("settings-repack-archive"))
                         .on_hover_text(l!("settings-repack-archive-tooltip"));
+
+                    if ui
+                        .checkbox(
+                            &mut self.settings.disable_hs_installer,
+                            l!("settings-disable-hs-installer"),
+                        )
+                        .changed()
+                        && self.settings.disable_hs_installer
+                    {
+                        self.hyperspace_installer = None;
+                        ctx.request_repaint();
+                    }
 
                     let mut visuals_changed = false;
                     egui::ComboBox::from_label(l!("settings-colorscheme"))

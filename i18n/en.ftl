@@ -57,6 +57,7 @@ settings-mod-dir = Mod directory
 settings-dirs-are-mods = Treat directories as mods
 settings-ftl-is-zip = Treat .ftl files as zipped mods
 settings-zips-are-mods = Treat zips as mods
+settings-disable-hs-installer = Disable Hyperspace installer
 settings-ftl-dir = FTL data directory
 settings-repack-archive = Repack FTL data archive
 settings-repack-archive-tooltip = 
