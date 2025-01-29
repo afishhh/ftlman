@@ -1005,7 +1005,7 @@ impl eframe::App for App {
                         .checkbox(&mut self.settings.zips_are_mods, l!("settings-zips-are-mods"))
                         .changed();
                     filters_changed |= ui
-                        .checkbox(&mut self.settings.ftl_is_zip, l!("settings-ftls-is-zip"))
+                        .checkbox(&mut self.settings.ftl_is_zip, l!("settings-ftl-is-zip"))
                         .changed();
 
                     if filters_changed {
