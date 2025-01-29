@@ -55,7 +55,7 @@ pub enum ApplyStage {
     Repacking,
 }
 
-fn unwrap_xml_text(xml_text: &str) -> Cow<'_, str> {
+pub fn unwrap_xml_text(xml_text: &str) -> Cow<'_, str> {
     WRAPPER_TAG_REGEX.replace_all(xml_text, "")
 }
 
@@ -242,7 +242,7 @@ pub fn apply_one_lua(document: &str, patch: &str, runtime: &ModLuaRuntime) -> Re
     })
 }
 
-enum VirtualFileTree {
+pub enum VirtualFileTree {
     File,
     Directory(BTreeMap<String, VirtualFileTree>),
 }
@@ -294,7 +294,7 @@ impl VirtualFileTree {
         current.get_mut(last)
     }
 
-    fn stat(
+    pub fn stat(
         &mut self,
         path: &str,
         on_file: impl FnOnce() -> std::io::Result<LuaFileStats>,
@@ -309,7 +309,7 @@ impl VirtualFileTree {
         }
     }
 
-    fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>> {
+    pub fn ls(&mut self, path: &str) -> std::io::Result<Vec<LuaDirEnt>> {
         match self.traverse(path) {
             Some(VirtualFileTree::Directory(children)) => Ok(children
                 .iter()
@@ -326,7 +326,7 @@ impl VirtualFileTree {
         }
     }
 
-    fn read(&mut self, path: &str, on_file: impl FnOnce() -> std::io::Result<Vec<u8>>) -> std::io::Result<Vec<u8>> {
+    pub fn read(&mut self, path: &str, on_file: impl FnOnce() -> std::io::Result<Vec<u8>>) -> std::io::Result<Vec<u8>> {
         match self.traverse(path) {
             Some(VirtualFileTree::Directory(_)) => Err(std::io::ErrorKind::IsADirectory.into()),
             Some(VirtualFileTree::File) => on_file(),
@@ -354,7 +354,7 @@ impl VirtualFileTree {
         Ok(current.entry(last.to_owned()))
     }
 
-    fn write(&mut self, path: &str, on_file: impl FnOnce() -> std::io::Result<()>) -> std::io::Result<()> {
+    pub fn write(&mut self, path: &str, on_file: impl FnOnce() -> std::io::Result<()>) -> std::io::Result<()> {
         match self.traverse_for_write(path)? {
             Entry::Occupied(entry) if matches!(entry.get(), VirtualFileTree::Directory(..)) => {
                 Err(std::io::ErrorKind::IsADirectory.into())
@@ -368,14 +368,22 @@ impl VirtualFileTree {
     }
 }
 
-struct LuaPkgFS<'a>(&'a mut Pkg<File>, VirtualFileTree);
+pub struct LuaPkgFS<'a>(&'a mut Pkg<File>, pub VirtualFileTree);
+
+impl<'a> LuaPkgFS<'a> {
+    pub fn new(pkg: &'a mut Pkg<File>) -> Result<Self> {
+        let vft = VirtualFileTree::from_paths(pkg.paths()).context("Failed to create virtual file tree")?;
+
+        Ok(Self(pkg, vft))
+    }
+}
 
 impl LuaFS for LuaPkgFS<'_> {
     fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>> {
         self.1.stat(path, || {
             let length = match self.0.metadata(path) {
                 Some(metadata) => metadata.uncompressed_size,
-                None => return Err(std::io::ErrorKind::NotFound.into()),
+                None => unreachable!(),
             };
 
             Ok(LuaFileStats {
@@ -460,11 +468,8 @@ fn make_lua_filesystems<'a, 'b>(
     pkg: &'a mut Pkg<File>,
     mod_handle: &'b mut OpenModHandle,
 ) -> Result<(LuaPkgFS<'a>, Box<dyn LuaFS + 'b>)> {
-    let pkg_vft =
-        VirtualFileTree::from_paths(pkg.paths()).context("Failed to create virtual file tree for package archive")?;
-
     Ok((
-        LuaPkgFS(pkg, pkg_vft),
+        LuaPkgFS::new(pkg).context("Failed to create archive filesystem")?,
         match mod_handle {
             OpenModHandle::Directory { path } => Box::new(
                 LuaDirectoryFS::new(path.clone()).context("Failed to create virtual filesystem for directory")?,
