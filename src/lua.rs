@@ -1,10 +1,9 @@
+use std::ops::Deref;
+
 use gc_arena::{DynamicRootSet, Rootable};
 use mlua::prelude::*;
 
-use crate::xmltree::{
-    self,
-    dom::{self, unsize_node},
-};
+use crate::xmltree::dom::unsize_node;
 
 mod debug;
 pub mod io;
@@ -77,7 +76,7 @@ pub struct ModLuaRuntime {
 }
 
 pub struct LuaContext {
-    pub document_root: Option<xmltree::Element>,
+    pub document_root: Option<xml::DynamicElement>,
     pub print_arena_stats: bool,
 }
 
@@ -146,6 +145,10 @@ impl ModLuaRuntime {
         Ok(Self { lua, lib_table })
     }
 
+    pub fn arena(&self) -> impl Deref<Target = LuaArena> + use<'_> {
+        self.lua.gc()
+    }
+
     pub fn with_filesystems<'a, R>(
         &self,
         iter: impl IntoIterator<Item = (impl IntoLua, &'a mut (dyn io::LuaFS + 'a))>,
@@ -167,19 +170,12 @@ impl ModLuaRuntime {
     }
 
     pub fn run(&self, code: &str, filename: &str, context: &mut LuaContext) -> LuaResult<()> {
-        let luatree = {
-            let arena = self.lua.gc();
-            let root = context.document_root.take();
-
-            root.map(|element| arena.mutate(|mc, roots| roots.stash(mc, dom::Element::from_tree(mc, element, None))))
-        };
-
         let lua = &self.lua;
 
         let env = lua.create_overlay_table(&lua.globals())?;
         env.raw_set("_G", &env)?;
 
-        if let Some(ref root) = luatree {
+        if let Some(ref root) = context.document_root {
             env.set(
                 "document",
                 lua.create_userdata(xml::LuaDocument {
@@ -193,14 +189,6 @@ impl ModLuaRuntime {
             .set_mode(mlua::ChunkMode::Text)
             .set_environment(env)
             .exec()?;
-
-        if let Some(root) = luatree {
-            // SAFETY: The arena's DynamicRootSet will stay alive indefinitely
-            context.document_root = Some(match dom::to_tree(unsize_node!(unsafe { *root.as_ptr() })) {
-                xmltree::Node::Element(element) => element,
-                _ => unreachable!(),
-            });
-        }
 
         if context.print_arena_stats {
             let mut gc = lua.app_data_mut::<LuaArena>().unwrap();

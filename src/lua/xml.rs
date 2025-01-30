@@ -12,8 +12,8 @@ use crate::xmltree::dom::{
 
 use super::{unsize_node, LuaExt};
 
-type DynamicNode = DynamicRoot<Rootable![GcNode<'_>]>;
-type DynamicElement = DynamicRoot<Rootable![GcElement<'_>]>;
+pub type DynamicNode = DynamicRoot<Rootable![GcNode<'_>]>;
+pub type DynamicElement = DynamicRoot<Rootable![GcElement<'_>]>;
 
 pub struct LuaDocument {
     pub root: LuaElement,
@@ -753,9 +753,9 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 let unwrapped = crate::apply::unwrap_xml_text(xml_text);
 
                 let mut result = LuaMultiValue::new();
-                let nodes = crate::xmltree::Element::parse_all_sloppy(&unwrapped).into_lua_err()?;
+                let nodes = dom::Element::parse_all(mc, &unwrapped).into_lua_err()?;
                 for node in nodes {
-                    if let Some(value) = todo_gc_into_lua(mc, roots, lua, dom::from_tree(mc, node))? {
+                    if let Some(value) = todo_gc_into_lua(mc, roots, lua, node)? {
                         result.push_back(value);
                     }
                 }

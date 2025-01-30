@@ -13,6 +13,7 @@ use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
 use silpkg::sync::Pkg;
+use speedy_xml::reader::Options;
 use zip::ZipArchive;
 
 use crate::{
@@ -22,7 +23,8 @@ use crate::{
         io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
     },
-    xmltree, HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
+    xmltree::{self, SimpleTreeBuilder},
+    HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
 
 mod append;
@@ -60,9 +62,10 @@ pub fn unwrap_xml_text(xml_text: &str) -> Cow<'_, str> {
     WRAPPER_TAG_REGEX.replace_all(xml_text, "")
 }
 
-fn unwrap_rewrap_single(
+fn unwrap_rewrap_single<E>(
     lower: &str,
-    combine: impl FnOnce(xmltree::Element) -> Result<xmltree::Element>,
+    parse: impl FnOnce(&str) -> Result<Option<E>>,
+    combine: impl FnOnce(E) -> Result<xmltree::Element>,
 ) -> Result<String> {
     // FIXME: this can be made quicker
     let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(lower).any(|x| x.get(2).is_some());
@@ -70,7 +73,7 @@ fn unwrap_rewrap_single(
 
     let lower_wrapped = format!("<FTL>{lower_without_root}</FTL>");
 
-    let lower_parsed = xmltree::Element::parse_sloppy(&lower_wrapped)
+    let lower_parsed = parse(&lower_wrapped)
         .context("Could not parse XML document")?
         .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
 
@@ -95,13 +98,21 @@ fn unwrap_rewrap_xml(
     combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
 ) -> Result<String> {
     let upper_without_root = unwrap_xml_text(upper);
-    let upper_elements =
-        xmltree::Element::parse_all_sloppy(&upper_without_root).context("Could not parse XML append document")?;
+    let upper_elements = xmltree::builder::parse_all_with_options(
+        &mut SimpleTreeBuilder,
+        &upper_without_root,
+        Options::default().allow_top_level_text(true),
+    )
+    .context("Could not parse XML append document")?;
 
-    unwrap_rewrap_single(lower, |mut lower| {
-        combine(&mut lower, upper_elements)?;
-        Ok(lower)
-    })
+    unwrap_rewrap_single(
+        lower,
+        |text| xmltree::builder::parse(&mut SimpleTreeBuilder, text).map_err(Into::into),
+        |mut lower| {
+            combine(&mut lower, upper_elements)?;
+            Ok(lower)
+        },
+    )
 }
 
 // TODO: Remove once str_from_utf16_endian is stabilised.
@@ -233,14 +244,32 @@ pub fn apply_one_xml(document: &str, patch: &str, kind: XmlAppendType) -> Result
 }
 
 pub fn apply_one_lua(document: &str, patch: &str, runtime: &ModLuaRuntime) -> Result<String> {
-    unwrap_rewrap_single(document, |lower| {
-        let mut context = LuaContext {
-            document_root: Some(lower),
-            print_arena_stats: false,
-        };
-        runtime.run(patch, "<patch>", &mut context)?;
-        Ok(context.document_root.unwrap())
-    })
+    unwrap_rewrap_single(
+        document,
+        |text| {
+            runtime
+                .arena()
+                .mutate(|mc, roots| match xmltree::dom::Element::parse(mc, text) {
+                    Ok(Some(element)) => Ok(Some(roots.stash(mc, element))),
+                    Ok(None) => Ok(None),
+                    Err(e) => Err(e),
+                })
+                .map_err(Into::into)
+        },
+        |lower| {
+            let mut context = LuaContext {
+                document_root: Some(lower),
+                print_arena_stats: false,
+            };
+            runtime.run(patch, "<patch>", &mut context)?;
+            Ok(unsafe {
+                (*context.document_root.unwrap().as_ptr())
+                    .as_ref_cell()
+                    .borrow()
+                    .to_tree()
+            })
+        },
+    )
 }
 
 pub enum VirtualFileTree {

@@ -1,18 +1,14 @@
 //! An XML Tree implementation backed by `quick-xml`.
 //! Based on the [`xmltree`](https://github.com/eminence/xmltree-rs).
 
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    io::{BufRead, Write},
-};
+use std::{borrow::Cow, collections::BTreeMap, io::Write};
 
-use log::warn;
 use quick_xml::{
     events::{attributes::Attribute, BytesCData, BytesPI, BytesStart, BytesText, Event},
     name::QName,
 };
 
+pub mod builder;
 pub mod dom;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,148 +52,48 @@ pub struct Element {
     pub children: Vec<Node>,
 }
 
-macro_rules! decode_inner {
-    ($x: expr) => {
-        decode_inner!(@slice &$x).map(|s| s.to_owned())
-    };
-    (@slice $x: expr) => {
-        std::str::from_utf8($x)
-            .map_err(|e|
-                quick_xml::errors::Error::from(
-                    quick_xml::encoding::EncodingError::from(e)
-                )
-            )
-    };
-}
+pub struct SimpleTreeBuilder;
 
-// This unescapes strings exactly (hopefully) like RapidXML
-// Ignores all errors and keeps invalid sequences unexpanded.
-//
-// TODO: Maybe warn on some errors?
-fn sloppy_unescape(string: &str) -> Cow<str> {
-    let mut replaced = String::new();
-    let mut position = 0;
+impl builder::TreeBuilder for SimpleTreeBuilder {
+    type Element = Element;
+    type Node = Node;
 
-    let mut it = string.char_indices();
-    while let Some((i, c)) = it.next() {
-        if c == '&' {
-            if let Some(chr) = resolve_entity(&mut it) {
-                replaced.push_str(&string[position..i]);
-                replaced.push(chr);
-                position = it.offset();
-            }
+    fn create_element(
+        &mut self,
+        prefix: Option<&str>,
+        name: &str,
+        attributes: BTreeMap<String, String>,
+    ) -> Self::Element {
+        Element {
+            prefix: prefix.map(ToOwned::to_owned),
+            name: name.to_owned(),
+            attributes,
+            children: Vec::new(),
         }
     }
 
-    if replaced.is_empty() {
-        Cow::Borrowed(string)
-    } else {
-        replaced.push_str(&string[position..]);
-        Cow::Owned(replaced)
+    fn cdata_to_node(&mut self, content: &str) -> Self::Node {
+        Node::CData(content.to_owned())
     }
-}
 
-fn resolve_entity(it: &mut std::str::CharIndices) -> Option<char> {
-    let mut peek = it.clone();
-
-    let result = match peek.next()?.1 {
-        'l' if peek.next()?.1 == 't' => '<',
-        'g' if peek.next()?.1 == 't' => '>',
-        'a' => match peek.next()?.1 {
-            'p' if peek.next()?.1 == 'o' && peek.next()?.1 == 's' => '\'',
-            'm' if peek.next()?.1 == 'p' => '&',
-            _ => return None,
-        },
-        'q' if peek.next()?.1 == 'u' && peek.next()?.1 == 'o' && peek.next()?.1 == 't' => '"',
-        '#' => {
-            let first = peek.as_str().chars().next()?;
-            let mut code = 0;
-            let radix = if first == 'x' { 16 } else { 10 };
-            loop {
-                let chr = peek.next()?.1;
-                code *= radix;
-                code += chr.to_digit(radix)?;
-                if chr == ';' {
-                    break;
-                }
-            }
-
-            let result = char::from_u32(code)?;
-            // NOTE: We've already consumed a ';' so we return early here.
-            *it = peek;
-            return Some(result);
-        }
-        _ => return None,
-    };
-
-    if peek.next()?.1 != ';' {
-        None
-    } else {
-        *it = peek;
-        Some(result)
+    fn text_to_node(&mut self, content: Cow<str>) -> Self::Node {
+        Node::Text(content.into_owned())
     }
-}
 
-macro_rules! build_loop_match {
-    ($reader: expr, $buffer: expr, output = $output: expr, End($end_name: tt) => $end: expr, Eof => $eof: expr) => {
-        match $reader.read_event_into($buffer)? {
-            ref event @ (Event::Start(ref x) | Event::Empty(ref x)) => {
-                let mut attributes = BTreeMap::new();
-                for attr in x.attributes() {
-                    let attr = attr.map_err(quick_xml::Error::from)?;
-                    attributes.insert(
-                        decode_inner!(attr.key.local_name().into_inner())?,
-                        sloppy_unescape(decode_inner!(@slice &attr.value)?).into_owned(),
-                    );
-                }
-
-                let mut new_element = Element {
-                    prefix: x.name().prefix().map(|x| decode_inner!(x.into_inner())).transpose()?,
-                    name: decode_inner!(x.local_name().into_inner())?,
-                    attributes,
-                    children: Vec::new(),
-                };
-
-                if matches!(event, quick_xml::events::Event::Start(..)) {
-                    build($reader, $buffer, &mut new_element)?;
-                }
-
-                $output.push(Node::Element(new_element))
-            }
-            Event::End($end_name) => $end,
-            Event::Text(text) => $output.push(Node::Text(
-                sloppy_unescape(decode_inner!(@slice &text)?).into_owned()
-            )),
-            Event::CData(cdata) => $output.push(Node::CData(decode_inner!(cdata)?)),
-            Event::Comment(comment) => $output.push(Node::Comment(
-                sloppy_unescape(decode_inner!(@slice &comment)?).into_owned()
-            )),
-            x @ Event::Decl(_) => warn!("Ignoring XML event: {x:?}"),
-            Event::PI(pi) => $output.push(Node::ProcessingInstruction(
-                decode_inner!(@slice pi.target())?.to_owned(),
-                decode_inner!(@slice pi.content())?.to_owned(),
-            )),
-            Event::DocType(_) => (),
-            Event::Eof => $eof
-        }
+    fn comment_to_node(&mut self, content: &str) -> Self::Node {
+        Node::Comment(content.to_owned())
     }
-}
 
-fn build<R: BufRead>(
-    reader: &mut quick_xml::Reader<R>,
-    buffer: &mut Vec<u8>,
-    element: &mut Element,
-) -> Result<(), quick_xml::Error> {
-    loop {
-        build_loop_match!(
-            reader, buffer,
-            output = element.children,
-            End(_) => return Ok(()),
-            Eof => {
-                warn!("Reached EOF before the root element has been closed.");
-                return Ok(());
-            }
-        );
+    fn element_to_node(&mut self, element: Self::Element) -> Self::Node {
+        Node::Element(element)
+    }
+
+    fn push_element_child(&mut self, element: &mut Self::Element, child: Self::Node) {
+        element.children.push(child);
+    }
+
+    fn node_into_element(&mut self, node: Self::Node) -> Option<Self::Element> {
+        node.into_element()
     }
 }
 
@@ -260,27 +156,6 @@ fn write_node<W: Write>(writer: &mut quick_xml::Writer<W>, node: &Node) -> Resul
 }
 
 impl Element {
-    pub fn parse_all_sloppy(text: &str) -> Result<Vec<Node>, quick_xml::Error> {
-        let mut reader = quick_xml::Reader::from_str(text);
-        reader.config_mut().check_end_names = false;
-        let mut buffer = vec![];
-
-        let mut root = vec![];
-        loop {
-            build_loop_match!(
-                &mut reader, &mut buffer,
-                output = root,
-                End(x) => warn!("Ignoring unmatched end tag: {x:?}"),
-                Eof => return Ok(root)
-            )
-        }
-    }
-
-    pub fn parse_sloppy(text: &str) -> Result<Option<Element>, quick_xml::Error> {
-        let nodes = Self::parse_all_sloppy(text)?;
-        Ok(nodes.into_iter().find_map(|x| x.into_element()))
-    }
-
     pub fn write_with_indent(
         &self,
         writer: impl Write,

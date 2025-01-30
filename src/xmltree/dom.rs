@@ -195,6 +195,7 @@ macro_rules! define_simple_node {
         }
 
         impl<'gc> $name<'gc> {
+            #[allow(dead_code)]
             pub fn create(
                 mc: &Mutation<'gc>,
                 $($field_name: $field_type),*
@@ -275,15 +276,6 @@ impl NodeHeader<'_> {
             previous: None,
             next: None,
             parent: None,
-            kind,
-        }
-    }
-
-    unsafe fn with_parent<'gc>(kind: NodeKind, parent: Option<GcRefLock<'gc, Element<'gc>>>) -> NodeHeader<'gc> {
-        NodeHeader {
-            previous: None,
-            next: None,
-            parent,
             kind,
         }
     }
@@ -504,37 +496,12 @@ impl<'gc> Iterator for ElementDescendants<'gc> {
 impl FusedIterator for ElementDescendants<'_> {}
 
 impl<'gc> Element<'gc> {
-    pub fn from_tree(
-        mc: &Mutation<'gc>,
-        xmltree::Element {
-            prefix,
-            name,
-            attributes,
-            children,
-        }: xmltree::Element,
-        parent: Option<GcElement<'gc>>,
-    ) -> GcElement<'gc> {
-        let result = GcElement::new(
-            mc,
-            RefLock::new(Element {
-                _header: unsafe { NodeHeader::with_parent(NodeKind::Element, parent) },
-                prefix,
-                name,
-                attributes,
-                first_child: None,
-                last_child: None,
-            }),
-        );
+    pub fn parse(mc: &Mutation<'gc>, text: &str) -> Result<Option<GcElement<'gc>>, speedy_xml::reader::Error> {
+        builder::parse(&mut DomTreeBuilder(mc), text)
+    }
 
-        {
-            let (first, last) = children_from_tree(mc, children, result);
-            // SAFETY: This is a white object
-            let r = unsafe { &mut *result.as_ptr() };
-            r.first_child = first;
-            r.last_child = last;
-        }
-
-        result
+    pub fn parse_all(mc: &Mutation<'gc>, text: &str) -> Result<Vec<GcNode<'gc>>, speedy_xml::reader::Error> {
+        builder::parse_all(&mut DomTreeBuilder(mc), text)
     }
 
     pub fn to_tree(&self) -> xmltree::Element {
@@ -555,50 +522,7 @@ macro_rules! unsize_node {
 
 pub(crate) use unsize_node;
 
-fn from_tree_rec<'gc>(mc: &Mutation<'gc>, node: xmltree::Node, parent: Option<GcElement<'gc>>) -> GcNode<'gc> {
-    match node {
-        xmltree::Node::Element(element) => unsize_node!(Element::from_tree(mc, element, parent)),
-        xmltree::Node::Text(text) => unsize_node!(Text::create(mc, text)),
-        xmltree::Node::Comment(comment) => unsize_node!(Comment::create(mc, comment)),
-        xmltree::Node::CData(cdata) => unsize_node!(CData::create(mc, cdata)),
-        xmltree::Node::ProcessingInstruction(target, content) => {
-            unsize_node!(ProcessingInstruction::create(mc, target, content))
-        }
-    }
-}
-
-fn children_from_tree<'gc>(
-    mc: &Mutation<'gc>,
-    children: Vec<xmltree::Node>,
-    parent: GcElement<'gc>,
-) -> (Option<GcNode<'gc>>, Option<GcNode<'gc>>) {
-    let mut first = None;
-    let mut last = None;
-
-    let mut previous: Option<GcNode> = None;
-    for node in children {
-        let node = from_tree_rec(mc, node, Some(parent));
-
-        if let Some(ref previous) = previous {
-            previous.borrow_header_mut(mc).next = Some(node);
-        }
-
-        node.borrow_header_mut(mc).previous = previous;
-        previous = Some(node);
-
-        if first.is_none() {
-            first = Some(node);
-        } else {
-            last = Some(node);
-        }
-    }
-
-    (first, last)
-}
-
-pub fn from_tree<'gc>(mc: &Mutation<'gc>, node: xmltree::Node) -> GcNode<'gc> {
-    from_tree_rec(mc, node, None)
-}
+use super::builder::{self, TreeBuilder};
 
 pub fn to_tree(node: GcNode) -> xmltree::Node {
     let node = node.borrow();
@@ -611,5 +535,44 @@ pub fn to_tree(node: GcNode) -> xmltree::Node {
             let pi = unsafe { ProcessingInstruction::downcast_ref_unchecked(&*node) };
             xmltree::Node::ProcessingInstruction(pi.target.clone(), pi.content.clone())
         }
+    }
+}
+
+struct DomTreeBuilder<'a, 'gc>(&'a Mutation<'gc>);
+impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {
+    type Element = GcElement<'gc>;
+    type Node = GcNode<'gc>;
+
+    fn create_element(
+        &mut self,
+        prefix: Option<&str>,
+        name: &str,
+        attributes: BTreeMap<String, String>,
+    ) -> Self::Element {
+        Element::create(self.0, prefix.map(ToOwned::to_owned), name.to_owned(), attributes)
+    }
+
+    fn cdata_to_node(&mut self, content: &str) -> Self::Node {
+        unsize_node!(CData::create(self.0, content.to_owned()))
+    }
+
+    fn text_to_node(&mut self, content: std::borrow::Cow<str>) -> Self::Node {
+        unsize_node!(Text::create(self.0, content.into_owned()))
+    }
+
+    fn comment_to_node(&mut self, content: &str) -> Self::Node {
+        unsize_node!(Comment::create(self.0, content.to_owned()))
+    }
+
+    fn element_to_node(&mut self, element: Self::Element) -> Self::Node {
+        unsize_node!(element)
+    }
+
+    fn push_element_child(&mut self, element: &mut Self::Element, child: Self::Node) {
+        element.unlock(self.0).borrow_mut().append_child(self.0, child);
+    }
+
+    fn node_into_element(&mut self, node: Self::Node) -> Option<Self::Element> {
+        Element::downcast_gc(node)
     }
 }
