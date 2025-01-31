@@ -587,14 +587,16 @@ impl<'a> Reader<'a> {
                 self.buffer.current += 1;
                 let (prefix_end, name_end) = self.take_prefixed_name(start, 1)?;
 
-                if self.byte(name_end) != Some(b'>') {
+                self.buffer.skip_whitespace();
+
+                if self.byte(self.buffer.current) != Some(b'>') {
                     let span = self.buffer.char_range_here();
                     self.set_error_state();
                     return Err(Error::new(ErrorKind::UnclosedEndTag, span));
                 }
 
                 self.depth -= 1;
-                self.buffer.current = name_end + 1;
+                self.buffer.current += 1;
                 Ok(Some(Event::End(EndEvent {
                     text: &self.buffer.text[start..self.buffer.current],
                     prefix_end: prefix_end - start,
