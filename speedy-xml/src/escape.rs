@@ -88,15 +88,16 @@ pub fn unescape(string: &str) -> Cow<str> {
 fn escape(string: &str, next: impl Fn(&str) -> Option<usize>) -> Cow<'_, str> {
     let mut replaced = String::new();
 
-    let current = string;
+    let mut current = string;
     while let Some(escaped) = next(current) {
-        replaced.push_str(&current[escaped..]);
+        replaced.push_str(&current[..escaped]);
         match current.as_bytes()[escaped] {
             b'<' => replaced.push_str("&lt;"),
             b'&' => replaced.push_str("&amp;"),
             b'\"' => replaced.push_str("&quot;"),
             _ => unreachable!(),
         };
+        current = &current[escaped + 1..]
     }
 
     if replaced.is_empty() {
@@ -117,4 +118,32 @@ pub fn content_escape(string: &str) -> Cow<str> {
 
 pub fn comment_escape(string: &str) -> Cow<str> {
     escape(string, |text| memchr::memchr(b'>', text.as_bytes()))
+}
+
+#[cfg(test)]
+mod test {
+    use super::{content_escape, unescape};
+
+    #[test]
+    fn simple_unescape_escape() {
+        const STRINGS: &[(&str, &str, &str)] = &[
+            (
+                "&quot; hello &amp; world &apos;",
+                "\" hello & world '",
+                "\" hello &amp; world '",
+            ),
+            (
+                "&#11088; &lt;hello world&gt; &#x2B50;",
+                "⭐ <hello world> ⭐",
+                "⭐ &lt;hello world> ⭐",
+            ),
+            ("&haha; &apo", "&haha; &apo", "&amp;haha; &amp;apo"),
+        ];
+
+        for (string, expected_unescaped, expected_escaped) in STRINGS {
+            let unescaped = unescape(string);
+            assert_eq!(&unescaped, expected_unescaped);
+            assert_eq!(&content_escape(&unescaped), expected_escaped);
+        }
+    }
 }
