@@ -197,7 +197,7 @@ impl PatchMode {
 
 pub struct Sandbox {
     // If None then the window is closed.
-    pkg: Option<mpsc::SyncSender<PatchWorkerCommand>>,
+    worker: Option<mpsc::SyncSender<PatchWorkerCommand>>,
     shared: SharedArc,
 
     pkg_names: Vec<String>,
@@ -240,7 +240,7 @@ macro_rules! rebuild_filtered_names {
 impl Sandbox {
     pub fn new() -> Self {
         Self {
-            pkg: None,
+            worker: None,
             pkg_names: Vec::new(),
             filtered_pkg_names: Vec::new(),
             search_text: String::new(),
@@ -272,7 +272,7 @@ impl Sandbox {
         self.current_file =
             previously_open_name.and_then(|previous_name| self.pkg_names.iter().position(|c| c == &previous_name));
         self.needs_update = true;
-        self.pkg = Some(PatchWorker::start(pkg, self.shared.clone()));
+        self.worker = Some(PatchWorker::start(pkg, self.shared.clone()));
 
         Ok(())
     }
@@ -280,15 +280,15 @@ impl Sandbox {
 
 impl WindowState for Sandbox {
     fn is_open(&self) -> bool {
-        self.pkg.is_some()
+        self.worker.is_some()
     }
 
     fn close(&mut self) {
-        self.pkg = None;
+        self.worker = None;
     }
 
     fn render(&mut self, ctx: &egui::Context) {
-        let Some(pkg) = self.pkg.as_mut() else { return };
+        let Some(pkg) = self.worker.as_mut() else { return };
 
         egui::TopBottomPanel::top("sandbox header").show(ctx, |ui| {
             ui.add_space(5.);
