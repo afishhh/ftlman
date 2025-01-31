@@ -35,7 +35,7 @@ lazy_static! {
         Regex::new("<mod(|-append|-overwrite):.+>").unwrap();
     static ref IGNORED_FILES_REGEX: Regex =
         Regex::new(r"[.]DS_Store$|(^|/)thumbs[.]db$|(^|/)[.]dropbox$|^~|~$|(^|/)#.+#$").unwrap();
-    static ref KNOWN_TOP_LEVEL_DIRS: Regex = Regex::new(r"^(audio|data|fonts|img|mod-appendix)/").unwrap();
+    static ref KNOWN_TOP_LEVEL_DIRS: Regex = Regex::new(r"^(audio|data|fonts|img)/").unwrap();
 }
 
 #[derive(Debug)]
@@ -523,7 +523,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
         let path_count = paths.len();
 
         for (j, name) in paths.into_iter().enumerate() {
-            if name.starts_with("mod-appendix") || 
+            if name.starts_with("mod-appendix/") || 
                 // example_layout_syntax.xml is used by Hyperspace to detect when
                 // Hyperspace.ftl has been accidentally patched alongside Multiverse
                 (m.is_hyperspace_ftl && name == "example_layout_syntax.xml")
@@ -533,14 +533,18 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
             }
 
             if !KNOWN_TOP_LEVEL_DIRS.is_match(&name) {
-                let mut dir = name;
-                dir.truncate(dir.find('/').unwrap_or(dir.len()));
-                // POV: HashSet::get_or_insert is unstable
-                if !skipped_top_level_dirs.contains(&dir) {
-                    warn!("Skipping unrecognized top-level directory {dir}");
-                    skipped_top_level_dirs.insert(dir);
+                // Slipstream doesn't allow unknown top-level directories,
+                // but it does allow unknown top-level files.
+                if let Some(dirsep) = name.find('/') {
+                    let mut dir = name;
+                    dir.truncate(dirsep);
+                    // POV: HashSet::get_or_insert is unstable
+                    if !skipped_top_level_dirs.contains(&dir) {
+                        warn!("Skipping unrecognized top-level directory {dir}");
+                        skipped_top_level_dirs.insert(dir);
+                    }
+                    continue;
                 }
-                continue;
             }
 
             on_progress(ApplyStage::Mod {
