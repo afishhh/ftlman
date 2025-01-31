@@ -257,17 +257,22 @@ impl<'a> ParsingBuffer<'a> {
         self.text.as_bytes()
     }
 
-    #[inline]
+    #[inline(always)]
     fn byte(&self, idx: usize) -> Option<u8> {
         self.as_bytes().get(idx).copied()
     }
 
-    #[inline(always)]
+    #[inline]
     fn position_or_end(&self, start: usize, fun: impl Fn(u8) -> bool) -> usize {
-        self.text[start..]
-            .bytes()
-            .position(fun)
-            .map_or(self.text.len(), |i| i + start)
+        let mut current = start;
+        // Iterators seem to generate pretty bad code here, use a loop instead.
+        loop {
+            match self.as_bytes().get(current) {
+                Some(&b) if fun(b) => return current,
+                Some(_) => current += 1,
+                None => return self.text.len(),
+            }
+        }
     }
 
     #[inline]
@@ -285,6 +290,7 @@ impl<'a> ParsingBuffer<'a> {
         memchr::memmem::find(self.text[self.current..].as_bytes(), needle).map(|value| value + self.current)
     }
 
+    #[inline]
     fn skip_whitespace(&mut self) {
         self.current = self.position_or_end(self.current, |b| !is_whitespace(b));
     }
@@ -657,7 +663,13 @@ impl<'a> Iterator for Reader<'a> {
                     self.buffer.current = text_range.end;
 
                     if self.depth == 0 && !self.options.allow_top_level_text {
-                        if !self.buffer.text[text_range.clone()].bytes().all(is_whitespace) {
+                        // SAFETY: node_start was just acquired from memchr or is equal to the length.
+                        //         self.buffer.current can also never be less than the string's length.
+                        if !unsafe { self.buffer.as_bytes().get_unchecked(text_range.clone()) }
+                            .iter()
+                            .copied()
+                            .all(is_whitespace)
+                        {
                             self.set_error_state();
                             return Some(Err(Error::new(ErrorKind::TopLevelText, text_range)));
                         } else {
@@ -667,7 +679,8 @@ impl<'a> Iterator for Reader<'a> {
                     }
 
                     Some(Ok(Event::Text(TextEvent {
-                        text: &self.buffer.text[text_range],
+                        // SAFETY: See above
+                        text: unsafe { self.buffer.text.get_unchecked(text_range) },
                     })))
                 }
                 None if self.depth > 0 => {
