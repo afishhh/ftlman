@@ -23,7 +23,7 @@ use crate::{
         io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
     },
-    xmltree::{self, SimpleTreeBuilder},
+    xmltree::{self, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
 
@@ -80,15 +80,17 @@ fn unwrap_rewrap_single<E>(
     let result = combine(lower_parsed)?;
 
     Ok({
-        let mut out = vec![];
+        let mut writer = speedy_xml::writer::Writer::new(Cursor::new(Vec::new()));
 
         if had_ftl_root {
-            result.write_with_indent(&mut Cursor::new(&mut out), b' ', 4)?;
+            xmltree::emitter::write_element(&mut writer, &SimpleTreeEmitter, &&result)
+                .context("Failed to write patched XML")?;
         } else {
-            result.write_children_with_indent(&mut Cursor::new(&mut out), b' ', 4)?
+            xmltree::emitter::write_element_children(&mut writer, &SimpleTreeEmitter, &&result)
+                .context("Failed to write patched XML")?;
         }
 
-        String::from_utf8(out)?
+        String::from_utf8(writer.finish()?.into_inner())?
     })
 }
 

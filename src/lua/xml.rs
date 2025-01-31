@@ -6,8 +6,11 @@ use gc_arena::{
 };
 use mlua::{prelude::*, FromLua, UserData, UserDataFields};
 
-use crate::xmltree::dom::{
-    self, node_insert_after, node_insert_before, ElementChildren, GcElement, GcNode, GcText, NodeExt, NodeTraits,
+use crate::xmltree::{
+    self,
+    dom::{
+        self, node_insert_after, node_insert_before, ElementChildren, GcElement, GcNode, GcText, NodeExt, NodeTraits,
+    },
 };
 
 use super::{unsize_node, LuaExt};
@@ -288,7 +291,6 @@ fn detach_any<'gc>(mc: &Mutation<'gc>, node: GcNode<'gc>) {
         dom::NodeKind::Comment => downcast_and_detach!(dom::Comment),
         dom::NodeKind::CData => downcast_and_detach!(dom::CData),
         dom::NodeKind::Text => downcast_and_detach!(dom::Text),
-        dom::NodeKind::ProcessingInstruction => downcast_and_detach!(dom::ProcessingInstruction),
     }
 }
 
@@ -768,14 +770,15 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
         "stringify",
         lua.create_function(|lua, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
             lua.gc().mutate(|mc, _| {
-                let mut output = Vec::new();
-                let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(&mut output), b' ', 4);
+                let mut writer = speedy_xml::Writer::new(std::io::Cursor::new(Vec::new()));
 
                 for node in nodes {
-                    dom::to_tree(node.into_node(mc)).write_to(&mut writer).into_lua_err()?;
+                    xmltree::emitter::write_node(&mut writer, &dom::DomTreeEmitter, node.into_node(mc))
+                        .into_lua_err()
+                        .context("Failed to write node")?;
                 }
 
-                Ok(lua.create_string(&output))
+                Ok(lua.create_string(writer.finish()?.into_inner()))
             })
         })?,
     )?;

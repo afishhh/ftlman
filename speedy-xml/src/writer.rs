@@ -1,5 +1,4 @@
 use std::{
-    error::Error,
     fmt::{Debug, Display},
     io::Write,
 };
@@ -22,7 +21,7 @@ pub struct Writer<W: Write> {
     depth_and_flags: u32,
 }
 
-pub enum WriteError {
+pub enum Error {
     InvalidElementPrefix,
     InvalidElementName,
     InvalidAttributeName,
@@ -35,39 +34,39 @@ pub enum WriteError {
     Io(std::io::Error),
 }
 
-impl Error for WriteError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            WriteError::Io(error) => Some(error),
+            Error::Io(error) => Some(error),
             _ => None,
         }
     }
 }
 
-impl Debug for WriteError {
+impl Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         <Self as Display>::fmt(self, f)
     }
 }
 
-impl Display for WriteError {
+impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            WriteError::InvalidElementPrefix => "invalid element prefix",
-            WriteError::InvalidElementName => "invalid element name",
-            WriteError::InvalidAttributeName => "invalid attribute name",
-            WriteError::InvalidAttributeValue => "invalid attribute value",
-            WriteError::TopLevelText => "top-level text is forbidden",
-            WriteError::AttributeOutsideTag => "attributes are only allowed inside tags",
-            WriteError::ImproperlyEscacped => "improperly escaped content",
-            WriteError::InvalidCData => "cdata content cannot contain `]]>`",
-            WriteError::InvalidValue => "value contains null byte",
-            WriteError::Io(error) => return <std::io::Error as Display>::fmt(error, f),
+            Error::InvalidElementPrefix => "invalid element prefix",
+            Error::InvalidElementName => "invalid element name",
+            Error::InvalidAttributeName => "invalid attribute name",
+            Error::InvalidAttributeValue => "invalid attribute value",
+            Error::TopLevelText => "top-level text is forbidden",
+            Error::AttributeOutsideTag => "attributes are only allowed inside tags",
+            Error::ImproperlyEscacped => "improperly escaped content",
+            Error::InvalidCData => "cdata content cannot contain `]]>`",
+            Error::InvalidValue => "value contains null byte",
+            Error::Io(error) => return <std::io::Error as Display>::fmt(error, f),
         })
     }
 }
 
-impl From<std::io::Error> for WriteError {
+impl From<std::io::Error> for Error {
     fn from(value: std::io::Error) -> Self {
         Self::Io(value)
     }
@@ -108,13 +107,13 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_start(&mut self, prefix: Option<&str>, name: &str) -> Result<(), WriteError> {
+    pub fn write_start(&mut self, prefix: Option<&str>, name: &str) -> Result<(), Error> {
         if prefix.is_some_and(|pfx| pfx.bytes().any(is_invalid_name)) {
-            return Err(WriteError::InvalidElementName);
+            return Err(Error::InvalidElementName);
         }
 
         if name.bytes().any(is_invalid_name) {
-            return Err(WriteError::InvalidElementName);
+            return Err(Error::InvalidElementName);
         }
 
         self.ensure_tag_closed()?;
@@ -131,9 +130,9 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_empty(&mut self, prefix: Option<&str>, name: &str) -> Result<(), WriteError> {
+    pub fn write_empty(&mut self, prefix: Option<&str>, name: &str) -> Result<(), Error> {
         if name.bytes().any(is_invalid_name) {
-            return Err(WriteError::InvalidElementName);
+            return Err(Error::InvalidElementName);
         }
 
         self.ensure_tag_closed()?;
@@ -150,18 +149,18 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_raw_attribute(&mut self, name: &str, quote: AttributeQuote, value: &str) -> Result<(), WriteError> {
+    pub fn write_raw_attribute(&mut self, name: &str, quote: AttributeQuote, value: &str) -> Result<(), Error> {
         if self.depth_and_flags & 1 == 0 {
-            return Err(WriteError::AttributeOutsideTag);
+            return Err(Error::AttributeOutsideTag);
         }
 
         if name.bytes().any(is_invalid_attribute_name) {
-            return Err(WriteError::InvalidAttributeName);
+            return Err(Error::InvalidAttributeName);
         }
 
         let quote = quote as u8;
         if name.bytes().any(|b| [b'\0', quote].contains(&b)) {
-            return Err(WriteError::InvalidAttributeValue);
+            return Err(Error::InvalidAttributeValue);
         }
 
         self.writer.write_all(b" ")?;
@@ -174,14 +173,14 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_attribute(&mut self, name: &str, value: &str) -> Result<(), WriteError> {
+    pub fn write_attribute(&mut self, name: &str, value: &str) -> Result<(), Error> {
         let escaped = content_escape(value);
         self.write_raw_attribute(name, AttributeQuote::Double, &escaped)
     }
 
-    pub fn write_end(&mut self, prefix: Option<&str>, name: &str) -> Result<(), WriteError> {
+    pub fn write_end(&mut self, prefix: Option<&str>, name: &str) -> Result<(), Error> {
         if name.bytes().any(is_invalid_name) {
-            return Err(WriteError::InvalidElementName);
+            return Err(Error::InvalidElementName);
         }
 
         self.ensure_tag_closed()?;
@@ -206,19 +205,19 @@ impl<W: Write> Writer<W> {
         self.writer.write_all(text.as_bytes())
     }
 
-    pub fn write_raw_text(&mut self, text: &str) -> Result<(), WriteError> {
+    pub fn write_raw_text(&mut self, text: &str) -> Result<(), Error> {
         if let Some(idx) = memchr::memchr2(b'\0', b'<', text.as_bytes()) {
             return Err(if text.as_bytes()[idx] == b'<' {
-                WriteError::ImproperlyEscacped
+                Error::ImproperlyEscacped
             } else {
-                WriteError::InvalidValue
+                Error::InvalidValue
             });
         }
 
         self.write_raw_text_unchecked(text).map_err(Into::into)
     }
 
-    pub fn write_text(&mut self, content: &str) -> Result<(), WriteError> {
+    pub fn write_text(&mut self, content: &str) -> Result<(), Error> {
         let escaped = content_escape(content);
         self.write_raw_text_unchecked(&escaped).map_err(Into::into)
     }
@@ -231,9 +230,9 @@ impl<W: Write> Writer<W> {
         self.writer.write_all(b"]]>")
     }
 
-    pub fn write_cdata(&mut self, text: &str) -> Result<(), WriteError> {
+    pub fn write_cdata(&mut self, text: &str) -> Result<(), Error> {
         if memchr::memmem::find(text.as_bytes(), b"]]>").is_some() {
-            return Err(WriteError::InvalidCData);
+            return Err(Error::InvalidCData);
         }
 
         self.write_cdata_unchecked(text).map_err(Into::into)
@@ -251,22 +250,22 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_raw_comment(&mut self, text: &str) -> Result<(), WriteError> {
+    pub fn write_raw_comment(&mut self, text: &str) -> Result<(), Error> {
         if memchr::memmem::find(text.as_bytes(), b"-->").is_some() {
-            return Err(WriteError::ImproperlyEscacped);
+            return Err(Error::ImproperlyEscacped);
         }
 
         self.write_raw_comment_unchecked(text).map_err(Into::into)
     }
 
-    pub fn write_comment(&mut self, content: &str) -> Result<(), WriteError> {
+    pub fn write_comment(&mut self, content: &str) -> Result<(), Error> {
         let escaped = comment_escape(content);
         self.write_raw_comment_unchecked(&escaped).map_err(Into::into)
     }
 
-    pub fn write_attribute_event(&mut self, attr: &AttributeEvent) -> Result<(), WriteError> {
+    pub fn write_attribute_event(&mut self, attr: &AttributeEvent) -> Result<(), Error> {
         if self.depth_and_flags & 1 == 0 {
-            return Err(WriteError::AttributeOutsideTag);
+            return Err(Error::AttributeOutsideTag);
         }
 
         self.writer.write_all(b" ")?;
@@ -279,7 +278,7 @@ impl<W: Write> Writer<W> {
         Ok(())
     }
 
-    pub fn write_event(&mut self, event: &reader::Event) -> Result<(), WriteError> {
+    pub fn write_event(&mut self, event: &reader::Event) -> Result<(), Error> {
         match event {
             reader::Event::Start(start) => {
                 if start.is_empty() {

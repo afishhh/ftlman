@@ -1,15 +1,11 @@
 //! An XML Tree implementation backed by `quick-xml`.
 //! Based on the [`xmltree`](https://github.com/eminence/xmltree-rs).
 
-use std::{borrow::Cow, collections::BTreeMap, io::Write};
-
-use quick_xml::{
-    events::{attributes::Attribute, BytesCData, BytesPI, BytesStart, BytesText, Event},
-    name::QName,
-};
+use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
 
 pub mod builder;
 pub mod dom;
+pub mod emitter;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Node {
@@ -17,7 +13,6 @@ pub enum Node {
     Comment(String),
     CData(String),
     Text(String),
-    ProcessingInstruction(String, String),
 }
 
 macro_rules! mk_as {
@@ -97,88 +92,45 @@ impl builder::TreeBuilder for SimpleTreeBuilder {
     }
 }
 
-macro_rules! write_node {
-    ($writer: ident, $node: expr, Element($element_name: ident) => $element: expr) => {
-        match $node {
-            Node::Element($element_name) => $element,
-            Node::Comment(comment) => $writer.write_event(Event::Comment(BytesText::from_escaped(
-                quick_xml::escape::minimal_escape(comment),
-            )))?,
-            Node::CData(cdata) => $writer.write_event(Event::CData(BytesCData::new(cdata)))?,
-            Node::Text(text) => $writer.write_event(Event::Text(BytesText::from_escaped(
-                quick_xml::escape::minimal_escape(text),
-            )))?,
-            Node::ProcessingInstruction(target, content) => {
-                assert!(!target.contains(|c: char| c.is_ascii_whitespace()));
-                $writer.write_event(Event::PI(BytesPI::new(format!("{target} {content}"))))?
-            }
-        }
-    };
-}
+pub struct SimpleTreeEmitter;
 
-fn write<W: Write>(writer: &mut quick_xml::Writer<W>, element: &Element) -> Result<(), quick_xml::Error> {
-    let mut start = BytesStart::new(if let Some(prefix) = &element.prefix {
-        Cow::<'_, str>::Owned(format!("{}:{}", prefix, element.name))
-    } else {
-        Cow::<'_, str>::Borrowed(&element.name)
-    });
+impl emitter::TreeEmitter for SimpleTreeEmitter {
+    type Element<'a> = &'a Element;
+    type Node<'a> = &'a Node;
 
-    for (key, value) in element.attributes.iter() {
-        start.push_attribute(Attribute {
-            key: QName(key.as_bytes()),
-            value: Cow::Borrowed(quick_xml::escape::minimal_escape(value).as_bytes()),
-        })
+    fn iter_element<'a>(&self, element: &Self::Element<'a>) -> impl Iterator<Item = Self::Node<'a>> {
+        element.children.iter()
     }
 
-    if element
-        .children
-        .iter()
-        .all(|child| child.as_text().is_some_and(|text| text.is_empty()))
-    {
-        writer.write_event(quick_xml::events::Event::Empty(start.borrow()))?;
-    } else {
-        writer.write_event(quick_xml::events::Event::Start(start.borrow()))?;
-
-        for node in element.children.iter() {
-            write_node!(writer, node, Element(element) => write(writer, element)?);
-        }
-
-        writer.write_event(quick_xml::events::Event::End(start.to_end()))?;
+    fn element_prefix<'a>(&self, element: &Self::Element<'a>) -> Option<impl Deref<Target = str> + 'a> {
+        element.prefix.as_deref()
     }
 
-    Ok(())
-}
+    fn element_name<'a>(&self, element: &Self::Element<'a>) -> impl Deref<Target = str> + 'a {
+        element.name.as_str()
+    }
 
-fn write_node<W: Write>(writer: &mut quick_xml::Writer<W>, node: &Node) -> Result<(), quick_xml::Error> {
-    write_node!(writer, node, Element(element) => write(writer, element)?);
+    fn element_attributes<'a>(
+        &self,
+        element: &Self::Element<'a>,
+    ) -> impl Deref<Target = BTreeMap<String, String>> + 'a {
+        &element.attributes
+    }
 
-    Ok(())
+    fn node_to_content<'a>(
+        &self,
+        node: &Self::Node<'a>,
+    ) -> emitter::NodeContent<Self::Element<'a>, impl Deref<Target = str> + 'a> {
+        match node {
+            Node::Element(element) => emitter::NodeContent::Element(element),
+            Node::Comment(comment) => emitter::NodeContent::Comment(comment.as_str()),
+            Node::CData(content) => emitter::NodeContent::CData(content.as_str()),
+            Node::Text(content) => emitter::NodeContent::Text(content.as_str()),
+        }
+    }
 }
 
 impl Element {
-    pub fn write_with_indent(
-        &self,
-        writer: impl Write,
-        indent_char: u8,
-        indent_size: usize,
-    ) -> Result<(), quick_xml::Error> {
-        let mut writer = quick_xml::Writer::new_with_indent(writer, indent_char, indent_size);
-        write(&mut writer, self)
-    }
-
-    pub fn write_children_with_indent(
-        &self,
-        writer: impl Write,
-        indent_char: u8,
-        indent_size: usize,
-    ) -> Result<(), quick_xml::Error> {
-        let mut writer = quick_xml::Writer::new_with_indent(writer, indent_char, indent_size);
-        for child in self.children.iter() {
-            write_node!(writer, child, Element(element) => write(&mut writer, element)?);
-        }
-        Ok(())
-    }
-
     pub fn get_text_trim(&self) -> String {
         let mut result = String::new();
         for child in self.children.iter() {
@@ -214,11 +166,5 @@ impl Element {
         } else {
             self.name.to_string()
         }
-    }
-}
-
-impl Node {
-    pub fn write_to<W: Write>(&self, writer: &mut quick_xml::Writer<W>) -> Result<(), quick_xml::Error> {
-        write_node(writer, self)
     }
 }

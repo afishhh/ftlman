@@ -2,6 +2,7 @@ use std::{
     cell::{Ref, RefMut},
     collections::BTreeMap,
     iter::FusedIterator,
+    ops::Deref,
 };
 
 use gc_arena::{
@@ -19,7 +20,6 @@ pub enum NodeKind {
     Comment,
     CData,
     Text,
-    ProcessingInstruction,
 }
 
 /// # Safety
@@ -217,7 +217,6 @@ macro_rules! define_simple_node {
 define_simple_node!(Text, { content: String });
 define_simple_node!(CData, { content: String });
 define_simple_node!(Comment, { content: String });
-define_simple_node!(ProcessingInstruction, { target: String, content: String });
 
 // TODO: If these arcs and heap allocations ever become a performance problem
 //       store all nodes in an arena and access refer to them by their index.
@@ -522,7 +521,10 @@ macro_rules! unsize_node {
 
 pub(crate) use unsize_node;
 
-use super::builder::{self, TreeBuilder};
+use super::{
+    builder::{self, TreeBuilder},
+    emitter::TreeEmitter,
+};
 
 pub fn to_tree(node: GcNode) -> xmltree::Node {
     let node = node.borrow();
@@ -531,14 +533,10 @@ pub fn to_tree(node: GcNode) -> xmltree::Node {
         NodeKind::Comment => xmltree::Node::Comment(unsafe { Comment::downcast_ref_unchecked(&*node) }.content.clone()),
         NodeKind::CData => xmltree::Node::CData(unsafe { CData::downcast_ref_unchecked(&*node) }.content.clone()),
         NodeKind::Text => xmltree::Node::Text(unsafe { Text::downcast_ref_unchecked(&*node) }.content.clone()),
-        NodeKind::ProcessingInstruction => {
-            let pi = unsafe { ProcessingInstruction::downcast_ref_unchecked(&*node) };
-            xmltree::Node::ProcessingInstruction(pi.target.clone(), pi.content.clone())
-        }
     }
 }
 
-struct DomTreeBuilder<'a, 'gc>(&'a Mutation<'gc>);
+struct DomTreeBuilder<'a, 'gc>(pub &'a Mutation<'gc>);
 impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {
     type Element = GcElement<'gc>;
     type Node = GcNode<'gc>;
@@ -574,5 +572,51 @@ impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {
 
     fn node_into_element(&mut self, node: Self::Node) -> Option<Self::Element> {
         Element::downcast_gc(node)
+    }
+}
+
+pub struct DomTreeEmitter;
+impl TreeEmitter for DomTreeEmitter {
+    type Element<'a> = GcElement<'a>;
+    type Node<'a> = GcNode<'a>;
+
+    fn iter_element<'a>(&self, element: &Self::Element<'a>) -> impl Iterator<Item = Self::Node<'a>> {
+        element.borrow().children()
+    }
+
+    fn element_prefix<'a>(&self, element: &Self::Element<'a>) -> Option<impl Deref<Target = str> + 'a> {
+        Ref::filter_map(element.borrow(), |e| e.prefix.as_deref()).ok()
+    }
+
+    fn element_name<'a>(&self, element: &Self::Element<'a>) -> impl Deref<Target = str> + 'a {
+        Ref::map(element.borrow(), |e| e.name.as_str())
+    }
+
+    fn element_attributes<'a>(
+        &self,
+        element: &Self::Element<'a>,
+    ) -> impl Deref<Target = std::collections::BTreeMap<std::string::String, std::string::String>> + 'a {
+        Ref::map(element.borrow(), |element| &element.attributes)
+    }
+
+    fn node_to_content<'a>(
+        &self,
+        node: &Self::Node<'a>,
+    ) -> xmltree::emitter::NodeContent<Self::Element<'a>, impl Deref<Target = str> + 'a> {
+        use xmltree::emitter::NodeContent;
+
+        let b = node.borrow();
+        match b.kind() {
+            NodeKind::Element => NodeContent::Element(unsafe { Element::downcast_gc_unchecked(*node) }),
+            NodeKind::Comment => NodeContent::Comment(Ref::map(b, |n| unsafe {
+                Comment::downcast_ref_unchecked(n).content.as_str()
+            })),
+            NodeKind::CData => NodeContent::CData(Ref::map(b, |n| unsafe {
+                CData::downcast_ref_unchecked(n).content.as_str()
+            })),
+            NodeKind::Text => NodeContent::Text(Ref::map(b, |n| unsafe {
+                Text::downcast_ref_unchecked(n).content.as_str()
+            })),
+        }
     }
 }
