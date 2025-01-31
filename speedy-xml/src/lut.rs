@@ -1,19 +1,8 @@
-// TODO: Actually benchmark whether these do anything.
-//       RapidXML does use lookup tables too though.
-
-#[cfg(test)] // not used outside tests
 pub const RAPIDXML_WHITESPACE: &[u8] = b" \n\r\t";
 // NOTE: ':' is additionally treated as unsupported.
 //       This is to implement prefixed names, and is not how RapidXML works.
 pub const RAPIDXML_INVALID_NAME: &[u8] = b" \n\r\t/>?\0:";
 pub const RAPIDXML_INVALID_ATTRNAME: &[u8] = b" \n\r\t/<>=?!\0:";
-
-// TODO: benchmark
-#[inline]
-pub fn is_whitespace(chr: u8) -> bool {
-    const LUT: [u8; 8] = [b' ', b'\t', b'\n', 0, 0, b'\r', 0, 0];
-    LUT[(chr & 0b111) as usize] == chr
-}
 
 const fn make_big_lut(values: &[u8]) -> [bool; 256] {
     let mut result = [false; 256];
@@ -25,6 +14,11 @@ const fn make_big_lut(values: &[u8]) -> [bool; 256] {
     }
 
     result
+}
+
+pub fn is_whitespace(chr: u8) -> bool {
+    const LUT: [bool; 256] = make_big_lut(RAPIDXML_WHITESPACE);
+    LUT[chr as usize]
 }
 
 pub fn is_invalid_name(chr: u8) -> bool {
