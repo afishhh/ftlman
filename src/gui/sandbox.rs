@@ -10,13 +10,13 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::Renderer;
+use annotate_snippets::{Message, Renderer};
 use anyhow::{anyhow, Context, Error, Result};
 use eframe::egui::{
     self, scroll_area,
     text::{CCursor, LayoutJob},
     text_selection::visuals::paint_text_selection,
-    vec2, Color32, Id, Layout, TextEdit, Ui,
+    vec2, Color32, Id, Layout, Margin, TextEdit, Ui, Vec2,
 };
 use egui_extras::syntax_highlighting;
 use log::debug;
@@ -77,7 +77,7 @@ impl LuaFS for PkgOverlayFS<'_> {
 }
 
 struct Shared {
-    output: Mutex<Option<Output>>,
+    output: Mutex<Output>,
     running: AtomicBool,
 }
 
@@ -135,7 +135,10 @@ impl PatchWorker {
                     {
                         Ok(text) => text,
                         Err(err) => {
-                            *self.shared.output.lock() = Some(Output::Error(err.into()));
+                            *self.shared.output.lock() = Output {
+                                patch: Some(PatchOutput::Error(err.into())),
+                                diagnostics: None,
+                            };
                             self.shared.running.store(false, Ordering::Release);
                             continue;
                         }
@@ -177,34 +180,47 @@ impl PatchWorker {
                     let end = Instant::now();
                     debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
 
-                    *self.shared.output.lock() = Some(match result {
-                        Ok(patched) => Output::ResultXml {
-                            content: patched,
-                            find_invalidated: true,
-                        },
-                        Err(None) => {
-                            let mut output = LayoutJob::default();
-                            let renderer = Renderer::styled();
-                            for message in messages {
-                                if let Some(last) = output.sections.last_mut() {
-                                    output.text.push('\n');
-                                    last.byte_range.end += 1;
-                                }
+                    let mut output = self.shared.output.lock();
 
-                                layout_ansi(
-                                    &mut output,
-                                    &renderer.render(message).to_string(),
-                                    egui::FontId {
-                                        family: egui::FontFamily::Monospace,
-                                        ..Default::default()
-                                    },
-                                );
-                            }
-
-                            Output::ValidatedError(output)
+                    let mut message_output = LayoutJob::default();
+                    let renderer = Renderer::styled();
+                    let mut push_message = |message: Message<'_>| {
+                        if let Some(last) = message_output.sections.last_mut() {
+                            message_output.text.push('\n');
+                            last.byte_range.end += 1;
                         }
-                        Err(Some(error)) => Output::Error(error),
-                    });
+
+                        layout_ansi(
+                            &mut message_output,
+                            &renderer.render(message).to_string(),
+                            egui::FontId {
+                                family: egui::FontFamily::Monospace,
+                                ..Default::default()
+                            },
+                        );
+                    };
+
+                    match result {
+                        Ok(patched) => {
+                            output.patch = Some(PatchOutput::Xml {
+                                content: patched,
+                                find_invalidated: true,
+                            })
+                        }
+                        Err(None) => {
+                            output.patch = None;
+                        }
+                        Err(Some(error)) => {
+                            output.patch = Some(PatchOutput::Error(error));
+                        }
+                    };
+
+                    for message in messages {
+                        push_message(message)
+                    }
+
+                    output.diagnostics = Some(message_output);
+
                     self.shared.running.store(false, Ordering::Release);
                     waker.request_repaint();
                 }
@@ -251,6 +267,7 @@ pub struct Sandbox {
 
     patch_mode: PatchMode,
     patch_on_change: bool,
+    always_show_diagnostics: bool,
 
     current_file: Option<usize>,
     output_find_box: (String, Option<Regex>, usize),
@@ -262,10 +279,15 @@ pub struct Sandbox {
     needs_update: bool,
 }
 
-enum Output {
-    ResultXml { content: String, find_invalidated: bool },
+#[derive(Default)]
+struct Output {
+    patch: Option<PatchOutput>,
+    diagnostics: Option<LayoutJob>,
+}
+
+enum PatchOutput {
+    Xml { content: String, find_invalidated: bool },
     Error(Error),
-    ValidatedError(LayoutJob),
 }
 
 // HACK?: kind of hard to refactor into a function
@@ -292,10 +314,11 @@ impl Sandbox {
 
             patch_mode: PatchMode::XmlAppend,
             patch_on_change: true,
+            always_show_diagnostics: false,
 
             current_file: None,
             shared: Arc::new(Shared {
-                output: Mutex::new(None),
+                output: Mutex::default(),
                 running: AtomicBool::new(false),
             }),
             output_find_box: (String::new(), None, 0),
@@ -312,7 +335,7 @@ impl Sandbox {
         self.pkg_names = pkg.paths().filter(|&name| name.ends_with(".xml")).cloned().collect();
         self.pkg_names.sort_unstable();
         rebuild_filtered_names!(self);
-        *self.shared.output.lock() = None;
+        *self.shared.output.lock() = Output::default();
         self.current_file =
             previously_open_name.and_then(|previous_name| self.pkg_names.iter().position(|c| c == &previous_name));
         self.needs_update = true;
@@ -323,6 +346,8 @@ impl Sandbox {
 }
 
 impl WindowState for Sandbox {
+    const MIN_INNER_SIZE: Vec2 = Vec2::new(620., 240.);
+
     fn is_open(&self) -> bool {
         self.worker.is_some()
     }
@@ -332,7 +357,7 @@ impl WindowState for Sandbox {
     }
 
     fn render(&mut self, ctx: &egui::Context) {
-        let Some(pkg) = self.worker.as_mut() else { return };
+        let Some(worker) = self.worker.as_mut() else { return };
 
         egui::TopBottomPanel::top("sandbox header").show(ctx, |ui| {
             ui.add_space(5.);
@@ -355,7 +380,8 @@ impl WindowState for Sandbox {
                                 }
                             });
 
-                        ui.checkbox(&mut self.patch_on_change, l!("sandbox-patch-on-change"))
+                        ui.checkbox(&mut self.patch_on_change, l!("sandbox-patch-on-change"));
+                        ui.checkbox(&mut self.always_show_diagnostics, l!("sandbox-diagnostics-panel"));
                     },
                 )
             });
@@ -408,17 +434,51 @@ impl WindowState for Sandbox {
             ui.fonts(|f| f.layout_job(layout_job))
         };
 
-        if let Some(output) = &mut *self.shared.output.lock() {
+        if let Some(output) =
+            Some(&mut *self.shared.output.lock()).filter(|o| o.patch.is_some() || o.diagnostics.is_some())
+        {
             egui::SidePanel::right("sandbox output")
                 .min_width(300.0)
                 .show(ctx, |ui| {
+                    if let Some(job) = output.diagnostics.as_ref().filter(|_| {
+                        output.patch.is_some()
+                            // Currently no diagnostics are supported with Lua
+                            && self.patch_mode == PatchMode::XmlAppend
+                            && self.always_show_diagnostics
+                    }) {
+                        let mut frame = egui::Frame::side_top_panel(ui.style());
+                        frame.inner_margin = {
+                            Margin {
+                                left: 0.0,
+                                right: 0.0,
+                                ..frame.inner_margin
+                            }
+                        };
+
+                        egui::TopBottomPanel::bottom("sandbox diagnostics panel")
+                            .resizable(true)
+                            .height_range(egui::Rangef::new(60.0, ui.available_height() - 100.0))
+                            .frame(frame)
+                            .show_inside(ui, |ui| {
+                                // This prevents diagnostics from shrinking the panel
+                                ui.set_min_width(ui.available_width());
+                                ui.set_min_height(ui.available_height());
+
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    ui.set_min_width(ui.available_width());
+
+                                    ui.label(eframe::egui::WidgetText::LayoutJob(job.clone()));
+                                });
+                            });
+                    }
+
                     ui.add_space(ui.spacing().window_margin.top);
 
-                    match output {
-                        Output::ResultXml {
+                    match &mut output.patch {
+                        Some(PatchOutput::Xml {
                             content: xml,
                             find_invalidated,
-                        } => {
+                        }) => {
                             let top = ui.next_widget_position();
 
                             ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
@@ -569,6 +629,8 @@ impl WindowState for Sandbox {
                                         self.output_scroll_id = Some(
                                             egui::ScrollArea::vertical()
                                                 .show(ui, |ui| {
+                                                    ui.set_min_width(ui.available_width());
+
                                                     egui::TextEdit::multiline(&mut xml.as_str())
                                                         .layouter(&mut layouter2)
                                                         .code_editor()
@@ -579,17 +641,18 @@ impl WindowState for Sandbox {
                                     });
                             });
                         }
-                        Output::Error(error) => {
-                            // This prevents errors from shrinking the panel
-                            ui.set_min_width(ui.available_width());
+                        Some(PatchOutput::Error(error)) => render_error_chain(ui, error.chain().map(|e| e.to_string())),
+                        None => {
+                            if let Some(job) = output.diagnostics.as_ref() {
+                                ui.set_min_width(ui.available_width());
 
-                            render_error_chain(ui, error.chain().map(|e| e.to_string()))
-                        }
-                        Output::ValidatedError(job) => {
-                            // This prevents errors from shrinking the panel
-                            ui.set_min_width(ui.available_width());
+                                egui::ScrollArea::vertical().show(ui, |ui| {
+                                    // This prevents diagnostics from shrinking the panel
+                                    ui.set_min_width(ui.available_width());
 
-                            ui.label(eframe::egui::WidgetText::LayoutJob(job.clone()));
+                                    ui.label(eframe::egui::WidgetText::LayoutJob(job.clone()));
+                                });
+                            }
                         }
                     }
                 });
@@ -616,7 +679,7 @@ impl WindowState for Sandbox {
             if let Some(current_index) = self.current_file {
                 self.needs_update |= changed & self.patch_on_change;
                 if self.needs_update && !self.shared.running.swap(true, Ordering::AcqRel) {
-                    if pkg
+                    if worker
                         .send(PatchWorkerCommand::Patch {
                             mode: self.patch_mode,
                             patch: self.patch_text.clone(),
@@ -625,7 +688,10 @@ impl WindowState for Sandbox {
                         })
                         .is_err()
                     {
-                        *self.shared.output.lock() = Some(Output::Error(anyhow!("Patch thread disconnected!")));
+                        *self.shared.output.lock() = Output {
+                            patch: Some(PatchOutput::Error(anyhow!("Patch thread disconnected!"))),
+                            diagnostics: None,
+                        };
                     }
                     self.needs_update = false;
                 }

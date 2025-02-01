@@ -4,6 +4,8 @@ use eframe::egui::{self, Vec2, ViewportClass, ViewportId};
 use parking_lot::Mutex;
 
 pub trait WindowState: Send + 'static {
+    const MIN_INNER_SIZE: Vec2;
+
     fn is_open(&self) -> bool;
     fn close(&mut self);
     fn render(&mut self, ctx: &egui::Context);
@@ -40,6 +42,8 @@ impl<S: WindowState> DeferredWindow<S> {
                 egui::ViewportBuilder::default()
                     .with_title(title)
                     .with_active(true)
+                    .with_min_inner_size(S::MIN_INNER_SIZE)
+                    .with_clamp_size_to_monitor_size(true)
                     .with_inner_size(size),
                 move |context, class| {
                     if class != ViewportClass::Deferred {

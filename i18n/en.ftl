@@ -51,6 +51,7 @@ sandbox-mode-xml = XML append
 sandbox-mode-lua = Lua append
 sandbox-patch = Patch
 sandbox-patch-on-change = Patch on change
+sandbox-diagnostics-panel = Diagnostics panel
 
 settings-button = Settings
 settings-title = {settings-button}
