@@ -1,4 +1,4 @@
-use std::{fmt::Display, hash::Hasher as _, io::Read};
+use std::{cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read};
 
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -136,4 +136,35 @@ pub fn find_semver_in_string(string: &str) -> Option<semver::Version> {
         .find_iter(string)
         // NOTE: I think this may only fail if integer overflow occurs (the regex should check everything else)
         .find_map(|m| semver::Version::parse(m.as_str()).ok())
+}
+
+pub struct StringArena {
+    strings: UnsafeCell<Vec<*mut str>>,
+}
+
+impl<'a> StringArena {
+    pub fn new() -> Self {
+        Self {
+            strings: UnsafeCell::default(),
+        }
+    }
+
+    pub fn insert(&self, string: String) -> &str {
+        let ptr = Box::into_raw(string.into_boxed_str());
+        // SAFETY: No reference to self.strings is handed out and the returnede
+        //         string has its lifetime tied to self.
+        unsafe {
+            (*self.strings.get()).push(ptr);
+            &*ptr
+        }
+    }
+}
+
+impl Drop for StringArena {
+    fn drop(&mut self) {
+        for ptr in std::mem::take(self.strings.get_mut()) {
+            // SAFETY: *const str was acquired via Box::into_raw above.
+            unsafe { drop(Box::from_raw(ptr)) };
+        }
+    }
 }

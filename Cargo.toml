@@ -39,6 +39,9 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 
 speedy-xml = { path = "./speedy-xml" }
 
+# For nice error source reporting, currently only used in the XML Sandbox
+annotate-snippets = "0.11.5"
+
 # Localisation
 fluent = "0.16"
 

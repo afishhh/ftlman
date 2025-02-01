@@ -159,7 +159,7 @@ pub enum ErrorKind {
     UnclosedElementTag,
     UnclosedEmptyElementTag,
     UnclosedEndTag,
-    UnclosedElementEof,
+    UnclosedElement,
 
     ExpectedAttributeName,
     ExpectedAttributeEq,
@@ -177,14 +177,14 @@ impl ErrorKind {
     pub fn message(&self) -> &'static str {
         match self {
             Self::TopLevelText => "top-level text is forbidden",
-            Self::UnclosedPITag => "unclosed tag",
+            Self::UnclosedPITag => "unclosed processing instruction",
 
             Self::ExpectedElementName => "expected element name",
             Self::InvalidElementName => "invalid element name",
             Self::UnclosedElementTag => "expected a `>` or `/`",
             Self::UnclosedEmptyElementTag => "expected a `>`",
             Self::UnclosedEndTag => "expected a `>`",
-            Self::UnclosedElementEof => "unclosed element",
+            Self::UnclosedElement => "unclosed element",
 
             Self::ExpectedAttributeName => "expected attribute name",
             Self::ExpectedAttributeEq => "expected `=` after attribute name",
@@ -215,6 +215,14 @@ pub struct Error {
 impl Error {
     fn new(kind: ErrorKind, span: Range<usize>) -> Self {
         Self { kind, span }
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    pub fn span(&self) -> Range<usize> {
+        self.span.clone()
     }
 }
 
@@ -335,12 +343,18 @@ impl<'a> Iterator for Attributes<'a> {
 #[non_exhaustive]
 #[derive(Default, Debug, Clone)]
 pub struct Options {
-    pub allow_top_level_text: bool,
+    allow_top_level_text: bool,
+    allow_unmatched_closing_tags: bool,
 }
 
 impl Options {
     pub fn allow_top_level_text(mut self, value: bool) -> Self {
         self.allow_top_level_text = value;
+        self
+    }
+
+    pub fn allow_unmatched_closing_tags(mut self, value: bool) -> Self {
+        self.allow_unmatched_closing_tags = value;
         self
     }
 }
@@ -368,10 +382,14 @@ impl<'a> Reader<'a> {
         }
     }
 
+    pub fn buffer(&self) -> &'a str {
+        self.buffer.text
+    }
+
     fn range_for_ptrs(&self, range: Range<*const u8>) -> Range<usize> {
         let self_range = self.buffer.as_bytes().as_ptr_range();
         assert!(
-            self_range.contains(&range.start) && self_range.contains(&range.end),
+            self_range.start <= range.start && self_range.end >= range.end && range.start <= range.end,
             "Parser::range_for_ptrs called with invalid pointer range"
         );
 
@@ -583,7 +601,7 @@ impl<'a> Reader<'a> {
             },
 
             // TODO: make depth=0 a separate error condition instead
-            b'/' if self.depth > 0 => {
+            b'/' if self.depth > 0 || self.options.allow_unmatched_closing_tags => {
                 self.buffer.current += 1;
                 let (prefix_end, name_end) = self.take_prefixed_name(start, 1)?;
 
@@ -595,7 +613,7 @@ impl<'a> Reader<'a> {
                     return Err(Error::new(ErrorKind::UnclosedEndTag, span));
                 }
 
-                self.depth -= 1;
+                self.depth = self.depth.saturating_sub(1);
                 self.buffer.current += 1;
                 Ok(Some(Event::End(EndEvent {
                     text: &self.buffer.text[start..self.buffer.current],
@@ -688,7 +706,7 @@ impl<'a> Iterator for Reader<'a> {
                 None if self.depth > 0 => {
                     self.depth = 0;
                     return Some(Err(Error::new(
-                        ErrorKind::UnclosedElementEof,
+                        ErrorKind::UnclosedElement,
                         self.buffer.empty_range_here(),
                     )));
                 }

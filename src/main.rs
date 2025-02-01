@@ -50,6 +50,7 @@ mod lazy;
 mod lua;
 mod scan;
 mod util;
+mod validate;
 mod xmltree;
 
 use apply::ApplyStage;

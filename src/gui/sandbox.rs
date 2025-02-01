@@ -10,25 +10,32 @@ use std::{
     time::Instant,
 };
 
+use annotate_snippets::Renderer;
 use anyhow::{anyhow, Context, Error, Result};
 use eframe::egui::{
-    self, scroll_area, text::CCursor, text_selection::visuals::paint_text_selection, vec2, Color32, Id, Layout,
-    TextEdit, Ui,
+    self, scroll_area,
+    text::{CCursor, LayoutJob},
+    text_selection::visuals::paint_text_selection,
+    vec2, Color32, Id, Layout, TextEdit, Ui,
 };
 use egui_extras::syntax_highlighting;
 use log::debug;
 use parking_lot::Mutex;
 use regex::Regex;
 use silpkg::sync::Pkg;
+use speedy_xml::reader::Options;
 
 use crate::{
     apply::{self, LuaPkgFS},
+    gui::ansi::layout_ansi,
     l,
     lua::{
         io::{LuaFS, LuaFileStats, LuaFileType},
         ModLuaRuntime,
     },
     render_error_chain,
+    util::StringArena,
+    validate::xml::validate_xml,
 };
 
 use super::WindowState;
@@ -134,23 +141,38 @@ impl PatchWorker {
                         }
                     };
 
+                    let mut messages = Vec::new();
+                    let message_strings = StringArena::new();
                     let result = match mode {
                         PatchMode::XmlAppend => {
-                            apply::apply_one_xml(&source_text, &patch, apply::XmlAppendType::Append)
-                        }
-                        PatchMode::LuaAppend => ModLuaRuntime::new().map_err(anyhow::Error::from).and_then(|rt| {
-                            let mut overlay = PkgOverlayFS {
-                                pkg: LuaPkgFS::new(&mut self.pkg).context("Failed to create archive filesystem")?,
-                                overlay: HashMap::new(),
-                            };
-                            match rt.with_filesystems([("pkg", &mut overlay as &mut dyn LuaFS)], || {
-                                Ok(apply::apply_one_lua(&source_text, &patch, &rt))
-                            }) {
-                                Ok(Ok(ok)) => Ok(ok),
-                                Err(err) => Err(anyhow::Error::from(err)),
-                                Ok(Err(err)) => Err(err),
+                            if validate_xml(
+                                &patch,
+                                Options::default().allow_top_level_text(true),
+                                &mut messages,
+                                &message_strings,
+                                None,
+                            ) {
+                                apply::apply_one_xml(&source_text, &patch, apply::XmlAppendType::Append).map_err(Some)
+                            } else {
+                                Err(None)
                             }
-                        }),
+                        }
+                        PatchMode::LuaAppend => ModLuaRuntime::new()
+                            .map_err(anyhow::Error::from)
+                            .and_then(|rt| {
+                                let mut overlay = PkgOverlayFS {
+                                    pkg: LuaPkgFS::new(&mut self.pkg).context("Failed to create archive filesystem")?,
+                                    overlay: HashMap::new(),
+                                };
+                                match rt.with_filesystems([("pkg", &mut overlay as &mut dyn LuaFS)], || {
+                                    Ok(apply::apply_one_lua(&source_text, &patch, &rt))
+                                }) {
+                                    Ok(Ok(ok)) => Ok(ok),
+                                    Err(err) => Err(anyhow::Error::from(err)),
+                                    Ok(Err(err)) => Err(err),
+                                }
+                            })
+                            .map_err(Some),
                     };
                     let end = Instant::now();
                     debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
@@ -160,7 +182,28 @@ impl PatchWorker {
                             content: patched,
                             find_invalidated: true,
                         },
-                        Err(error) => Output::Error(error),
+                        Err(None) => {
+                            let mut output = LayoutJob::default();
+                            let renderer = Renderer::styled();
+                            for message in messages {
+                                if let Some(last) = output.sections.last_mut() {
+                                    output.text.push('\n');
+                                    last.byte_range.end += 1;
+                                }
+
+                                layout_ansi(
+                                    &mut output,
+                                    &renderer.render(message).to_string(),
+                                    egui::FontId {
+                                        family: egui::FontFamily::Monospace,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+
+                            Output::ValidatedError(output)
+                        }
+                        Err(Some(error)) => Output::Error(error),
                     });
                     self.shared.running.store(false, Ordering::Release);
                     waker.request_repaint();
@@ -222,6 +265,7 @@ pub struct Sandbox {
 enum Output {
     ResultXml { content: String, find_invalidated: bool },
     Error(Error),
+    ValidatedError(LayoutJob),
 }
 
 // HACK?: kind of hard to refactor into a function
@@ -540,6 +584,12 @@ impl WindowState for Sandbox {
                             ui.set_min_width(ui.available_width());
 
                             render_error_chain(ui, error.chain().map(|e| e.to_string()))
+                        }
+                        Output::ValidatedError(job) => {
+                            // This prevents errors from shrinking the panel
+                            ui.set_min_width(ui.available_width());
+
+                            ui.label(eframe::egui::WidgetText::LayoutJob(job.clone()));
                         }
                     }
                 });
