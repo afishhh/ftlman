@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use annotate_snippets::{Level, Message, Snippet};
 use speedy_xml::{
     reader::{ErrorKind, Options},
@@ -59,6 +61,25 @@ pub fn validate_xml<'a>(
             Some(Ok(event)) => match event {
                 speedy_xml::reader::Event::Start(start) => {
                     element_stack.push(start);
+
+                    let mut seen = HashMap::new();
+                    for attribute in start.attributes() {
+                        let current = attribute.name_position_in(&reader);
+                        if let Some(previous) = seen.insert(attribute.name(), current.clone()) {
+                            messages.push(
+                                Level::Warning.title("duplicate attribute").snippet(
+                                    make_snippet(previous.start, None)
+                                        .fold(true)
+                                        .annotation(Level::Info.span(previous).label("previous occurrence here"))
+                                        .annotation(
+                                            Level::Warning
+                                                .span(current)
+                                                .label("attribute with the same name redeclared here"),
+                                        ),
+                                ),
+                            );
+                        }
+                    }
                 }
                 speedy_xml::reader::Event::End(end) => match element_stack.pop() {
                     Some(start) if start.prefix() != end.prefix() || start.name() != end.name() => {
@@ -104,10 +125,12 @@ pub fn validate_xml<'a>(
                 let snippet = match e.kind() {
                     // This is handled after the whole document is parsed instead.
                     ErrorKind::UnclosedElement => continue,
-                    _ => make_snippet(e.span().start, Some(e.span().end)),
+                    _ => make_snippet(e.span().start, None)
+                        .fold(true)
+                        .annotation(Level::Error.span(e.span()).label(e.kind().message())),
                 };
 
-                messages.push(Level::Error.title(e.kind().message()).snippet(snippet));
+                messages.push(Level::Error.title("parse error").snippet(snippet));
             }
             None => {
                 for unclosed in element_stack {

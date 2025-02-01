@@ -81,6 +81,14 @@ impl<'a> AttributeEvent<'a> {
             _ => unreachable!(),
         }
     }
+
+    pub fn position_in(&self, reader: &Reader) -> Range<usize> {
+        reader.range_for_ptrs(self.text.as_bytes().as_ptr_range())
+    }
+
+    pub fn name_position_in(&self, reader: &Reader) -> Range<usize> {
+        reader.range_for_ptrs(self.name().as_bytes().as_ptr_range())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
