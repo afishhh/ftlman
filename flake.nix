@@ -1,5 +1,5 @@
 {
-  description = "A basic flake";
+  description = "An FTL: Faster Than Light mod manager";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -10,61 +10,75 @@
   };
 
   outputs = { self, fenix, flake-utils, nixpkgs }:
-    flake-utils.lib.eachDefaultSystem (system: {
-      packages =
-        let
-          inherit (fenix.packages.${system}.latest) toolchain;
-          pkgs = nixpkgs.legacyPackages.${system};
-          runtimeLibs = "/run/opengl-driver/lib/:${pkgs.lib.makeLibraryPath (with pkgs; [ libGL libGLU libxkbcommon bzip2 wayland fontconfig ])}";
-        in
-        rec {
-          unwrapped = (pkgs.makeRustPlatform {
-            cargo = toolchain;
-            rustc = toolchain;
-          }).buildRustPackage {
-            pname = "ftlman-unwrapped";
-            version = "0.3.0";
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        inherit (fenix.packages.${system}.latest) toolchain;
+        pkgs = nixpkgs.legacyPackages.${system};
+        libs = with pkgs; with pkgs.xorg;  [
+          libGL
+          libGLU
+          libxcb
+          libXcursor
+          libXrandr
+          libXi
+          libxkbcommon
+          gtk3
+          atk
+          bzip2
+          fontconfig
+          openssl
+        ];
+        libraryPath = "/run/opengl-driver/lib:${pkgs.lib.makeLibraryPath libs}";
+      in
+      {
+        packages =
+          rec {
+            unwrapped = (pkgs.makeRustPlatform {
+              cargo = toolchain;
+              rustc = toolchain;
+            }).buildRustPackage {
+              pname = "ftlman-unwrapped";
+              version = (builtins.fromTOML (builtins.readFile ./Cargo.toml)).package.version;
 
-            nativeBuildInputs = with pkgs; [
-              pkg-config
-            ];
+              nativeBuildInputs = with pkgs; [
+                pkg-config
+              ];
 
-            buildInputs = with pkgs; with pkgs.xorg; [
-              libX11
-              libXcursor
-              libXrandr
-              libxcb
-              libxkbcommon
-              libXi
-              fontconfig
-              openssl
-            ];
+              buildInputs = libs ++ (with pkgs; [
+                wayland
+                xorg.libX11
+              ]);
 
-            src = ./.;
+              src = ./.;
 
-            cargoLock = {
-              lockFile = ./Cargo.lock;
-              outputHashes = {
-                # silpkg's internal macros crate
-                # for some reason cargo doesn't lock this
-                "silpkg-macros-0.0.0" = "sha256-EIz400bWOGtdtTp7F6xAlCfb1M2vfbdVyb86j/ICFAE=";
+              cargoLock = {
+                lockFile = ./Cargo.lock;
+                outputHashes = {
+                  "ecolor-0.29.1" = "sha256-WOZoZIREJ/xXueipNKgI3xTRuOkyeGpcvs5aHggG7+Q=";
+                };
               };
             };
-
-            shellHook = ''
-              export LD_LIBRARY_PATH=${runtimeLibs}
-            '';
-          };
-          default = pkgs.runCommandNoCC "ftlman"
-            {
+            # the extra parens prevent the formatter from putting the attrset on a new line
+            default = (pkgs.runCommandNoCC "ftlman" {
               pname = "ftlman";
               inherit (unwrapped) version;
 
               nativeBuildInputs = [ pkgs.makeWrapper ];
-            } ''
-            makeWrapper ${unwrapped}/bin/ftlman $out/bin/ftlman --suffix LD_LIBRARY_PATH : ${runtimeLibs}
+            }) ''
+              makeWrapper ${unwrapped}/bin/ftlman $out/bin/ftlman --suffix LD_LIBRARY_PATH : ${libraryPath}
+            '';
+          };
+        devShells.default = pkgs.mkShell {
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            # For llvm-strip as rust-objcopy seems to fail in apple cross containers
+            llvmPackages_latest.bintools
+          ];
+          buildInputs = libs;
+
+          shellHook = ''
+            export LD_LIBRARY_PATH=${libraryPath}
           '';
         };
-      devShells.default = self.packages.${system}.unwrapped;
-    });
+      });
 }
