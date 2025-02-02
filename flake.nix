@@ -54,7 +54,7 @@
               cargoLock = {
                 lockFile = ./Cargo.lock;
                 outputHashes = {
-                  "ecolor-0.29.1" = "sha256-WOZoZIREJ/xXueipNKgI3xTRuOkyeGpcvs5aHggG7+Q=";
+                  "ecolor-0.30.0" = "sha256-VDFyWZgbXJGc1Dkx765bSAifXKOLAxo91b4msTeCM5Q=";
                 };
               };
             };

@@ -389,7 +389,7 @@ impl WindowState for Sandbox {
         });
 
         egui::SidePanel::left("sandbox files").max_width(225.0).show(ctx, |ui| {
-            ui.add_space(ui.spacing().window_margin.top);
+            ui.add_space(ui.spacing().window_margin.top.into());
 
             ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
@@ -449,8 +449,8 @@ impl WindowState for Sandbox {
                         let mut frame = egui::Frame::side_top_panel(ui.style());
                         frame.inner_margin = {
                             Margin {
-                                left: 0.0,
-                                right: 0.0,
+                                left: 0,
+                                right: 0,
                                 ..frame.inner_margin
                             }
                         };
@@ -472,7 +472,7 @@ impl WindowState for Sandbox {
                             });
                     }
 
-                    ui.add_space(ui.spacing().window_margin.top);
+                    ui.add_space(ui.spacing().window_margin.top.into());
 
                     match &mut output.patch {
                         Some(PatchOutput::Xml {
@@ -482,7 +482,7 @@ impl WindowState for Sandbox {
                             let top = ui.next_widget_position();
 
                             ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
-                                ui.add_space(ui.spacing().window_margin.bottom);
+                                ui.add_space(ui.spacing().window_margin.bottom.into());
 
                                 let mut selection_cursor = None;
                                 let mut do_scroll = false;

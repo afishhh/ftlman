@@ -732,8 +732,8 @@ impl eframe::App for App {
                                                         release.name(),
                                                     );
                                                     let desc_pos = Pos2::new(
-                                                        ui.min_rect().max.x + ui.spacing().window_margin.left,
-                                                        ui.min_rect().min.y - ui.spacing().window_margin.top,
+                                                        ui.min_rect().max.x + 12.0,
+                                                        ui.min_rect().min.y - f32::from(ui.spacing().window_margin.top),
                                                     );
 
                                                     if response.clicked() {

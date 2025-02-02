@@ -8,9 +8,9 @@ env_logger = "0.11"
 log = "0.4"
 
 clap = { version = "4", features = ["derive"] }
-eframe = { version = "0.29", features = ["persistence"] }
+eframe = { version = "0.30", features = ["persistence"] }
 ureq = "2"
-egui_dnd = "0.10"
+egui_dnd = "0.11"
 dirs = "5"
 anyhow = "1.0"
 regex = "1"
@@ -50,7 +50,7 @@ semver = { version = "1", features = ["serde"] }
 
 # This dependency could be removed but it's pretty small.
 open = "5.3.1"
-egui_extras = { version = "0.29.1", features = ["syntect"] }
+egui_extras = { version = "0.30", features = ["syntect"] }
 
 mlua = { version = "0.10", features = ["lua54", "macros", "vendored", "error-send", "serialize"] }
 gc-arena = "0.5.3"
