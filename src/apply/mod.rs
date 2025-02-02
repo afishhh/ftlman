@@ -94,6 +94,44 @@ fn unwrap_rewrap_single<E>(
     })
 }
 
+fn raw_append_xml(lower: &str, upper: &str) -> String {
+    // FIXME: this can be made quicker
+    let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(lower).any(|x| x.get(2).is_some());
+    let lower_without_root = unwrap_xml_text(lower);
+    let upper_without_root = unwrap_xml_text(upper);
+
+    const XML_DECLARATION: &str = concat!(r#"<?xml version="1.0" encoding="utf-8"?>"#, "\n");
+    const SEPARATOR: &str = concat!("\n\n<!-- Appended by ftlman ", env!("CARGO_PKG_VERSION"), " -->\n\n");
+    const WRAPPER_OPEN: &str = "<FTL>\n";
+    const WRAPPER_CLOSE: &str = "</FTL>\n";
+
+    let wrapper_len = if had_ftl_root {
+        WRAPPER_OPEN.len() + WRAPPER_CLOSE.len()
+    } else {
+        0
+    };
+
+    let capacity =
+        XML_DECLARATION.len() + wrapper_len + lower_without_root.len() + SEPARATOR.len() + upper_without_root.len() + 1;
+    let mut result = String::with_capacity(capacity);
+
+    result.push_str(XML_DECLARATION);
+    if had_ftl_root {
+        result.push_str(WRAPPER_OPEN);
+    }
+    result.push_str(&lower_without_root);
+    result.push_str(SEPARATOR);
+    result.push_str(&upper_without_root);
+    result.push('\n');
+    if had_ftl_root {
+        result.push_str(WRAPPER_CLOSE);
+    }
+
+    debug_assert_eq!(result.len(), capacity);
+
+    result
+}
+
 fn unwrap_rewrap_xml(
     lower: &str,
     upper: &str,
@@ -241,7 +279,7 @@ impl AppendType {
 pub fn apply_one_xml(document: &str, patch: &str, kind: XmlAppendType) -> Result<String> {
     Ok(match kind {
         XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
-        XmlAppendType::RawAppend => bail!(".xml.rawappend files are not supported yet"),
+        XmlAppendType::RawAppend => raw_append_xml(document, patch),
     })
 }
 
