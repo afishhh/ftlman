@@ -7,17 +7,12 @@ use std::{
 
 use crate::xmltree::{Element, Node};
 use anyhow::{anyhow, bail, Context, Result};
-use lazy_static::lazy_static;
 use regex::Regex;
 
 type XMLNode = Node;
 
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
-
-lazy_static! {
-    static ref XML_COMMENT_REGEX: Regex = Regex::new("<!--(?s:.*?)-->").unwrap();
-}
 
 pub fn patch(context: &mut Element, patch: Vec<XMLNode>) -> Result<()> {
     for mut node in patch {
