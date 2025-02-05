@@ -4,10 +4,11 @@ This project is an alternative to the [Slipstream Mod Manager](https://github.co
 
 ### Features
 
-- [x] Regular FTL mods (mostly Slipstream compatible\*)
+- [x] Regular FTL mods (Slipstream compatible¹)
 - [x] Supports mod tags from [Blizz's Slipstream fork](https://github.com/blizzarchon/Slipstream-Mod-Manager)
+- [x] Supports an ftlman-specific Lua patching API (documentation available [here](https://fishhh.dev/ftlman/lua.html))
 - [x] Automatic [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) installer
-- [x] Mostly functional XML Sandbox
+- [x] Functional² XML and Lua Sandbox (syntax highlighting, WIP diagnostics)
 
 Currently automatic hyperspace installation is supported for the following FTL versions:
 - Steam (Linux and Windows)
@@ -16,13 +17,10 @@ Currently automatic hyperspace installation is supported for the following FTL v
 
 Patching the Microsoft version is technically supported but you may encounter permission problems if you try to patch it in the original installation directory.
 
-\* Most Slipstream mods are supported but these Slipstream features are currently unimplemented:
-- .rawappend.xml/.xml.rawappend files
-- Some ill-formed XML files may still be rejected by ftlman but accepted by Slipstream.
+If you find a mod that fails to patch with ftlman but works with slipstream or one that works different under ftlman [open an issue](https://github.com/afishhh/ftlman/issues/new).
 
-These features are not particularly difficult to implement but I just don't have any mods that actually *use* them so I can't test changes. If you find a mod that requires any of these please [open an issue](https://github.com/afishhh/ftlman/issues/new).
-
-If you find a mod that fails to patch with ftlman but works with slipstream or one that works different under ftlman also [open an issue](https://github.com/afishhh/ftlman/issues/new).
+¹ ftlman's XML parser is modeled closely after FTL's (RapidXML). This means it is very lenient but behaviour may be slightly different than Slipstream, due to Slipstream's messy handling of sloppy parsing.<br>
+² Struggles with files hundreds of kilobytes in size.
 
 ### Installation
 
