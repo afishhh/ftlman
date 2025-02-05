@@ -345,6 +345,10 @@ impl Sandbox {
     }
 }
 
+const FILE_SELECT_MAX_WIDTH: f32 = 225.;
+const OUTPUT_VIEW_MIN_WIDTH: f32 = 180.;
+const CODE_EDITOR_MIN_WIDTH: f32 = 180.;
+
 impl WindowState for Sandbox {
     const MIN_INNER_SIZE: Vec2 = Vec2::new(620., 240.);
 
@@ -388,44 +392,46 @@ impl WindowState for Sandbox {
             ui.add_space(5.);
         });
 
-        egui::SidePanel::left("sandbox files").max_width(225.0).show(ctx, |ui| {
-            ui.add_space(ui.spacing().window_margin.top.into());
+        egui::SidePanel::left("sandbox files")
+            .max_width(FILE_SELECT_MAX_WIDTH)
+            .show(ctx, |ui| {
+                ui.add_space(ui.spacing().window_margin.top.into());
 
-            ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
-                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+                ui.with_layout(ui.layout().with_cross_justify(true), |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
 
-                ui.horizontal(|ui| {
-                    if ui
-                        .add(egui::TextEdit::singleline(&mut self.search_text).id_source("sandbox file search"))
-                        .changed()
-                    {
-                        rebuild_filtered_names!(self);
-                    }
-                });
-
-                ui.add_space(5.);
-
-                egui::ScrollArea::vertical().show_rows(
-                    ui,
-                    ui.spacing().interact_size.y,
-                    self.filtered_pkg_names.len(),
-                    |ui, range| {
-                        for &(i, ref name) in self.filtered_pkg_names.iter().skip(range.start).take(range.len()) {
-                            if !name.contains(&self.search_text) {
-                                continue;
-                            }
-
-                            let is_current = self.current_file.is_some_and(|n| n == i);
-                            if ui.selectable_label(is_current, name).clicked() && !is_current {
-                                self.needs_update = true;
-                                self.current_file = Some(i);
-                                ctx.request_repaint();
-                            }
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add(egui::TextEdit::singleline(&mut self.search_text).id_source("sandbox file search"))
+                            .changed()
+                        {
+                            rebuild_filtered_names!(self);
                         }
-                    },
-                );
+                    });
+
+                    ui.add_space(5.);
+
+                    egui::ScrollArea::vertical().show_rows(
+                        ui,
+                        ui.spacing().interact_size.y,
+                        self.filtered_pkg_names.len(),
+                        |ui, range| {
+                            for &(i, ref name) in self.filtered_pkg_names.iter().skip(range.start).take(range.len()) {
+                                if !name.contains(&self.search_text) {
+                                    continue;
+                                }
+
+                                let is_current = self.current_file.is_some_and(|n| n == i);
+                                if ui.selectable_label(is_current, name).clicked() && !is_current {
+                                    self.needs_update = true;
+                                    self.current_file = Some(i);
+                                    ctx.request_repaint();
+                                }
+                            }
+                        },
+                    );
+                });
             });
-        });
 
         let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
         let layouter = move |ui: &Ui, text: &str, width: f32, language: &'static str| {
@@ -438,7 +444,8 @@ impl WindowState for Sandbox {
             Some(&mut *self.shared.output.lock()).filter(|o| o.patch.is_some() || o.diagnostics.is_some())
         {
             egui::SidePanel::right("sandbox output")
-                .min_width(300.0)
+                .min_width(OUTPUT_VIEW_MIN_WIDTH)
+                .max_width(ctx.available_rect().width() - CODE_EDITOR_MIN_WIDTH)
                 .show(ctx, |ui| {
                     if let Some(job) = output.diagnostics.as_ref().filter(|_| {
                         output.patch.is_some()
