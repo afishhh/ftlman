@@ -142,14 +142,13 @@ pub struct StringArena {
     strings: UnsafeCell<Vec<*mut str>>,
 }
 
-impl<'a> StringArena {
+impl StringArena {
     pub fn new() -> Self {
         Self {
             strings: UnsafeCell::default(),
         }
     }
 
-    #[expect(dead_code)]
     pub fn insert(&self, string: String) -> &str {
         let ptr = Box::into_raw(string.into_boxed_str());
         // SAFETY: No reference to self.strings is handed out and the returned

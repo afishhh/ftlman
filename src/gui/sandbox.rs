@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::{Message, Renderer};
+use annotate_snippets::{Level, Message, Renderer, Snippet};
 use anyhow::{anyhow, Context, Error, Result};
 use eframe::egui::{
     self, scroll_area,
@@ -99,6 +99,48 @@ struct PatchWorker {
     shared: SharedArc,
 }
 
+lazy_static::lazy_static! {
+    static ref LUA_ERROR_LINE_REGEX: Regex = Regex::new(r#"\[string "<patch>"\]:(\d+): "#).unwrap();
+}
+
+fn extract_lua_error_diagnostic<'a>(
+    source: &'a str,
+    arena: &'a StringArena,
+    error: &mlua::Error,
+) -> Option<Message<'a>> {
+    let error_string = error.to_string();
+    let captures = LUA_ERROR_LINE_REGEX.captures(&error_string)?;
+    let line_number = captures[1].parse::<usize>().ok()?;
+
+    let snippet_start_line = (line_number - 1).max(1);
+    let snippet_end_line = line_number + 1;
+    let mut line_start = 0;
+    let mut current_line = 1;
+    while current_line < snippet_start_line {
+        let Some(next) = source[line_start..].find('\n') else {
+            break;
+        };
+        line_start += next + 1;
+        current_line += 1;
+    }
+
+    let mut line_end = line_start;
+    while current_line <= snippet_end_line {
+        let Some(next) = source[line_end + 1..].find('\n') else {
+            line_end = source.len();
+            break;
+        };
+        line_end += next + 1;
+        current_line += 1;
+    }
+
+    Some(
+        Level::Error
+            .title(arena.insert(error_string))
+            .snippet(Snippet::source(&source[line_start..line_end]).line_start(snippet_start_line)),
+    )
+}
+
 impl PatchWorker {
     fn start(pkg: Pkg<std::fs::File>, output: SharedArc) -> mpsc::SyncSender<PatchWorkerCommand> {
         let (csend, crecv) = mpsc::sync_channel(0);
@@ -162,6 +204,7 @@ impl PatchWorker {
                         }
                         PatchMode::LuaAppend => ModLuaRuntime::new()
                             .map_err(anyhow::Error::from)
+                            .map_err(Some)
                             .and_then(|rt| {
                                 let mut overlay = PkgOverlayFS {
                                     pkg: LuaPkgFS::new(&mut self.pkg).context("Failed to create archive filesystem")?,
@@ -171,11 +214,19 @@ impl PatchWorker {
                                     Ok(apply::apply_one_lua(&source_text, &patch, &rt))
                                 }) {
                                     Ok(Ok(ok)) => Ok(ok),
-                                    Err(err) => Err(anyhow::Error::from(err)),
-                                    Ok(Err(err)) => Err(err),
+                                    Err(err) => Err(Some(anyhow::Error::from(err))),
+                                    Ok(Err(err)) => {
+                                        if let Some(diagnostic) = err.downcast_ref::<mlua::Error>().and_then(|error| {
+                                            extract_lua_error_diagnostic(&patch, &message_strings, error)
+                                        }) {
+                                            messages.push(diagnostic);
+                                            Err(None)
+                                        } else {
+                                            Err(Some(err))
+                                        }
+                                    }
                                 }
-                            })
-                            .map_err(Some),
+                            }),
                     };
                     let end = Instant::now();
                     debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
