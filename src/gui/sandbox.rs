@@ -20,6 +20,7 @@ use eframe::egui::{
 };
 use egui_extras::syntax_highlighting;
 use log::debug;
+use once_cell::unsync::OnceCell;
 use parking_lot::Mutex;
 use regex::Regex;
 use silpkg::sync::Pkg;
@@ -94,6 +95,8 @@ enum PatchWorkerCommand {
 
 struct PatchWorker {
     pkg: Pkg<std::fs::File>,
+    // TODO: Replace with std variant after https://github.com/rust-lang/rust/issues/109737
+    lua: OnceCell<ModLuaRuntime>,
 
     receiver: mpsc::Receiver<PatchWorkerCommand>,
     shared: SharedArc,
@@ -149,6 +152,7 @@ impl PatchWorker {
             move || {
                 (Self {
                     pkg,
+                    lua: OnceCell::new(),
                     receiver: crecv,
                     shared: output,
                 })
@@ -202,16 +206,17 @@ impl PatchWorker {
                                 Err(None)
                             }
                         }
-                        PatchMode::LuaAppend => ModLuaRuntime::new()
-                            .map_err(anyhow::Error::from)
-                            .map_err(Some)
+                        PatchMode::LuaAppend => self
+                            .lua
+                            .get_or_try_init(ModLuaRuntime::new)
+                            .map_err(|e| Some(anyhow::Error::from(e)))
                             .and_then(|rt| {
                                 let mut overlay = PkgOverlayFS {
                                     pkg: LuaPkgFS::new(&mut self.pkg).context("Failed to create archive filesystem")?,
                                     overlay: HashMap::new(),
                                 };
                                 match rt.with_filesystems([("pkg", &mut overlay as &mut dyn LuaFS)], || {
-                                    Ok(apply::apply_one_lua(&source_text, &patch, &rt))
+                                    Ok(apply::apply_one_lua(&source_text, &patch, rt))
                                 }) {
                                     Ok(Ok(ok)) => Ok(ok),
                                     Err(err) => Err(Some(anyhow::Error::from(err))),
