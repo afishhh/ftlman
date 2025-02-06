@@ -117,6 +117,43 @@ fn add_node_fields<T: LuaNode, M: LuaUserDataFields<T>>(fields: &mut M, name: &'
     });
 }
 
+fn check_node_insertion<'gc>(
+    mut parent: GcNode<'gc>,
+    inserted: GcNode<'gc>,
+    arg_number: usize,
+    function: &'static str,
+) -> LuaResult<()> {
+    if Gc::ptr_eq(parent, inserted) {
+        return Err(LuaError::runtime(format!(
+            "Node passed as argument #{} to {function} is the parent",
+            arg_number
+        )));
+    }
+
+    loop {
+        parent = match parent.borrow().parent() {
+            Some(next) => unsize_node!(next),
+            None => break,
+        };
+
+        if Gc::ptr_eq(parent, inserted) {
+            return Err(LuaError::runtime(format!(
+                "Node passed as argument #{} to {function} is an ancestor of the parent",
+                arg_number
+            )));
+        }
+    }
+
+    if inserted.borrow().parent().is_some() {
+        return Err(LuaError::runtime(format!(
+            "Node passed as argument #{} to {function} already has a parent",
+            arg_number
+        )));
+    }
+
+    Ok(())
+}
+
 fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
     methods.add_method("as", |lua, this, kind: String| {
         lua.gc().mutate(|mc, roots| {
@@ -154,18 +191,13 @@ fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
         |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
             lua.gc().mutate(|mc, _| {
                 let this = unsafe { this.get_node() };
-                if this.borrow().parent().is_none() {
+                let Some(parent) = this.borrow().parent() else {
                     return Err(LuaError::runtime("cannot insert nodes before orphan node"));
-                }
+                };
 
                 for (i, node) in nodes.into_iter().enumerate() {
                     let node = node.into_node(mc);
-                    if node.borrow().parent().is_some() {
-                        return Err(LuaError::runtime(format!(
-                            "Node passed as argument #{} to Element:before already has a parent",
-                            i + 1
-                        )));
-                    }
+                    check_node_insertion(unsize_node!(parent), node, i + 1, "Element:before")?;
                     node_insert_before(this, mc, node);
                 }
 
@@ -179,18 +211,13 @@ fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
         |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
             lua.gc().mutate(|mc, _| {
                 let this = unsafe { this.get_node() };
-                if this.borrow().parent().is_none() {
+                let Some(parent) = this.borrow().parent() else {
                     return Err(LuaError::runtime("cannot insert nodes after orphan node"));
-                }
+                };
 
                 for (i, node) in nodes.into_iter().enumerate().rev() {
                     let node = node.into_node(mc);
-                    if node.borrow().parent().is_some() {
-                        return Err(LuaError::runtime(format!(
-                            "Node passed as argument #{} to Element:after already has a parent",
-                            i + 1
-                        )));
-                    }
+                    check_node_insertion(unsize_node!(parent), node, i + 1, "Element:after")?;
                     node_insert_after(this, mc, node);
                 }
 
@@ -438,16 +465,11 @@ impl UserData for LuaElement {
             "prepend",
             |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
                 lua.gc().mutate(|mc, roots| {
-                    let mut this = roots.fetch(&this.0).borrow_mut(mc);
+                    let this = *roots.fetch(&this.0);
                     for (i, node) in nodes.into_iter().enumerate().rev() {
                         let node = node.into_node(mc);
-                        if node.borrow().parent().is_some() {
-                            return Err(LuaError::runtime(format!(
-                                "Node passed as argument #{} to Element:prepend already has a parent",
-                                i + 1
-                            )));
-                        }
-                        this.prepend_child(mc, node);
+                        check_node_insertion(unsize_node!(this), node, i + 1, "Element:prepend")?;
+                        this.borrow_mut(mc).prepend_child(mc, node);
                     }
                     Ok(())
                 })
@@ -458,23 +480,11 @@ impl UserData for LuaElement {
             "append",
             |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
                 lua.gc().mutate(|mc, roots| {
-                    let this_gc = *roots.fetch(&this.0);
-                    let mut this = this_gc.borrow_mut(mc);
+                    let this = *roots.fetch(&this.0);
                     for (i, node) in nodes.into_iter().enumerate() {
                         let node = node.into_node(mc);
-                        if Gc::as_ptr(node).addr() == Gc::as_ptr(this_gc).addr() {
-                            return Err(LuaError::runtime(format!(
-                                "Node passed as argument #{} to Element:append cannot be appended to itself",
-                                i + 1
-                            )));
-                        }
-                        if node.borrow().parent().is_some() {
-                            return Err(LuaError::runtime(format!(
-                                "Node passed as argument #{} to Element:append already has a parent",
-                                i + 1
-                            )));
-                        }
-                        this.append_child(mc, node);
+                        check_node_insertion(unsize_node!(this), node, i + 1, "Element:append")?;
+                        this.borrow_mut(mc).append_child(mc, node);
                     }
                     Ok(())
                 })
