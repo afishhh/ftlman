@@ -10,13 +10,12 @@ UNIXLIKES=(
 
 for target in "${UNIXLIKES[@]}"; do
   cross +nightly build --target "$target" --release
-  [[ "$target" == *-apple-darwin ]] && {
-    llvm-strip --strip-all "target/$target/release/ftlman"
-  }
+  llvm-strip --strip-all "target/$target/release/ftlman"
 done
 
 cross +nightly build -p windows_gui_wrapper --target-dir target-x86_64-pc-windows-gnu --target x86_64-pc-windows-gnu --release
 cross +nightly build --target-dir target-x86_64-pc-windows-gnu --target x86_64-pc-windows-gnu --release
+llvm-strip --strip-all target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/*.exe
 
 [[ -e release ]] || mkdir release
 cd release
