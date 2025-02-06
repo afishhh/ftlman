@@ -3,6 +3,7 @@
 ### Fixed
 
 - Actually serialize empty XML elements as empty tags.
+- Fix Lua patch thread crashes caused by insufficient or incorrect validation of node insertions.
 
 ## [v0.5.0]
 
