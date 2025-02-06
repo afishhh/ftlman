@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Write,
-    mem::offset_of,
-    str::FromStr,
-};
+use std::{collections::HashSet, fmt::Write, mem::offset_of, str::FromStr};
 
 use crate::xmltree::{Element, Node};
 use anyhow::{anyhow, bail, Context, Result};
@@ -259,16 +254,6 @@ impl<F: ElementFilter> ElementFilter for WithChildFilter<F> {
     }
 }
 
-fn index_children(node: &Element) -> HashMap<*const Element, usize> {
-    let mut result = HashMap::new();
-
-    for (i, child) in node.children.iter().filter_map(XMLNode::as_element).enumerate() {
-        result.insert(child as *const Element, i);
-    }
-
-    result
-}
-
 fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
     if &*node.name != "par" || node.prefix.as_deref() != Some("mod") {
         return Ok(None);
@@ -399,11 +384,9 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
                     bail!("findComposite element is missing a par child");
                 };
 
-                let index = index_children(context);
                 let mut vec = mod_par(context, par)?.unwrap();
-
-                vec.sort_by_key(|x| index.get(&(*x as *const Element)).unwrap());
-
+                // SAFETY: This is just an elaborate trick to get the address behind the shared reference.
+                vec.sort_by_key(|x| unsafe { (x as *const &mut Element as *const *mut Element).read().addr() });
                 vec
             }
             _ => unreachable!(),
