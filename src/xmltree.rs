@@ -98,6 +98,10 @@ impl emitter::TreeEmitter for SimpleTreeEmitter {
     type Element<'a> = &'a Element;
     type Node<'a> = &'a Node;
 
+    fn element_is_empty(&self, element: &Self::Element<'_>) -> bool {
+        element.children.is_empty()
+    }
+
     fn iter_element<'a>(&self, element: &Self::Element<'a>) -> impl Iterator<Item = Self::Node<'a>> {
         element.children.iter()
     }
@@ -110,11 +114,16 @@ impl emitter::TreeEmitter for SimpleTreeEmitter {
         element.name.as_str()
     }
 
-    fn element_attributes<'a>(
+    fn element_attributes(
         &self,
-        element: &Self::Element<'a>,
-    ) -> impl Deref<Target = BTreeMap<String, String>> + 'a {
-        &element.attributes
+        element: &Self::Element<'_>,
+        mut emit: impl FnMut(&str, &str) -> Result<(), speedy_xml::writer::Error>,
+    ) -> Result<(), speedy_xml::writer::Error> {
+        for (name, value) in element.attributes.iter() {
+            emit(name, value)?;
+        }
+
+        Ok(())
     }
 
     fn node_to_content<'a>(

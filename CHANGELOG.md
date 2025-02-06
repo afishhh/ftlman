@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Actually serialize empty XML elements as empty tags.
+
 ## [v0.5.0]
 
 ### Added

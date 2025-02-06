@@ -580,6 +580,10 @@ impl TreeEmitter for DomTreeEmitter {
     type Element<'a> = GcElement<'a>;
     type Node<'a> = GcNode<'a>;
 
+    fn element_is_empty(&self, element: &Self::Element<'_>) -> bool {
+        element.borrow().first_child.is_none()
+    }
+
     fn iter_element<'a>(&self, element: &Self::Element<'a>) -> impl Iterator<Item = Self::Node<'a>> {
         element.borrow().children()
     }
@@ -592,11 +596,16 @@ impl TreeEmitter for DomTreeEmitter {
         Ref::map(element.borrow(), |e| e.name.as_str())
     }
 
-    fn element_attributes<'a>(
+    fn element_attributes(
         &self,
-        element: &Self::Element<'a>,
-    ) -> impl Deref<Target = std::collections::BTreeMap<std::string::String, std::string::String>> + 'a {
-        Ref::map(element.borrow(), |element| &element.attributes)
+        element: &Self::Element<'_>,
+        mut emit: impl FnMut(&str, &str) -> Result<(), speedy_xml::writer::Error>,
+    ) -> Result<(), speedy_xml::writer::Error> {
+        for (name, value) in element.borrow().attributes.iter() {
+            emit(name, value)?;
+        }
+
+        Ok(())
     }
 
     fn node_to_content<'a>(
