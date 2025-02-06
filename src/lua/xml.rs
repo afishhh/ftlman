@@ -458,9 +458,16 @@ impl UserData for LuaElement {
             "append",
             |lua, this, nodes: mlua::Variadic<NodeImplicitlyConvertible>| {
                 lua.gc().mutate(|mc, roots| {
-                    let mut this = roots.fetch(&this.0).borrow_mut(mc);
+                    let this_gc = *roots.fetch(&this.0);
+                    let mut this = this_gc.borrow_mut(mc);
                     for (i, node) in nodes.into_iter().enumerate() {
                         let node = node.into_node(mc);
+                        if Gc::as_ptr(node).addr() == Gc::as_ptr(this_gc).addr() {
+                            return Err(LuaError::runtime(format!(
+                                "Node passed as argument #{} to Element:append cannot be appended to itself",
+                                i + 1
+                            )));
+                        }
                         if node.borrow().parent().is_some() {
                             return Err(LuaError::runtime(format!(
                                 "Node passed as argument #{} to Element:append already has a parent",
