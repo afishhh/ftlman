@@ -44,24 +44,16 @@ pub fn patch(context: &mut Element, patch: Vec<XMLNode>) -> Result<()> {
 fn cleanup(element: &mut Element) {
     const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-prepend", "mod-overwrite"];
 
-    if element
-        .prefix
-        .as_ref()
-        .is_some_and(|x| MOD_NAMESPACES.contains(&x.as_str()))
-    {
+    if element.prefix.as_deref().is_some_and(|x| MOD_NAMESPACES.contains(&x)) {
         element.prefix = None
     }
 
-    if element
-        .prefix
-        .as_ref()
-        .is_some_and(|x| MOD_NAMESPACES.contains(&x.as_str()))
-    {
+    if element.prefix.as_deref().is_some_and(|x| MOD_NAMESPACES.contains(&x)) {
         element.prefix = None
     }
 
-    if let Some(ns) = element.prefix.as_ref() {
-        if MOD_NAMESPACES.contains(&ns.as_str()) {
+    if let Some(ns) = element.prefix.as_deref() {
+        if MOD_NAMESPACES.contains(&ns) {
             element.prefix = None;
         }
     }
@@ -268,7 +260,7 @@ fn index_children(node: &Element) -> HashMap<*const Element, usize> {
 }
 
 fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
-    if node.name != "par" || node.prefix.as_deref() != Some("mod") {
+    if &*node.name != "par" || node.prefix.as_deref() != Some("mod") {
         return Ok(None);
     }
 
@@ -331,14 +323,14 @@ fn mod_par<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'
 }
 
 fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&'a mut Element>>> {
-    if node.prefix.as_ref().is_some_and(|x| x == "mod") {
-        if !["findName", "findLike", "findWithChildLike", "findComposite"].contains(&node.name.as_str()) {
+    if node.prefix.as_deref().is_some_and(|x| x == "mod") {
+        if !["findName", "findLike", "findWithChildLike", "findComposite"].contains(&&*node.name) {
             return Ok(None);
         }
 
-        let search_reverse = get_attr!(node, bool, "reverse", node.name == "findName")?;
+        let search_reverse = get_attr!(node, bool, "reverse", &*node.name == "findName")?;
         let search_start = get_attr!(node, usize, "start", 0)?;
-        let search_limit = get_attr!(node, isize, "limit", if node.name == "findName" { 1 } else { -1 })?;
+        let search_limit = get_attr!(node, isize, "limit", if &*node.name == "findName" { 1 } else { -1 })?;
 
         if search_limit < -1 {
             bail!("{} 'limit' attribute must be >= -1", node.name)
@@ -346,7 +338,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
 
         let panic = get_attr!(node, bool, "panic", false)?;
 
-        let mut matches: Vec<&'a mut Element> = match node.name.as_str() {
+        let mut matches: Vec<&'a mut Element> = match &*node.name {
             "findName" => {
                 let search_regex = get_attr!(node, bool, "regex", false)?;
 
@@ -447,7 +439,7 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                         mod_commands(matched, command)?;
                     }
                 } else {
-                    match command.name.as_str() {
+                    match &*command.name {
                         "selector" | "par" => {}
                         "setAttributes" => {
                             context
@@ -466,7 +458,7 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                             context.children.push(XMLNode::Text(command.get_text_trim()))
                         }
                         "removeTag" => {
-                            context.prefix = Some(REMOVE_MARKER.to_string());
+                            context.prefix = Some(REMOVE_MARKER.into());
                         }
                         "insertByFind" => {
                             let elements = command.children.iter().filter_map(Node::as_element);
@@ -579,7 +571,7 @@ fn mod_commands(context: &mut Element, element: &Element) -> Result<()> {
                 let mut new = command.clone();
                 new.prefix = None;
 
-                if let Some(old) = context.get_mut_child(new.name.as_str()) {
+                if let Some(old) = context.get_mut_child(&new.name) {
                     let _ = std::mem::replace(old, new);
                 } else {
                     context.children.push(XMLNode::Element(new));

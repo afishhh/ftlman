@@ -304,8 +304,8 @@ impl NodeHeader<'_> {
 #[repr(C)]
 pub struct Element<'gc> {
     _header: NodeHeader<'gc>,
-    pub prefix: Option<String>,
-    pub name: String,
+    pub prefix: Option<Box<str>>,
+    pub name: Box<str>,
     pub attributes: BTreeMap<String, String>,
     first_child: Option<GcNode<'gc>>,
     // NOTE: This will be None if the element has only one child
@@ -342,8 +342,8 @@ impl std::fmt::Debug for Element<'_> {
 impl<'gc> Element<'gc> {
     pub fn create(
         mc: &Mutation<'gc>,
-        prefix: Option<String>,
-        name: String,
+        prefix: Option<Box<str>>,
+        name: Box<str>,
         attributes: BTreeMap<String, String>,
     ) -> GcRefLock<'gc, Element<'gc>> {
         GcRefLock::new(
@@ -547,7 +547,7 @@ impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {
         name: &str,
         attributes: BTreeMap<String, String>,
     ) -> Self::Element {
-        Element::create(self.0, prefix.map(ToOwned::to_owned), name.to_owned(), attributes)
+        Element::create(self.0, prefix.map(Box::from), name.into(), attributes)
     }
 
     fn cdata_to_node(&mut self, content: &str) -> Self::Node {
@@ -593,7 +593,7 @@ impl TreeEmitter for DomTreeEmitter {
     }
 
     fn element_name<'a>(&self, element: &Self::Element<'a>) -> impl Deref<Target = str> + 'a {
-        Ref::map(element.borrow(), |e| e.name.as_str())
+        Ref::map(element.borrow(), |e| &*e.name)
     }
 
     fn element_attributes(

@@ -41,8 +41,8 @@ impl Node {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Element {
-    pub prefix: Option<String>,
-    pub name: String,
+    pub prefix: Option<Box<str>>,
+    pub name: Box<str>,
     pub attributes: BTreeMap<String, String>,
     pub children: Vec<Node>,
 }
@@ -60,8 +60,8 @@ impl builder::TreeBuilder for SimpleTreeBuilder {
         attributes: BTreeMap<String, String>,
     ) -> Self::Element {
         Element {
-            prefix: prefix.map(ToOwned::to_owned),
-            name: name.to_owned(),
+            prefix: prefix.map(Box::from),
+            name: name.into(),
             attributes,
             children: Vec::new(),
         }
@@ -111,7 +111,7 @@ impl emitter::TreeEmitter for SimpleTreeEmitter {
     }
 
     fn element_name<'a>(&self, element: &Self::Element<'a>) -> impl Deref<Target = str> + 'a {
-        element.name.as_str()
+        &*element.name
     }
 
     fn element_attributes(
@@ -159,14 +159,14 @@ impl Element {
         self.children
             .iter()
             .filter_map(|x| x.as_element())
-            .find(|e| e.prefix.as_ref().is_some_and(|p| p == prefix) && e.name == name)
+            .find(|e| e.prefix.as_deref().is_some_and(|p| p == prefix) && &*e.name == name)
     }
 
     pub fn get_mut_child(&mut self, name: &str) -> Option<&mut Element> {
         self.children
             .iter_mut()
             .filter_map(|x| x.as_mut_element())
-            .find(|e| e.name == name)
+            .find(|e| &*e.name == name)
     }
 
     pub fn make_qualified_name(&self) -> String {

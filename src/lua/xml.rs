@@ -378,7 +378,7 @@ impl UserData for LuaElement {
         add_node_fields(fields, "element");
 
         fields.add_field_method_get("name", |_, this| Ok(unsafe { *this.0.as_ptr() }.borrow().name.clone()));
-        fields.add_field_method_set("name", |_, this, value: String| {
+        fields.add_field_method_set("name", |_, this, value: Box<str>| {
             // SAFETY: No write barrier has to be triggered as no Gc pointers are modified.
             validate_xml_name(&value)?;
             unsafe { this.get().as_ref_cell() }.borrow_mut().name = value;
@@ -387,7 +387,7 @@ impl UserData for LuaElement {
         fields.add_field_method_get("prefix", |_, this| {
             Ok(unsafe { *this.0.as_ptr() }.borrow().prefix.clone())
         });
-        fields.add_field_method_set("prefix", |_, this, value: Option<String>| {
+        fields.add_field_method_set("prefix", |_, this, value: Option<Box<str>>| {
             // SAFETY: See above
             if let Some(pfx) = value.as_ref() {
                 validate_xml_name(pfx)?;
@@ -715,15 +715,16 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
     table.raw_set(
         "element",
         lua.create_function(|lua, args: LuaMultiValue| {
-            let (prefix, name, attributes): (Option<String>, String, Option<BTreeMap<String, String>>) =
-                match FromLuaMulti::from_lua_multi(args.clone(), lua) {
-                    Ok(result) => result,
-                    Err(_) => {
-                        // TODO: error message doesn't mention previous overload
-                        let (name, attributes) = FromLuaMulti::from_lua_multi(args, lua)?;
-                        (None, name, attributes)
-                    }
-                };
+            // clippy moment, may be slightly more readable to have it side by side like this though
+            type Args = (Option<Box<str>>, Box<str>, Option<BTreeMap<String, String>>);
+            let (prefix, name, attributes): Args = match FromLuaMulti::from_lua_multi(args.clone(), lua) {
+                Ok(result) => result,
+                Err(_) => {
+                    // TODO: error message doesn't mention previous overload
+                    let (name, attributes) = FromLuaMulti::from_lua_multi(args, lua)?;
+                    (None, name, attributes)
+                }
+            };
 
             if let Some(pfx) = prefix.as_ref() {
                 validate_xml_name(pfx)?;
