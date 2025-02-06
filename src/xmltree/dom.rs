@@ -502,15 +502,6 @@ impl<'gc> Element<'gc> {
     pub fn parse_all(mc: &Mutation<'gc>, text: &str) -> Result<Vec<GcNode<'gc>>, speedy_xml::reader::Error> {
         builder::parse_all(&mut DomTreeBuilder(mc), text)
     }
-
-    pub fn to_tree(&self) -> xmltree::Element {
-        xmltree::Element {
-            prefix: self.prefix.clone(),
-            name: self.name.clone(),
-            attributes: self.attributes.clone(),
-            children: self.children().map(to_tree).collect(),
-        }
-    }
 }
 
 macro_rules! unsize_node {
@@ -525,16 +516,6 @@ use super::{
     builder::{self, TreeBuilder},
     emitter::TreeEmitter,
 };
-
-pub fn to_tree(node: GcNode) -> xmltree::Node {
-    let node = node.borrow();
-    match node.kind() {
-        NodeKind::Element => xmltree::Node::Element(unsafe { Element::downcast_ref_unchecked(&*node).to_tree() }),
-        NodeKind::Comment => xmltree::Node::Comment(unsafe { Comment::downcast_ref_unchecked(&*node) }.content.clone()),
-        NodeKind::CData => xmltree::Node::CData(unsafe { CData::downcast_ref_unchecked(&*node) }.content.clone()),
-        NodeKind::Text => xmltree::Node::Text(unsafe { Text::downcast_ref_unchecked(&*node) }.content.clone()),
-    }
-}
 
 struct DomTreeBuilder<'a, 'gc>(pub &'a Mutation<'gc>);
 impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {

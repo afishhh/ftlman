@@ -23,7 +23,7 @@ use crate::{
         io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
     },
-    xmltree::{self, SimpleTreeBuilder, SimpleTreeEmitter},
+    xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
 
@@ -62,10 +62,11 @@ pub fn unwrap_xml_text(xml_text: &str) -> Cow<'_, str> {
     WRAPPER_TAG_REGEX.replace_all(xml_text, "")
 }
 
-fn unwrap_rewrap_single<E>(
+fn unwrap_rewrap_single<E, TE: TreeEmitter>(
     lower: &str,
     parse: impl FnOnce(&str) -> Result<Option<E>>,
-    combine: impl FnOnce(E) -> Result<xmltree::Element>,
+    emitter: &TE,
+    combine: impl for<'a> FnOnce(&'a mut E) -> Result<TE::Element<'a>>,
 ) -> Result<String> {
     // FIXME: this can be made quicker
     let had_ftl_root = WRAPPER_TAG_REGEX.captures_iter(lower).any(|x| x.get(2).is_some());
@@ -73,20 +74,19 @@ fn unwrap_rewrap_single<E>(
 
     let lower_wrapped = format!("<FTL>{lower_without_root}</FTL>");
 
-    let lower_parsed = parse(&lower_wrapped)
+    let mut lower_parsed = parse(&lower_wrapped)
         .context("Could not parse XML document")?
         .ok_or_else(|| anyhow!("XML document does not contain a root element"))?;
 
-    let result = combine(lower_parsed)?;
+    let element = combine(&mut lower_parsed)?;
 
     Ok({
         let mut writer = speedy_xml::writer::Writer::new(Cursor::new(Vec::new()));
 
         if had_ftl_root {
-            xmltree::emitter::write_element(&mut writer, &SimpleTreeEmitter, &&result)
-                .context("Failed to write patched XML")?;
+            xmltree::emitter::write_element(&mut writer, emitter, &element).context("Failed to write patched XML")?;
         } else {
-            xmltree::emitter::write_element_children(&mut writer, &SimpleTreeEmitter, &&result)
+            xmltree::emitter::write_element_children(&mut writer, emitter, &element)
                 .context("Failed to write patched XML")?;
         }
 
@@ -148,8 +148,9 @@ fn unwrap_rewrap_xml(
     unwrap_rewrap_single(
         lower,
         |text| xmltree::builder::parse(&mut SimpleTreeBuilder, text).map_err(Into::into),
-        |mut lower| {
-            combine(&mut lower, upper_elements)?;
+        &SimpleTreeEmitter,
+        |lower| {
+            combine(lower, upper_elements)?;
             Ok(lower)
         },
     )
@@ -296,18 +297,15 @@ pub fn apply_one_lua(document: &str, patch: &str, runtime: &ModLuaRuntime) -> Re
                 })
                 .map_err(Into::into)
         },
+        &DomTreeEmitter,
         |lower| {
             let mut context = LuaContext {
-                document_root: Some(lower),
+                document_root: Some(lower.clone()),
                 print_arena_stats: false,
             };
             runtime.run(patch, "<patch>", &mut context)?;
-            Ok(unsafe {
-                (*context.document_root.unwrap().as_ptr())
-                    .as_ref_cell()
-                    .borrow()
-                    .to_tree()
-            })
+            // SAFETY: This pointer will only be *read* by the emitter.
+            Ok(unsafe { *lower.as_ptr() })
         },
     )
 }
