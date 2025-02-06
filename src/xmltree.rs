@@ -43,7 +43,7 @@ impl Node {
 pub struct Element {
     pub prefix: Option<Box<str>>,
     pub name: Box<str>,
-    pub attributes: BTreeMap<String, String>,
+    pub attributes: BTreeMap<Box<str>, Box<str>>,
     pub children: Vec<Node>,
 }
 
@@ -53,16 +53,16 @@ impl builder::TreeBuilder for SimpleTreeBuilder {
     type Element = Element;
     type Node = Node;
 
-    fn create_element(
+    fn create_element<'a>(
         &mut self,
-        prefix: Option<&str>,
-        name: &str,
-        attributes: BTreeMap<String, String>,
+        prefix: Option<&'a str>,
+        name: &'a str,
+        attributes: impl Iterator<Item = (&'a str, Cow<'a, str>)>,
     ) -> Self::Element {
         Element {
             prefix: prefix.map(Box::from),
             name: name.into(),
-            attributes,
+            attributes: attributes.map(|(k, v)| (k.into(), v.into())).collect(),
             children: Vec::new(),
         }
     }

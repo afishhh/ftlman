@@ -109,6 +109,16 @@ impl FromStr for ParOperation {
     }
 }
 
+#[repr(transparent)]
+struct BoxFromStr(Box<str>);
+
+impl FromStr for BoxFromStr {
+    type Err = std::convert::Infallible;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Ok(Self(s.into()))
+    }
+}
+
 macro_rules! get_attr {
     ($node: ident, $type: ty, $name: literal, $default: expr) => {{
         get_attr!($node, $type, $name).transpose().unwrap_or(Ok($default))
@@ -119,7 +129,7 @@ macro_rules! get_attr {
         if $is_regex {
             get_attr!($node, Regex, $name).map(|x| x.map(StringFilter::Regex))
         } else {
-            get_attr!($node, String, $name).map(|x| x.map(StringFilter::Fixed))
+            get_attr!($node, BoxFromStr, $name).map(|x| x.map(|x| StringFilter::Fixed(x.0)))
         }
     };
     ($node: ident, $type: ty, $name: literal) => {{
@@ -152,7 +162,7 @@ trait ElementFilter {
 }
 
 enum StringFilter {
-    Fixed(String),
+    Fixed(Box<str>),
     Regex(Regex),
 }
 
@@ -161,13 +171,13 @@ impl StringFilter {
         Ok(if is_regex {
             Self::Regex(pattern.parse()?)
         } else {
-            Self::Fixed(pattern.to_string())
+            Self::Fixed(pattern.into())
         })
     }
 
     fn is_match(&self, value: &str) -> bool {
         match self {
-            StringFilter::Fixed(text) => value == text,
+            StringFilter::Fixed(text) => value == &**text,
             StringFilter::Regex(regex) => regex.find(value).is_some_and(|m| m.len() == value.len()),
         }
     }
@@ -176,7 +186,7 @@ impl StringFilter {
 #[derive(Default)]
 struct SelectorFilter {
     pub name: Option<StringFilter>,
-    pub attrs: Vec<(String, StringFilter)>,
+    pub attrs: Vec<(Box<str>, StringFilter)>,
     pub value: Option<StringFilter>,
 }
 
@@ -350,7 +360,7 @@ fn mod_find<'a>(context: &'a mut Element, node: &Element) -> Result<Option<Vec<&
 
                 SelectorFilter {
                     name: search_type,
-                    attrs: vec![("name".to_string(), search_name)],
+                    attrs: vec![("name".into(), search_name)],
                     value: None,
                 }
                 .filter_children(context)

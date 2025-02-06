@@ -591,7 +591,7 @@ impl LuaAttributes {
                 let mut it = e.attributes.range(previous..);
                 match it.next() {
                     Some((key, value)) => {
-                        let lua_key = lua.create_string(key)?;
+                        let lua_key = lua.create_string(&**key)?;
                         current = it.next().map(|(key, _)| key.clone());
                         (lua_key, self.process_value(lua, value)?).into_lua_multi(lua)
                     }
@@ -627,7 +627,7 @@ impl UserData for LuaAttributes {
             this.process_value(lua, value)
         });
 
-        methods.add_meta_method_mut("__newindex", |_, this, (key, value): (String, LuaValue)| {
+        methods.add_meta_method_mut("__newindex", |_, this, (key, value): (Box<str>, LuaValue)| {
             validate_xml_name(&key)?;
 
             let gc = unsafe { this.element.get() };
@@ -638,10 +638,10 @@ impl UserData for LuaAttributes {
                 return Ok(());
             }
 
-            let string_value = if this.raw || value.is_string() {
+            let string_value: Box<str> = if this.raw || value.is_string() {
                 if let LuaValue::String(string) = value {
                     if let Ok(value) = string.to_str() {
-                        value.to_owned()
+                        (*value).into()
                     } else {
                         return Err(LuaError::runtime("invalid UTF-8 assigned to attribute"));
                     }
@@ -653,9 +653,12 @@ impl UserData for LuaAttributes {
                 }
             } else {
                 match value {
-                    LuaValue::Boolean(value) => value.to_string(),
-                    LuaValue::Integer(value) => value.to_string(),
-                    LuaValue::Number(value) => value.to_string(),
+                    LuaValue::Boolean(value) => match value {
+                        true => "true".into(),
+                        false => "false".into(),
+                    },
+                    LuaValue::Integer(value) => itoa::Buffer::new().format(value).into(),
+                    LuaValue::Number(value) => ryu::Buffer::new().format(value).into(),
                     other => {
                         return Err(LuaError::runtime(format!(
                             "cannot assign {} to element attribute",
@@ -715,8 +718,8 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
     table.raw_set(
         "element",
         lua.create_function(|lua, args: LuaMultiValue| {
-            // clippy moment, may be slightly more readable to have it side by side like this though
-            type Args = (Option<Box<str>>, Box<str>, Option<BTreeMap<String, String>>);
+            // clippy moment (long type), may be slightly more readable to have it side by side like this though
+            type Args = (Option<Box<str>>, Box<str>, Option<BTreeMap<Box<str>, Box<str>>>);
             let (prefix, name, attributes): Args = match FromLuaMulti::from_lua_multi(args.clone(), lua) {
                 Ok(result) => result,
                 Err(_) => {

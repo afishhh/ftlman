@@ -39,6 +39,10 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 
 speedy-xml = { path = "./speedy-xml" }
 
+# These are dependencies of serde anyway
+ryu = "1"
+itoa = "1"
+
 # For nice error source reporting, currently only used in the XML Sandbox
 annotate-snippets = "0.11.5"
 

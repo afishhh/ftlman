@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::BTreeMap};
+use std::borrow::Cow;
 
 use log::warn;
 use speedy_xml::reader::{self, Error as ParseError, Event, Reader};
@@ -7,11 +7,11 @@ pub trait TreeBuilder {
     type Element;
     type Node;
 
-    fn create_element(
+    fn create_element<'a>(
         &mut self,
-        prefix: Option<&str>,
-        name: &str,
-        attributes: BTreeMap<String, String>,
+        prefix: Option<&'a str>,
+        name: &'a str,
+        attributes: impl Iterator<Item = (&'a str, Cow<'a, str>)>,
     ) -> Self::Element;
     fn cdata_to_node(&mut self, content: &str) -> Self::Node;
     fn text_to_node(&mut self, content: Cow<str>) -> Self::Node;
@@ -32,18 +32,10 @@ macro_rules! build_loop_match {
     ($builder: expr, $reader: expr, output = $output_where: ident($output: expr), End($end_name: tt) => $end: expr, Eof => $eof: expr) => {
         match $reader.next().transpose()? {
             Some(ref event @ (Event::Start(ref x) | Event::Empty(ref x))) => {
-                let mut attributes = BTreeMap::new();
-                for attr in x.attributes() {
-                    attributes.insert(
-                        attr.name().to_owned(),
-                        attr.value().into_owned()
-                    );
-                }
-
                 let mut new_element = $builder.create_element(
                     x.prefix(),
                     x.name(),
-                    attributes
+                    x.attributes().map(|attr| (attr.name(), attr.value()))
                 );
 
                 if matches!(event, Event::Start(..)) {

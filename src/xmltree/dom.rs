@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     cell::{Ref, RefMut},
     collections::BTreeMap,
     iter::FusedIterator,
@@ -306,7 +307,7 @@ pub struct Element<'gc> {
     _header: NodeHeader<'gc>,
     pub prefix: Option<Box<str>>,
     pub name: Box<str>,
-    pub attributes: BTreeMap<String, String>,
+    pub attributes: BTreeMap<Box<str>, Box<str>>,
     first_child: Option<GcNode<'gc>>,
     // NOTE: This will be None if the element has only one child
     // TODO: Reconsider above statement.
@@ -344,7 +345,7 @@ impl<'gc> Element<'gc> {
         mc: &Mutation<'gc>,
         prefix: Option<Box<str>>,
         name: Box<str>,
-        attributes: BTreeMap<String, String>,
+        attributes: BTreeMap<Box<str>, Box<str>>,
     ) -> GcRefLock<'gc, Element<'gc>> {
         GcRefLock::new(
             mc,
@@ -522,13 +523,18 @@ impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {
     type Element = GcElement<'gc>;
     type Node = GcNode<'gc>;
 
-    fn create_element(
+    fn create_element<'a>(
         &mut self,
-        prefix: Option<&str>,
-        name: &str,
-        attributes: BTreeMap<String, String>,
+        prefix: Option<&'a str>,
+        name: &'a str,
+        attributes: impl Iterator<Item = (&'a str, Cow<'a, str>)>,
     ) -> Self::Element {
-        Element::create(self.0, prefix.map(Box::from), name.into(), attributes)
+        Element::create(
+            self.0,
+            prefix.map(Box::from),
+            name.into(),
+            attributes.map(|(k, v)| (k.into(), v.into())).collect(),
+        )
     }
 
     fn cdata_to_node(&mut self, content: &str) -> Self::Node {
