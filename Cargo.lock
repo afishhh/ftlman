@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "ftlman"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "annotate-snippets",
  "anyhow",
@@ -3460,9 +3460,9 @@ dependencies = [
 
 [[package]]
 name = "silpkg"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a5bf6ffafc8132f5e07b67e68f58525bc24a89cfe6324796b086864eca82a0d"
+checksum = "117c29ccb05ee8f09677d0a032fd8489538e05a68314cfd5e58f3306eae1d00e"
 dependencies = [
  "bitflags 2.8.0",
  "flate2",

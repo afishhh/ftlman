@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.5.1]
+
 ### Fixed
 
 - Actually serialize empty XML elements as empty tags.
@@ -36,5 +38,6 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.5.0...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.5.1...HEAD
+[v0.5.1]: https://github.com/afishhh/ftlman/compare/v0.5.0...v0.5.1
 [v0.5.0]: https://github.com/afishhh/ftlman/compare/v0.4.1...v0.5.0
