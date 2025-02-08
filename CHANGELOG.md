@@ -4,6 +4,7 @@
 
 - Actually serialize empty XML elements as empty tags.
 - Fix Lua patch thread crashes caused by insufficient or incorrect validation of node insertions.
+- Fix patch thread crash when escaping comments with a `>` character.
 
 ## [v0.5.0]
 
