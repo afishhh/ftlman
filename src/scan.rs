@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use anyhow::{Context, Result};
+use log::info;
 use parking_lot::Mutex;
 
 use crate::{Mod, ModConfigurationState, ModSource, Settings, SharedState, MOD_ORDER_FILENAME};
@@ -24,7 +25,25 @@ pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> 
     let mod_config_state = match std::fs::File::open(settings.mod_directory.join(MOD_ORDER_FILENAME)) {
         Ok(f) => serde_json::from_reader(std::io::BufReader::new(f))
             .with_context(|| format!("Failed to deserialize mod order from {MOD_ORDER_FILENAME}"))?,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => ModConfigurationState::default(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut result = ModConfigurationState::default();
+
+            match std::fs::read_to_string(settings.mod_directory.join("modorder.txt")) {
+                Ok(file) => {
+                    info!("Importing mod order from Slipstream modorder.txt");
+                    for filename in file.lines().map(str::trim).filter(|l| !l.is_empty()) {
+                        result.order.0.push(crate::ModOrderElement {
+                            filename: filename.to_owned(),
+                            enabled: false,
+                        });
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e).context("Failed to open slipstream modorder.txt file"),
+            }
+
+            result
+        }
         Err(e) => return Err(e).context("Failed to open mod order file"),
     };
     if first {

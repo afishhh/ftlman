@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Mod order is now automatically imported from a Slipstream modorder.txt file in the mod directory if modorder.json does not exist.
+
 ## [v0.5.1]
 
 ### Fixed
