@@ -93,6 +93,7 @@ fn escape(string: &str, next: impl Fn(&str) -> Option<usize>) -> Cow<'_, str> {
         replaced.push_str(&current[..escaped]);
         match current.as_bytes()[escaped] {
             b'<' => replaced.push_str("&lt;"),
+            b'>' => replaced.push_str("&gt;"),
             b'&' => replaced.push_str("&amp;"),
             b'\"' => replaced.push_str("&quot;"),
             _ => unreachable!(),
