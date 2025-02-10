@@ -141,7 +141,9 @@ fn unwrap_rewrap_xml(
     let upper_elements = xmltree::builder::parse_all_with_options(
         &mut SimpleTreeBuilder,
         &upper_without_root,
-        Options::default().allow_top_level_text(true),
+        Options::default()
+            .allow_top_level_text(true)
+            .allow_unmatched_closing_tags(true),
     )
     .context("Could not parse XML append document")?;
 
