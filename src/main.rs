@@ -20,26 +20,19 @@ use eframe::{
     },
 };
 use egui_dnd::DragDropItem;
-use gui::{DeferredWindow, WindowState};
-use hyperspace::HyperspaceRelease;
 use lazy_static::lazy_static;
 use log::{debug, error};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
 use serde::{Deserialize, Serialize};
-use util::{to_human_size_units, SloppyVersion};
 use walkdir::WalkDir;
 use zip::ZipArchive;
-
-mod cli;
-
-mod pathedit;
-use pathedit::PathEdit;
 
 mod apply;
 mod bps;
 mod cache;
+mod cli;
 mod findftl;
 mod fonts;
 mod github;
@@ -54,7 +47,10 @@ mod validate;
 mod xmltree;
 
 use apply::ApplyStage;
+use gui::{pathedit::PathEdit, DeferredWindow, WindowState};
+use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
+use util::{to_human_size_units, SloppyVersion};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
