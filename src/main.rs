@@ -366,8 +366,10 @@ impl ErrorPopup {
 
     fn render(&self, ui: &mut Ui) -> bool {
         let mut open = true;
+        // TODO: Switch to egui::Modal
         egui::Window::new(&self.title)
             .resizable(true)
+            .frame(egui::Frame::popup(ui.style()))
             .id(self.id)
             .open(&mut open)
             .show(ui.ctx(), |ui| render_error_chain(ui, self.error_chain.iter()));
@@ -779,6 +781,7 @@ impl eframe::App for App {
                                             } else {
                                                 egui::Window::new(l!("hyperspace-fetch-releases-failed"))
                                                     .auto_sized()
+                                                    .frame(egui::Frame::popup(ui.style()))
                                                     .show(ctx, |ui| {
                                                         // HACK: w h a t ???
                                                         ui.set_width(ui.available_width() / 2.0);
