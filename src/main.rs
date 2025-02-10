@@ -337,6 +337,7 @@ struct ErrorPopup {
     id: egui::Id,
     title: String,
     error_chain: Vec<String>,
+    backtrace: Option<String>,
 }
 
 impl ErrorPopup {
@@ -349,6 +350,10 @@ impl ErrorPopup {
             )),
             title,
             error_chain: error.chain().map(|s| s.to_string()).collect(),
+            backtrace: {
+                let backtrace = error.backtrace();
+                (backtrace.status() == std::backtrace::BacktraceStatus::Captured).then(|| backtrace.to_string())
+            },
         }
     }
 
@@ -376,6 +381,10 @@ impl ErrorPopup {
         error!("{err}");
         for (i, err) in it {
             error!("#{i} {err}")
+        }
+
+        if let Some(backtrace) = self.backtrace.as_ref() {
+            error!("{}", backtrace);
         }
     }
 }
