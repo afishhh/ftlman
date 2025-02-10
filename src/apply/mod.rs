@@ -587,7 +587,10 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
         let mod_name = m.title_or_filename()?.to_string();
         info!("Applying mod {}", mod_name);
 
-        let mut handle = m.source.open()?;
+        let mut handle = m
+            .source
+            .open()
+            .with_context(|| format!("Failed to open mod source for {}", m.filename()))?;
         let mut skipped_top_level_dirs = HashSet::new();
         let paths = handle.paths()?;
         let path_count = paths.len();

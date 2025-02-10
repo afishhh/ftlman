@@ -1253,7 +1253,15 @@ impl ModSource {
 
     pub fn open(&self) -> Result<OpenModHandle<'_>> {
         Ok(match self {
-            Self::Directory { path } => OpenModHandle::Directory { path: path.clone() },
+            Self::Directory { path } => {
+                // This is helpful for error reporting, to make sure opening a directory mod
+                // that doesn't exist fails like the zipped versions do.
+                if !path.try_exists()? {
+                    return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "file not found").into());
+                }
+
+                OpenModHandle::Directory { path: path.clone() }
+            }
             Self::Zip { path } => OpenModHandle::Zip {
                 archive: zip::ZipArchive::new(Box::new(std::fs::File::open(path)?) as Box<dyn ReadSeek + Send + Sync>)?,
             },
