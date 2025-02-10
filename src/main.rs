@@ -913,17 +913,17 @@ impl eframe::App for App {
 
                                     if let Some(update) = dnd_response.final_update() {
                                         egui_dnd::utils::shift_vec(
-                                            row_range.start + update.from,
-                                            row_range.start + update.to,
+                                            update.from,
+                                            update.to,
                                             &mut shared.mods,
                                         );
                                         if !did_change_hovered_mod
-                                            && self.last_hovered_mod == Some(row_range.start + update.from)
+                                            && self.last_hovered_mod == Some(update.from)
                                         {
                                             self.last_hovered_mod = Some(if update.from >= update.to {
-                                                row_range.start + update.to
+                                                update.to
                                             } else {
-                                                row_range.start + update.to - 1
+                                                update.to - 1
                                             });
                                         }
                                     }
