@@ -4,6 +4,15 @@
 
 - Mod order is now automatically imported from a Slipstream modorder.txt file in the mod directory if modorder.json does not exist.
 
+### Changed
+
+- Some popups (like errors) are now displayed with different styling.
+
+### Fixed
+
+- Fix regression introduced `v0.5.0` that made mismatched closing tags in append files an error.
+- Fix incorrect drag and drop behaviour while scrolling the mod list.
+
 ## [v0.5.1]
 
 ### Fixed
