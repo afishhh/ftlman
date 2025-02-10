@@ -837,11 +837,17 @@ impl eframe::App for App {
                                 ui.text_style_height(&egui::TextStyle::Body),
                                 shared.mods.len(),
                                 |ui, row_range| {
-                                    let mut i = row_range.start;
+                                    // Temporarily remove spacing so that skipped items don't produce gaps.
+                                    let spacing = std::mem::replace(&mut ui.spacing_mut().item_spacing.y, 0.0);
                                     let mut did_change_hovered_mod = false;
                                     let dnd_response = egui_dnd::dnd(ui, "mod list dnd").show(
-                                        shared.mods[row_range.clone()].iter_mut(),
-                                        |ui, item, handle, _item_state| {
+                                        shared.mods.iter_mut(),
+                                        |ui, item, handle, item_state| {
+                                            if !row_range.contains(&item_state.index) && !item_state.dragged {
+                                                return;
+                                            }
+                                            ui.spacing_mut().item_spacing.y = spacing;
+
                                             ui.horizontal(|ui| {
                                                 handle.ui(ui, |ui| {
                                                     let label = ui.selectable_label(
@@ -861,7 +867,7 @@ impl eframe::App for App {
                                                     );
 
                                                     if label.hovered() {
-                                                        self.last_hovered_mod = Some(i);
+                                                        self.last_hovered_mod = Some(item_state.index);
                                                         did_change_hovered_mod = true;
                                                     }
 
@@ -889,8 +895,6 @@ impl eframe::App for App {
                                                         };
                                                     },
                                                 );
-
-                                                i += 1;
                                             });
                                         },
                                     );
