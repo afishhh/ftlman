@@ -5,6 +5,7 @@ use std::{
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     sync::Arc,
+    time::Instant,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -777,6 +778,8 @@ pub fn apply(
     lock.locked = true;
     let mut mods = lock.mods.clone();
 
+    let apply_start = Instant::now();
+
     if let Some(installer) = hs {
         if let Some(HyperspaceState { release }) = lock.hyperspace.clone() {
             let egui_ctx = lock.ctx.clone();
@@ -862,6 +865,18 @@ pub fn apply(
         },
         settings.repack_ftl_data,
     )?;
+
+    let apply_duration = Instant::now() - apply_start;
+
+    info!(
+        "Apply succeeded in {:.2}s at {}",
+        apply_duration.as_secs_f32(),
+        time::OffsetDateTime::from(std::time::SystemTime::now())
+            .to_offset(time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC))
+            .time()
+            .format(&time::format_description::parse("[hour]:[minute]:[second]").unwrap())
+            .unwrap()
+    );
 
     let mut lock = state.lock();
     lock.apply_stage = None;
