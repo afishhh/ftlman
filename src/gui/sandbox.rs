@@ -16,7 +16,7 @@ use eframe::egui::{
     self, scroll_area,
     text::{CCursor, LayoutJob},
     text_selection::visuals::paint_text_selection,
-    vec2, Color32, Id, Layout, Margin, TextEdit, Ui, Vec2,
+    vec2, Color32, Id, Layout, Margin, Ui, Vec2,
 };
 use egui_extras::syntax_highlighting;
 use log::debug;
@@ -39,7 +39,7 @@ use crate::{
     validate::xml::validate_xml,
 };
 
-use super::WindowState;
+use super::{regexedit::RegexEdit, WindowState};
 
 struct PkgOverlayFS<'a> {
     pkg: LuaPkgFS<'a>,
@@ -569,17 +569,17 @@ impl WindowState for Sandbox {
                                                 self.output_find_matches.len()
                                             ));
                                         }
-                                        let text_out = ui
+
+                                        let text_r = ui
                                             .centered_and_justified(|ui| {
-                                                TextEdit::singleline(needle)
-                                                    .id_source("sandbox find box text edit")
+                                                RegexEdit::new(needle)
+                                                    .id("sandbox find box text edit")
                                                     .hint_text("Regex pattern")
                                                     .return_key(None)
                                                     .show(ui)
                                             })
-                                            .inner;
-
-                                        let text_r = text_out.response;
+                                            .inner
+                                            .response;
 
                                         if text_r.changed() || *find_invalidated {
                                             // FIXME: this is a silent error

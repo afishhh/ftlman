@@ -4,6 +4,7 @@
 
 - Mod order is now automatically imported from a Slipstream modorder.txt file in the mod directory if modorder.json does not exist.
 - Some timing information is now logged after applying mods.
+- Syntax highlighting for regex in XML Sandbox search.
 
 ### Changed
 
