@@ -1278,15 +1278,15 @@ impl OpenModHandle<'_> {
         })
     }
 
-    pub fn open_if_exists(&mut self, name: &str) -> Result<Option<Box<dyn Read + '_>>> {
+    pub fn open_if_exists<'a>(&'a mut self, name: &str) -> Result<Option<Box<dyn Read + 'a>>> {
         Ok(Some(match self {
-            OpenModHandle::Directory { path } => Box::new(match std::fs::File::open(path.join(name)) {
-                Ok(handle) => handle,
+            OpenModHandle::Directory { path } => match std::fs::File::open(path.join(name)) {
+                Ok(handle) => Box::new(handle),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
                 Err(e) => return Err(e.into()),
-            }),
+            },
             OpenModHandle::Zip { archive } => Box::new(match archive.by_name(name) {
-                Ok(handle) => handle,
+                Ok(handle) => Box::new(handle),
                 Err(zip::result::ZipError::FileNotFound) => return Ok(None),
                 Err(e) => return Err(e.into()),
             }),
@@ -1325,7 +1325,7 @@ impl OpenModHandle<'_> {
                 let mut out = Vec::new();
 
                 for name in archive.file_names().map(|s| s.to_string()).collect::<Vec<String>>() {
-                    if !name.ends_with('/') {
+                    if !name.ends_with(['/', '\\']) {
                         out.push(
                             archive
                                 .by_name(&name)?
@@ -1375,12 +1375,22 @@ impl Mod {
         self.cached_metadata
             .get_or_try_init(|| {
                 Ok(Some({
-                    let mut metadata: Metadata = quick_xml::de::from_reader(std::io::BufReader::new(
-                        match self.source.open()?.open_if_exists("mod-appendix/metadata.xml")? {
-                            Some(handle) => handle,
-                            None => return Ok(None),
-                        },
-                    ))
+                    const METADATA_FILES: &[&str] = &[
+                        "mod-appendix/metadata.xml",
+                        // FIXME: Fix \ in open_if_exists itself (NLL problem case 3?)
+                        "mod-appendix\\metadata.xml",
+                    ];
+
+                    let mut mod_handle = self.source.open()?;
+                    let mut metadata: Metadata = quick_xml::de::from_reader('a: {
+                        for name in METADATA_FILES.iter().copied() {
+                            break 'a match mod_handle.open_if_exists(name)? {
+                                Some(handle) => BufReader::new(handle),
+                                None => continue,
+                            };
+                        }
+                        return Ok(None);
+                    })
                     .with_context(|| format!("Failed to deserialize mod metadata for {}", self.filename()))?;
 
                     metadata.title = metadata.title.trim().to_string();
@@ -1407,6 +1417,11 @@ impl Mod {
                     "data/hyperspace.xml",
                     "data/hyperspace.xml.append",
                     "data/hyperspace.append.xml",
+                    // FIXME: Fix \ in open_if_exists itself (NLL problem case 3?)
+                    // NOTE: this doesn't set overwrites_hyperspace_xml but is just a workaround anyway
+                    "data\\hyperspace.xml",
+                    "data\\hyperspace.xml.append",
+                    "data\\hyperspace.append.xml",
                 ];
 
                 let mut overwrites_hyperspace_xml = true;

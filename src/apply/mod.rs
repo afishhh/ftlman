@@ -324,7 +324,7 @@ impl VirtualFileTree {
 
         for path in paths {
             let mut current = &mut root;
-            let mut it = path.as_ref().split('/');
+            let mut it = path.as_ref().split(['/', '\\']);
             let last = it.next_back().unwrap();
             for component in it {
                 match current
@@ -595,7 +595,11 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
         let paths = handle.paths()?;
         let path_count = paths.len();
 
-        for (j, name) in paths.into_iter().enumerate() {
+        for (j, mut name) in paths.into_iter().enumerate() {
+            // FIXME: handle this somewhere else... not here
+            let fixed_name = name.replace('\\', "/");
+            let archive_name = std::mem::replace(&mut name, fixed_name);
+
             if name.starts_with("mod-appendix/") || 
                 // example_layout_syntax.xml is used by Hyperspace to detect when
                 // Hyperspace.ftl has been accidentally patched alongside Multiverse
@@ -646,7 +650,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
 
                 let append_text = read_encoded_text(
                     handle
-                        .open(&name)
+                        .open(&archive_name)
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?,
                 )
                 .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
@@ -686,7 +690,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                     |n| format!("{n}.xml"),
                 );
 
-                let text = read_encoded_text(&mut handle.open(&name)?)?;
+                let text = read_encoded_text(&mut handle.open(&archive_name)?)?;
                 if pkg.contains(&target_name) {
                     trace!("Overwriting {target_name}");
                     pkg.remove(&target_name)
@@ -706,7 +710,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 }
 
                 if name.ends_with(".xml") {
-                    let original_text = read_encoded_text(&mut handle.open(&name)?)?;
+                    let original_text = read_encoded_text(&mut handle.open(&archive_name)?)?;
                     let mut reader = quick_xml::Reader::from_str(&original_text);
                     reader.config_mut().check_end_names = false;
                     let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(vec![]), b' ', 4);
@@ -739,7 +743,7 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                         .write_all(writer.into_inner().get_ref())?;
                 } else if !IGNORED_FILES_REGEX.is_match(&name) {
                     let mut reader = handle
-                        .open(&name)
+                        .open(&archive_name)
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
                     if name.ends_with(".txt") {
                         pkg.insert(name.clone(), INSERT_FLAGS)?.write_all(
