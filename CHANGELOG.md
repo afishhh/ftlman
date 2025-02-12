@@ -4,7 +4,7 @@
 
 ### Added
 
-- Mod order is now automatically imported from a Slipstream modorder.txt file in the mod directory if modorder.json does not exist.
+- Mod order is now automatically imported from a Slipstream `modorder.txt` file in the mod directory if `modorder.json` does not exist.
 - Some timing information is now logged after applying mods.
 - Syntax highlighting for regex in XML Sandbox search.
 
@@ -14,7 +14,7 @@
 
 ### Fixed
 
-- Fixed regression introduced `v0.5.0` that made mismatched closing tags in append files an error.
+- Fixed regression introduced in `v0.5.0` that made mismatched closing tags in append files an error.
 - Fixed incorrect drag and drop behaviour while scrolling the mod list.
 - Added error context for the opening of mod files and directories.
 - Fixed handling of `\` directory separators in non-standard zip files.
