@@ -15,7 +15,7 @@
 - Fixed regression introduced `v0.5.0` that made mismatched closing tags in append files an error.
 - Fixed incorrect drag and drop behaviour while scrolling the mod list.
 - Added error context for the opening of mod files and directories.
-- Fixed handling of `/` directory separators in non-standard zip files.
+- Fixed handling of `\` directory separators in non-standard zip files.
 
 ## [v0.5.1]
 
