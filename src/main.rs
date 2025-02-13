@@ -7,7 +7,7 @@ use std::{
     io::{BufReader, Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::{atomic::AtomicU64, Arc},
+    sync::{atomic::AtomicU64, Arc, LazyLock},
 };
 
 use anyhow::{Context, Result};
@@ -20,7 +20,6 @@ use eframe::{
     },
 };
 use egui_dnd::DragDropItem;
-use lazy_static::lazy_static;
 use log::{debug, error};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -57,13 +56,13 @@ const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const EFRAME_PERSISTENCE_LOCATION: &str = "ftlman/eguistate.ron";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
-lazy_static! {
-    static ref USER_AGENT: String = format!("FTL Manager v{}", crate::VERSION);
-    static ref AGENT: ureq::Agent = ureq::AgentBuilder::new()
+static USER_AGENT: LazyLock<String> = LazyLock::new(|| format!("FTL Manager v{}", crate::VERSION));
+static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
+    ureq::AgentBuilder::new()
         .user_agent(&USER_AGENT)
         .https_only(true)
-        .build();
-}
+        .build()
+});
 
 fn main() -> ExitCode {
     env_logger::builder()

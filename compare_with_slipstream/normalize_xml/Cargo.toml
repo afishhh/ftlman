@@ -7,5 +7,4 @@ edition = "2021"
 
 [dependencies]
 quick-xml = { version = "0.34", features = ["serialize"] }
-lazy_static = "1"
 regex = "1"

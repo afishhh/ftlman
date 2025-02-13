@@ -1,11 +1,10 @@
+use std::sync::LazyLock;
+
 use anyhow::{bail, Result};
-use lazy_static::lazy_static;
 use regex::Regex;
 
-lazy_static! {
-    static ref UUID_REGEX: Regex =
-        Regex::new(r#""([0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12})""#).unwrap();
-}
+static UUID_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""([0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12})""#).unwrap());
 
 pub fn request_google_drive_download(file_id: &str) -> Result<ureq::Response> {
     let initial_response = crate::AGENT

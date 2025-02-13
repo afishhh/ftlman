@@ -1,7 +1,9 @@
-use std::io::{Cursor, Read};
+use std::{
+    io::{Cursor, Read},
+    sync::LazyLock,
+};
 
 use anyhow::{bail, Context, Result};
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
@@ -10,9 +12,8 @@ use crate::{
     AGENT,
 };
 
-lazy_static! {
-    static ref HYPERSPACE_REPOSITORY: github::Repository = github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace");
-}
+static HYPERSPACE_REPOSITORY: LazyLock<github::Repository> =
+    LazyLock::new(|| github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace"));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HyperspaceRelease {

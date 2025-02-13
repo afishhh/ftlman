@@ -1,21 +1,19 @@
 use std::{
     io::Write,
     path::{Path, PathBuf},
+    sync::LazyLock,
     time::{Duration, SystemTime},
 };
 
 use anyhow::{Context, Result};
-use lazy_static::lazy_static;
 
 pub struct Cache {
     root: PathBuf,
 }
 
-lazy_static! {
-    pub static ref CACHE: Cache = Cache {
-        root: dirs::cache_dir().unwrap().join("ftlman")
-    };
-}
+pub static CACHE: LazyLock<Cache> = LazyLock::new(|| Cache {
+    root: dirs::cache_dir().unwrap().join("ftlman"),
+});
 
 impl Cache {
     fn read_or_write_internal(

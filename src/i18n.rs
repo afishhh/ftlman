@@ -2,12 +2,11 @@ use std::{
     borrow::Cow,
     sync::{
         atomic::{AtomicPtr, Ordering},
-        OnceLock,
+        LazyLock, OnceLock,
     },
 };
 
 use fluent::{concurrent::FluentBundle, FluentArgs, FluentMessage, FluentResource};
-use lazy_static::lazy_static;
 use log::{error, warn};
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -132,9 +131,8 @@ pub fn init() {
         .unwrap();
 }
 
-lazy_static! {
-    static ref MISSING_STRINGS: Mutex<HashMap<(&'static str, &'static str), &'static str>> = Mutex::new(HashMap::new());
-}
+static MISSING_STRINGS: LazyLock<Mutex<HashMap<(&'static str, &'static str), &'static str>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn notify_missing(locale: &'static str, id: &str) -> (&'static str, bool) {
     let mut lock = MISSING_STRINGS.lock();

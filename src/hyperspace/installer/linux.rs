@@ -1,27 +1,31 @@
-use std::{io::Cursor, path::Path};
+use std::{io::Cursor, path::Path, sync::LazyLock};
 
 use anyhow::{Context, Result};
-use lazy_static::lazy_static;
 use log::trace;
 use regex::{Regex, RegexBuilder};
 use zip::ZipArchive;
 
-lazy_static! {
-    static ref LD_LIBRARY_PATH_REGEX: Regex = RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#)
+static LD_LIBRARY_PATH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    RegexBuilder::new(r#"^export LD_LIBRARY_PATH=(.*?)$"#)
         .multi_line(true)
         .build()
-        .unwrap();
-    static ref LD_PRELOAD_REGEX: Regex = RegexBuilder::new("^export LD_PRELOAD=(.*?)\n")
+        .unwrap()
+});
+static LD_PRELOAD_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    RegexBuilder::new("^export LD_PRELOAD=(.*?)\n")
         .multi_line(true)
         .build()
-        .unwrap();
-    static ref EXEC_REGEX: Regex = RegexBuilder::new(r#"^exec "[^"]*" .*?$"#)
+        .unwrap()
+});
+static EXEC_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    RegexBuilder::new(r#"^exec "[^"]*" .*?$"#)
         .multi_line(true)
         .build()
-        .unwrap();
-    static ref HYPERSPACE_SO_REGEX: Regex = Regex::new(r#"^Hyperspace(\.\d+)*.amd64.so$"#).unwrap();
-    static ref ZIP_SO_REGEX: Regex = Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap();
-}
+        .unwrap()
+});
+static HYPERSPACE_SO_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^Hyperspace(\.\d+)*.amd64.so$"#).unwrap());
+static ZIP_SO_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap());
 
 pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     let shared_objects = zip

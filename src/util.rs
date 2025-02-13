@@ -1,6 +1,5 @@
-use std::{cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read};
+use std::{cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, sync::LazyLock};
 
-use lazy_static::lazy_static;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
@@ -64,11 +63,9 @@ impl Serialize for SloppyVersion {
     }
 }
 
-lazy_static! {
-    // Allows for missing components
-    static ref SIMPLE_SLOPPY_VERSION_REGEX: Regex =
-        Regex::new(r"^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?$").unwrap();
-}
+// Allows for missing components
+static SIMPLE_SLOPPY_VERSION_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(0|[1-9]\d*)(?:\.(0|[1-9]\d*))?(?:\.(0|[1-9]\d*))?$").unwrap());
 
 impl<'de> Deserialize<'de> for SloppyVersion {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -126,10 +123,10 @@ impl Display for SloppyVersion {
     }
 }
 
-lazy_static! {
-    // Present at the bottom of https://semver.org
-    static ref SEMVER_REGEX: Regex = Regex::new(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?").unwrap();
-}
+// Present at the bottom of https://semver.org
+static SEMVER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?").unwrap()
+});
 
 pub fn find_semver_in_string(string: &str) -> Option<semver::Version> {
     SEMVER_REGEX

@@ -4,12 +4,11 @@ use std::{
     fs::File,
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, LazyLock},
     time::Instant,
 };
 
 use anyhow::{anyhow, bail, Context, Result};
-use lazy_static::lazy_static;
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
@@ -30,16 +29,11 @@ use crate::{
 
 mod append;
 
-lazy_static! {
-    // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
-    static ref WRAPPER_TAG_REGEX: Regex =
-        Regex::new(r"(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap();
-    static ref MOD_NAMESPACE_TAG_REGEX: Regex =
-        Regex::new("<mod(|-append|-overwrite):.+>").unwrap();
-    static ref IGNORED_FILES_REGEX: Regex =
-        Regex::new(r"[.]DS_Store$|(^|/)thumbs[.]db$|(^|/)[.]dropbox$|^~|~$|(^|/)#.+#$").unwrap();
-    static ref KNOWN_TOP_LEVEL_DIRS: Regex = Regex::new(r"^(audio|data|fonts|img)/").unwrap();
-}
+// from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
+static WRAPPER_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap());
+static IGNORED_FILES_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[.]DS_Store$|(^|/)thumbs[.]db$|(^|/)[.]dropbox$|^~|~$|(^|/)#.+#$").unwrap());
+static KNOWN_TOP_LEVEL_DIRS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(audio|data|fonts|img)/").unwrap());
 
 #[derive(Debug)]
 pub enum ApplyStage {

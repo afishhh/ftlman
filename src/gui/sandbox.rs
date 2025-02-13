@@ -5,7 +5,7 @@ use std::{
     path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, LazyLock,
     },
     time::Instant,
 };
@@ -102,9 +102,7 @@ struct PatchWorker {
     shared: SharedArc,
 }
 
-lazy_static::lazy_static! {
-    static ref LUA_ERROR_LINE_REGEX: Regex = Regex::new(r#"\[string "<patch>"\]:(\d+): "#).unwrap();
-}
+static LUA_ERROR_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\[string "<patch>"\]:(\d+): "#).unwrap());
 
 fn extract_lua_error_diagnostic<'a>(
     source: &'a str,

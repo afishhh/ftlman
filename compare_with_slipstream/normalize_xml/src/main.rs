@@ -2,15 +2,14 @@ use std::{
     env::args_os,
     ffi::OsStr,
     path::{Path, PathBuf},
+    sync::LazyLock,
 };
 
-use lazy_static::lazy_static;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use regex::bytes::Regex;
 
-lazy_static! {
-    static ref XML_VER_REGEX: Regex = Regex::new(r#"<[?]xml version="1.0" encoding="[uU][tT][fF]-8"[?]>"#).unwrap();
-}
+static XML_VER_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<[?]xml version="1.0" encoding="[uU][tT][fF]-8"[?]>"#).unwrap());
 const XML_VER: &[u8] = br#"<?xml version="1.0" encoding="UTF-8"?>"#;
 
 fn sort_attributes<'a>(start: &BytesStart<'a>) -> BytesStart<'a> {
