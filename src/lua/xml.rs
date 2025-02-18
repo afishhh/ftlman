@@ -15,7 +15,6 @@ use crate::xmltree::{
 
 use super::{unsize_node, LuaExt};
 
-pub type DynamicNode = DynamicRoot<Rootable![GcNode<'_>]>;
 pub type DynamicElement = DynamicRoot<Rootable![GcElement<'_>]>;
 
 pub struct LuaDocument {
@@ -90,20 +89,32 @@ fn add_node_fields<T: LuaNode, M: LuaUserDataFields<T>>(fields: &mut M, name: &'
     fields.add_field("type", name);
     fields.add_field_method_get("previousSibling", |lua, this| {
         lua.gc().mutate(|mc, roots| {
-            Ok(unsafe { this.get_node() }
-                .borrow()
-                .previous_sibling()
-                .map(|value| roots.stash(mc, value))
-                .map(DynamicIntoLua))
+            let mut current = Some(unsafe { this.get_node() });
+            std::iter::from_fn(|| {
+                if let Some(c) = current {
+                    current = c.borrow().previous_sibling();
+                    current.and_then(|gc| gc_into_lua(mc, roots, lua, gc))
+                } else {
+                    None
+                }
+            })
+            .next()
+            .transpose()
         })
     });
     fields.add_field_method_get("nextSibling", |lua, this| {
         lua.gc().mutate(|mc, roots| {
-            Ok(unsafe { this.get_node() }
-                .borrow()
-                .next_sibling()
-                .map(|value| roots.stash(mc, value))
-                .map(DynamicIntoLua))
+            let mut current = Some(unsafe { this.get_node() });
+            std::iter::from_fn(|| {
+                if let Some(c) = current {
+                    current = c.borrow().next_sibling();
+                    current.and_then(|gc| gc_into_lua(mc, roots, lua, gc))
+                } else {
+                    None
+                }
+            })
+            .next()
+            .transpose()
         })
     });
     fields.add_field_method_get("parent", |lua, this| {
@@ -265,39 +276,23 @@ pub struct LuaElement(pub DynamicElement);
 
 impl_lua_node!(LuaElement);
 
-#[repr(transparent)]
-struct DynamicIntoLua(pub DynamicNode);
-
-fn todo_gc_into_lua<'gc>(
-    mc: &Mutation<'gc>,
-    roots: &DynamicRootSet<'gc>,
-    lua: &Lua,
-    node: GcNode<'gc>,
-) -> LuaResult<Option<LuaValue>> {
-    let kind = node.borrow().kind();
-
-    match kind {
-        dom::NodeKind::Element => LuaElement(roots.stash(mc, unsafe { dom::Element::downcast_gc_unchecked(node) }))
-            .into_lua(lua)
-            .map(Some),
-        dom::NodeKind::Text => LuaText(roots.stash(mc, unsafe { dom::Text::downcast_gc_unchecked(node) }))
-            .into_lua(lua)
-            .map(Some),
-        // TODO:
-        _ => Ok(None),
-    }
-}
-
 fn gc_into_lua<'gc>(
     mc: &Mutation<'gc>,
     roots: &DynamicRootSet<'gc>,
     lua: &Lua,
     node: GcNode<'gc>,
-) -> LuaResult<LuaValue> {
-    match todo_gc_into_lua(mc, roots, lua, node) {
-        Ok(Some(ok)) => Ok(ok),
-        Ok(None) => todo!(),
-        Err(err) => Err(err),
+) -> Option<LuaResult<LuaValue>> {
+    let kind = node.borrow().kind();
+
+    match kind {
+        dom::NodeKind::Element => {
+            Some(LuaElement(roots.stash(mc, unsafe { dom::Element::downcast_gc_unchecked(node) })).into_lua(lua))
+        }
+        dom::NodeKind::Text => {
+            Some(LuaText(roots.stash(mc, unsafe { dom::Text::downcast_gc_unchecked(node) })).into_lua(lua))
+        }
+        // TODO:
+        _ => None,
     }
 }
 
@@ -318,15 +313,6 @@ fn detach_any<'gc>(mc: &Mutation<'gc>, node: GcNode<'gc>) {
         dom::NodeKind::Comment => downcast_and_detach!(dom::Comment),
         dom::NodeKind::CData => downcast_and_detach!(dom::CData),
         dom::NodeKind::Text => downcast_and_detach!(dom::Text),
-    }
-}
-
-impl IntoLua for DynamicIntoLua {
-    fn into_lua<'gc>(self, lua: &Lua) -> LuaResult<LuaValue> {
-        lua.gc().mutate(|mc, roots| {
-            let node = *roots.fetch(&self.0);
-            gc_into_lua(mc, roots, lua, node)
-        })
     }
 }
 
@@ -520,8 +506,7 @@ impl UserData for LuaElement {
                     .fetch(&this.0)
                     .borrow()
                     .children()
-                    .next()
-                    .map(|node| gc_into_lua(mc, roots, lua, node))
+                    .find_map(|node| gc_into_lua(mc, roots, lua, node))
                     .transpose()
             })
         });
@@ -532,8 +517,8 @@ impl UserData for LuaElement {
                     .fetch(&this.0)
                     .borrow()
                     .children()
-                    .next_back()
-                    .map(|node| gc_into_lua(mc, roots, lua, node))
+                    .rev()
+                    .find_map(|node| gc_into_lua(mc, roots, lua, node))
                     .transpose()
             })
         });
@@ -704,7 +689,7 @@ impl UserData for LuaChildNodes {
             lua.gc()
                 .mutate(|mc, roots| {
                     let mut iter = roots.fetch(&this.0).borrow_mut(mc);
-                    iter.next().map(|node| gc_into_lua(mc, roots, lua, node))
+                    iter.find_map(|node| gc_into_lua(mc, roots, lua, node))
                 })
                 .transpose()
         });
@@ -778,7 +763,7 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 let mut result = LuaMultiValue::new();
                 let nodes = dom::Element::parse_all(mc, &unwrapped).into_lua_err()?;
                 for node in nodes {
-                    if let Some(value) = todo_gc_into_lua(mc, roots, lua, node)? {
+                    if let Some(value) = gc_into_lua(mc, roots, lua, node).transpose()? {
                         result.push_back(value);
                     }
                 }
