@@ -3,30 +3,31 @@ use std::borrow::Cow;
 use memchr::memchr2;
 
 fn resolve_entity(text: &str) -> Option<(char, &str)> {
-    let mut peek = text.char_indices().clone();
+    let mut peek = text.chars();
 
-    let result = match peek.next()?.1 {
-        'l' if peek.next()?.1 == 't' => '<',
-        'g' if peek.next()?.1 == 't' => '>',
-        'a' => match peek.next()?.1 {
-            'p' if peek.next()?.1 == 'o' && peek.next()?.1 == 's' => '\'',
-            'm' if peek.next()?.1 == 'p' => '&',
+    let result = match peek.next()? {
+        'l' if peek.next()? == 't' => '<',
+        'g' if peek.next()? == 't' => '>',
+        'a' => match peek.next()? {
+            'p' if peek.next()? == 'o' && peek.next()? == 's' => '\'',
+            'm' if peek.next()? == 'p' => '&',
             _ => return None,
         },
-        'q' if peek.next()?.1 == 'u' && peek.next()?.1 == 'o' && peek.next()?.1 == 't' => '"',
+        'q' if peek.next()? == 'u' && peek.next()? == 'o' && peek.next()? == 't' => '"',
         '#' => {
             let mut code = 0;
-            let mut next = peek.next()?.1;
+            let mut next = peek.next()?;
             let radix = if next == 'x' {
-                next = peek.next()?.1;
+                next = peek.next()?;
                 16
             } else {
                 10
             };
+
             while next != ';' {
                 code *= radix;
                 code += next.to_digit(radix)?;
-                next = peek.next()?.1;
+                next = peek.next()?;
             }
 
             // TODO: this probably fails on some invalid codepoints that rapidxml would insert
@@ -37,7 +38,7 @@ fn resolve_entity(text: &str) -> Option<(char, &str)> {
         _ => return None,
     };
 
-    if peek.next()?.1 != ';' {
+    if peek.next()? != ';' {
         None
     } else {
         Some((result, peek.as_str()))
