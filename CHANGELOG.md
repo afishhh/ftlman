@@ -3,6 +3,7 @@
 ### Fixed
 
 - Line endings of .txt files are now normalized to CRLF.
+- Lua XML DOM operations will now ignore unsupported nodes instead of triggering a panic.
 
 ## [v0.5.2]
 
