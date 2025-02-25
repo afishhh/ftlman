@@ -1,7 +1,7 @@
 use std::{collections::HashSet, fmt::Write, mem::offset_of, str::FromStr};
 
 use crate::xmltree::{Element, Node};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use regex::Regex;
 
 type XMLNode = Node;
@@ -115,9 +115,7 @@ impl FromStr for BoxFromStr {
 }
 
 macro_rules! get_attr {
-    ($node: ident, $type: ty, $name: literal, $default: expr) => {{
-        get_attr!($node, $type, $name).transpose().unwrap_or(Ok($default))
-    }};
+    ($node: ident, $type: ty, $name: literal, $default: expr) => {{ get_attr!($node, $type, $name).transpose().unwrap_or(Ok($default)) }};
     ($node: ident, StringFilter($is_regex: expr), $name: literal) => {
         // FIXME: Hope LLVM optimises the maps away? Is that far fetched?
         //        If it doesn't the wrapping can be moved into the inner macro.

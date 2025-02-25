@@ -42,6 +42,8 @@ speedy-xml = { path = "./speedy-xml" }
 ryu = "1"
 itoa = "1"
 
+memchr = "2"
+
 # For nice error source reporting, currently only used in the XML Sandbox
 annotate-snippets = "0.11.5"
 

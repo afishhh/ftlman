@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Line endings of .txt files are now normalized to CRLF.
+
 ## [v0.5.2]
 
 ### Added

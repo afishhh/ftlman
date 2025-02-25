@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, sync::LazyLock};
+use std::{borrow::Cow, cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, sync::LazyLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,63 @@ pub fn to_human_size_units(num: u64) -> (f64, &'static str) {
     }
 
     (cur, UNITS.get(i).unwrap_or_else(|| UNITS.last().unwrap()))
+}
+
+pub fn convert_lf_to_crlf(string: &str) -> Cow<'_, str> {
+    let mut replaced = String::new();
+
+    let mut last = 0;
+    let mut current = 0;
+    while let Some(i) = memchr::memchr2(b'\r', b'\n', &string.as_bytes()[current..]).map(|i| i + current) {
+        match string.as_bytes()[i] {
+            b'\r' => {
+                if string.as_bytes().get(i + 1) == Some(&b'\n') {
+                    current = i + 2;
+                } else {
+                    current = i + 1;
+                }
+            }
+            b'\n' => {
+                replaced.push_str(&string[last..i]);
+                replaced.push_str("\r\n");
+                current = i + 1;
+                last = current;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    if replaced.is_empty() {
+        Cow::Borrowed(string)
+    } else {
+        replaced.push_str(&string[last..]);
+        Cow::Owned(replaced)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::borrow::Cow;
+
+    use super::convert_lf_to_crlf;
+
+    #[test]
+    fn test_lf_to_crlf() {
+        assert_eq!(
+            convert_lf_to_crlf("hello\nworld\n\n\n\rthis is a UNIX file\n"),
+            Cow::<str>::Owned("hello\r\nworld\r\n\r\n\r\n\rthis is a UNIX file\r\n".to_owned())
+        );
+
+        assert_eq!(
+            convert_lf_to_crlf("\nanother\r\none\n"),
+            Cow::<str>::Owned("\r\nanother\r\none\r\n".to_owned())
+        );
+
+        assert_eq!(
+            convert_lf_to_crlf("this file\r\nis entirely correct\r\nthough"),
+            Cow::<str>::Borrowed("this file\r\nis entirely correct\r\nthough")
+        );
+    }
 }
 
 pub fn crc32_from_reader(reader: &mut impl Read) -> std::io::Result<u32> {

@@ -23,6 +23,7 @@ use crate::{
         io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
     },
+    util::convert_lf_to_crlf,
     xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
@@ -741,9 +742,11 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
                     if name.ends_with(".txt") {
                         pkg.insert(name.clone(), INSERT_FLAGS)?.write_all(
-                            read_encoded_text(reader)
-                                .with_context(|| format!("Failed to decode {name} from mod {}", m.filename()))?
-                                .as_bytes(),
+                            convert_lf_to_crlf(
+                                &read_encoded_text(reader)
+                                    .with_context(|| format!("Failed to decode {name} from mod {}", m.filename()))?,
+                            )
+                            .as_bytes(),
                         )
                     } else {
                         std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?).map(|_| ())
