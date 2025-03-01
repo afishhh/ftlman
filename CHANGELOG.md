@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### Added
+
+- `mod.util.eval` function for evaluating Lua code from Lua.
+- Flat variants of existing colorschemes that disable all rounded corners.
+
+### Changed
+
+- Lua chunks are now given better names which means Lua stack traces will be slightly cleaner.
+- Moved some settings under an "Advanced settings" collapsible section.
+
 ## [v0.5.3]
 
 ### Fixed
