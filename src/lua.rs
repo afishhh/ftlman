@@ -7,6 +7,7 @@ use crate::xmltree::dom::unsize_node;
 
 mod debug;
 pub mod io;
+mod util;
 mod xml;
 
 type LuaArena = gc_arena::Arena<Rootable![DynamicRootSet<'_>]>;
@@ -138,6 +139,8 @@ impl ModLuaRuntime {
 
         debug::extend_debug_library(&lua, lib_table.get::<LuaTable>("debug")?)
             .context("Failed to load debug builtins")?;
+
+        util::extend_util_library(&lua, lib_table.get::<LuaTable>("util")?).context("Failed to load util builtins")?;
 
         lua.protect_table(&lib_table)
             .context("Failed to make builtin mod table read-only")?;
