@@ -144,7 +144,7 @@ fn main() -> ExitCode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ThemeSetting {
-    #[serde(default)]
+    #[serde(default, rename = "colors")]
     style: ThemeStyle,
     opacity: f32,
 }
