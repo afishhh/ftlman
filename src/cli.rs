@@ -35,8 +35,8 @@ pub struct PatchCommand {
 
     /// List of paths to .ftl or .zip files
     ///
-    /// If the path is has only one component it will be interpreted as
-    /// a file in the local user's mods directory (like in slipstream).
+    /// If the path has only one component it will be interpreted as
+    /// a file in the user's configured mod directory (like in slipstream).
     mods: Vec<PathBuf>,
 }
 
