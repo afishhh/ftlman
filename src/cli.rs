@@ -187,7 +187,7 @@ pub fn main(command: Command) -> Result<()> {
                 }
                 crate::apply::AppendType::LuaAppend => {
                     let runtime = ModLuaRuntime::new().context("Failed to initialize Lua runtime")?;
-                    crate::apply::apply_one_lua(&source, &patch, &runtime)?
+                    crate::apply::apply_one_lua(&source, &patch, &format!("@{}", command.document.display()), &runtime)?
                 }
             };
 
@@ -226,7 +226,7 @@ pub fn main(command: Command) -> Result<()> {
                     print_arena_stats: command.print_arena_stats,
                 };
 
-                if let Err(error) = runtime.run(&code, script_name, &mut context) {
+                if let Err(error) = runtime.run(&code, &format!("@{script_name}"), &mut context) {
                     error!("{error}");
                     std::process::exit(1)
                 }

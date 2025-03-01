@@ -172,7 +172,7 @@ impl ModLuaRuntime {
         })
     }
 
-    pub fn run(&self, code: &str, filename: &str, context: &mut LuaContext) -> LuaResult<()> {
+    pub fn run(&self, code: &str, chunk_name: &str, context: &mut LuaContext) -> LuaResult<()> {
         let lua = &self.lua;
 
         let env = lua.create_overlay_table(&lua.globals())?;
@@ -188,7 +188,7 @@ impl ModLuaRuntime {
         }
 
         lua.load(code)
-            .set_name(filename)
+            .set_name(chunk_name)
             .set_mode(mlua::ChunkMode::Text)
             .set_environment(env)
             .exec()?;

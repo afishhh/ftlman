@@ -102,7 +102,7 @@ struct PatchWorker {
     shared: SharedArc,
 }
 
-static LUA_ERROR_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"\[string "<patch>"\]:(\d+): "#).unwrap());
+static LUA_ERROR_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<patch>:(\d+): "#).unwrap());
 
 fn extract_lua_error_diagnostic<'a>(
     source: &'a str,
@@ -214,7 +214,7 @@ impl PatchWorker {
                                     overlay: HashMap::new(),
                                 };
                                 match rt.with_filesystems([("pkg", &mut overlay as &mut dyn LuaFS)], || {
-                                    Ok(apply::apply_one_lua(&source_text, &patch, rt))
+                                    Ok(apply::apply_one_lua(&source_text, &patch, "=<patch>", rt))
                                 }) {
                                     Ok(Ok(ok)) => Ok(ok),
                                     Err(err) => Err(Some(anyhow::Error::from(err))),
