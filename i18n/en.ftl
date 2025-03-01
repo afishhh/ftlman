@@ -66,5 +66,5 @@ settings-repack-archive-tooltip =
     Turning this off will slightly speed up patching but
     make the archive larger and potentially slow down startup.
     The impact mostly depends on the number of applied mods.
-settings-colorscheme = Colorscheme
+settings-theme = Theme
 settings-background-opacity = Background opacity

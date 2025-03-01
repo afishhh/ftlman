@@ -59,5 +59,5 @@ settings-repack-archive-tooltip =
     Wyłączenie tego nieznacznie przyśpieszy patchowanie ale spowoduje
     że archiwum będzie większe i potencjalnie spowolni uruchamianie.
     Efekt w praktyce zależy od liczby aplikowanych modów.
-settings-colorscheme = Schemat kolorów
+settings-theme = Motyw
 settings-background-opacity = Nieprzezroczystość tła

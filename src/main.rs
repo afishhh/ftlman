@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    fmt::{Debug, Display},
+    fmt::Debug,
     fs::File,
     io::{BufReader, Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
@@ -144,36 +144,68 @@ fn main() -> ExitCode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ThemeSetting {
-    colors: ThemeColorscheme,
+    #[serde(default)]
+    style: ThemeStyle,
     opacity: f32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-enum ThemeColorscheme {
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+enum ThemeStyle {
+    #[default]
     Dark,
+    FlatDark,
     Light,
+    FlatLight,
 }
 
-impl Display for ThemeColorscheme {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl ThemeStyle {
+    fn name(self) -> &'static str {
         match self {
-            ThemeColorscheme::Dark => write!(f, "Dark"),
-            ThemeColorscheme::Light => write!(f, "Light"),
+            ThemeStyle::Dark => "Dark",
+            ThemeStyle::FlatDark => "Flat Dark",
+            ThemeStyle::Light => "Light",
+            ThemeStyle::FlatLight => "Flat Light",
         }
+    }
+
+    fn is_flat(self) -> bool {
+        matches!(self, ThemeStyle::FlatDark | ThemeStyle::FlatLight)
     }
 }
 
 impl ThemeSetting {
     fn visuals(&self) -> Visuals {
-        let mut base = match self.colors {
-            ThemeColorscheme::Dark => Visuals::dark(),
-            ThemeColorscheme::Light => Visuals::light(),
+        let mut base = match self.style {
+            ThemeStyle::Dark | ThemeStyle::FlatDark => Visuals::dark(),
+            ThemeStyle::Light | ThemeStyle::FlatLight => Visuals::light(),
         };
 
         base.window_fill = base.window_fill.linear_multiply(self.opacity);
         base.panel_fill = base.panel_fill.linear_multiply(self.opacity);
 
+        if self.style.is_flat() {
+            for wv in [
+                &mut base.widgets.noninteractive,
+                &mut base.widgets.inactive,
+                &mut base.widgets.hovered,
+                &mut base.widgets.active,
+                &mut base.widgets.open,
+            ] {
+                wv.rounding = egui::Rounding::default();
+            }
+            base.window_rounding = egui::Rounding::default();
+            base.menu_rounding = egui::Rounding::default();
+        }
+
         base
+    }
+
+    pub fn apply_to_progress_bar(&self, bar: egui::ProgressBar) -> egui::ProgressBar {
+        if self.style.is_flat() {
+            bar.rounding(egui::Rounding::default())
+        } else {
+            bar
+        }
     }
 }
 
@@ -246,7 +278,7 @@ impl Default for Settings {
             repack_ftl_data: true,
             disable_hs_installer: false,
             theme: ThemeSetting {
-                colors: ThemeColorscheme::Dark,
+                style: ThemeStyle::Dark,
                 opacity: 1.,
             },
         }
@@ -256,7 +288,7 @@ impl Default for Settings {
 impl Default for ThemeSetting {
     fn default() -> Self {
         Self {
-            colors: ThemeColorscheme::Dark,
+            style: ThemeStyle::default(),
             opacity: 1.,
         }
     }
@@ -595,11 +627,14 @@ impl eframe::App for App {
                                         if let Some((downloaded, total)) = *progress {
                                             let (dl_iec, dl_sfx) = to_human_size_units(downloaded);
                                             let (tot_iec, tot_sfx) = to_human_size_units(total);
-                                            ui.add(egui::ProgressBar::new(downloaded as f32 / total as f32).text(l!(
-                                                    if *is_patch { "status-patch-download2" } else { "status-hyperspace-download2" },
-                                                    "version" => version.as_ref(),
-                                                    "done" => format!("{dl_iec:.2}{dl_sfx}"),
-                                                    "total" => format!("{tot_iec:.2}{tot_sfx}"),
+                                            let bar = self.settings.theme.apply_to_progress_bar(
+                                                egui::ProgressBar::new(downloaded as f32 / total as f32)
+                                            );
+                                            ui.add(bar.text(l!(
+                                                if *is_patch { "status-patch-download2" } else { "status-hyperspace-download2" },
+                                                "version" => version.as_ref(),
+                                                "done" => format!("{dl_iec:.2}{dl_sfx}"),
+                                                "total" => format!("{tot_iec:.2}{tot_sfx}"),
                                             )));
                                         } else {
                                             ui.strong(l!(
@@ -625,7 +660,10 @@ impl eframe::App for App {
                                         file_idx,
                                         files_total,
                                     } => {
-                                        ui.add(egui::ProgressBar::new(*file_idx as f32 / *files_total as f32).text(
+                                        let bar = self.settings.theme.apply_to_progress_bar(
+                                            egui::ProgressBar::new(*file_idx as f32 / *files_total as f32)
+                                        );
+                                        ui.add(bar.text(
                                             l!("status-applying-mod",
                                                 "mod" => mod_name
                                             ),
@@ -1082,23 +1120,19 @@ impl eframe::App for App {
                     }
 
                     let mut visuals_changed = false;
-                    egui::ComboBox::from_label(l!("settings-colorscheme"))
-                        .selected_text(format!("{}", &mut self.settings.theme.colors))
+                    egui::ComboBox::from_label(l!("settings-theme"))
+                        .selected_text(self.settings.theme.style.name())
                         .show_ui(ui, |ui| {
-                            visuals_changed |= ui
-                                .selectable_value(
-                                    &mut self.settings.theme.colors,
-                                    ThemeColorscheme::Dark,
-                                    ThemeColorscheme::Dark.to_string(),
-                                )
-                                .changed();
-                            visuals_changed |= ui
-                                .selectable_value(
-                                    &mut self.settings.theme.colors,
-                                    ThemeColorscheme::Light,
-                                    ThemeColorscheme::Light.to_string(),
-                                )
-                                .changed();
+                            for style in [
+                                ThemeStyle::Dark,
+                                ThemeStyle::FlatDark,
+                                ThemeStyle::Light,
+                                ThemeStyle::FlatLight,
+                            ] {
+                                visuals_changed |= ui
+                                    .selectable_value(&mut self.settings.theme.style, style, style.name())
+                                    .changed();
+                            }
                         });
 
                     visuals_changed |= ui
