@@ -52,12 +52,14 @@ settings-mod-dir = Folder modów
 settings-dirs-are-mods = Traktuj foldery jako mody
 settings-ftl-is-zip = Traktuj pliki .ftl jako mody
 settings-zips-are-mods = Traktuj pliki .zip jako mody
-settings-disable-hs-installer = Wyłącz instalator Hyperspace
 settings-ftl-dir = Folder danych FTL
+settings-theme = Motyw
+settings-background-opacity = Nieprzezroczystość tła
+
+settings-advanced-header = Ustawienia dla zaawansowanych
+settings-disable-hs-installer = Wyłącz instalator Hyperspace
 settings-repack-archive = Repakuj archiwum danych FTL
 settings-repack-archive-tooltip = 
     Wyłączenie tego nieznacznie przyśpieszy patchowanie ale spowoduje
     że archiwum będzie większe i potencjalnie spowolni uruchamianie.
     Efekt w praktyce zależy od liczby aplikowanych modów.
-settings-theme = Motyw
-settings-background-opacity = Nieprzezroczystość tła

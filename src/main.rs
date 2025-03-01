@@ -1104,21 +1104,6 @@ impl eframe::App for App {
                         self.settings.fix_ftl_directrory();
                     }
 
-                    ui.checkbox(&mut self.settings.repack_ftl_data, l!("settings-repack-archive"))
-                        .on_hover_text(l!("settings-repack-archive-tooltip"));
-
-                    if ui
-                        .checkbox(
-                            &mut self.settings.disable_hs_installer,
-                            l!("settings-disable-hs-installer"),
-                        )
-                        .changed()
-                        && self.settings.disable_hs_installer
-                    {
-                        self.hyperspace_installer = None;
-                        ctx.request_repaint();
-                    }
-
                     let mut visuals_changed = false;
                     egui::ComboBox::from_label(l!("settings-theme"))
                         .selected_text(self.settings.theme.style.name())
@@ -1153,6 +1138,23 @@ impl eframe::App for App {
                     if visuals_changed {
                         self.visuals = self.settings.theme.visuals();
                     }
+
+                    ui.collapsing(l!("settings-advanced-header"), |ui| {
+                        ui.checkbox(&mut self.settings.repack_ftl_data, l!("settings-repack-archive"))
+                            .on_hover_text(l!("settings-repack-archive-tooltip"));
+
+                        if ui
+                            .checkbox(
+                                &mut self.settings.disable_hs_installer,
+                                l!("settings-disable-hs-installer"),
+                            )
+                            .changed()
+                            && self.settings.disable_hs_installer
+                        {
+                            self.hyperspace_installer = None;
+                            ctx.request_repaint();
+                        }
+                    });
                 });
         }
 
