@@ -12,7 +12,7 @@ This project is an alternative to the [Slipstream Mod Manager](https://github.co
 
 Currently automatic hyperspace installation is supported for the following FTL versions:
 - Steam (Linux and Windows)
-- Epic (untested)
+- Epic
 - Origin (untested)
 
 Patching the Microsoft version is technically supported but you may encounter permission problems if you try to patch it in the original installation directory.
