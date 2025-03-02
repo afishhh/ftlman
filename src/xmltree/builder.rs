@@ -74,7 +74,7 @@ fn build_under<B: TreeBuilder>(
             output = element(element),
             End(_) => return Ok(()),
             Eof => {
-                warn!("Reached EOF before the root element has been closed.");
+                warn!("Reached EOF before an element has been closed.");
                 return Ok(());
             }
         );

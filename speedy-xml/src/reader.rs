@@ -353,6 +353,7 @@ impl<'a> Iterator for Attributes<'a> {
 pub struct Options {
     allow_top_level_text: bool,
     allow_unmatched_closing_tags: bool,
+    allow_unclosed_tags: bool,
 }
 
 impl Options {
@@ -363,6 +364,11 @@ impl Options {
 
     pub fn allow_unmatched_closing_tags(mut self, value: bool) -> Self {
         self.allow_unmatched_closing_tags = value;
+        self
+    }
+
+    pub fn allow_unclosed_tags(mut self, value: bool) -> Self {
+        self.allow_unclosed_tags = value;
         self
     }
 }
@@ -712,6 +718,10 @@ impl<'a> Iterator for Reader<'a> {
                     })))
                 }
                 None if self.depth > 0 => {
+                    if self.options.allow_unclosed_tags {
+                        return None;
+                    }
+
                     self.depth = 0;
                     return Some(Err(Error::new(
                         ErrorKind::UnclosedElement,

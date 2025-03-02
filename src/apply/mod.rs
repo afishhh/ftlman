@@ -139,7 +139,8 @@ fn unwrap_rewrap_xml(
         &upper_without_root,
         Options::default()
             .allow_top_level_text(true)
-            .allow_unmatched_closing_tags(true),
+            .allow_unmatched_closing_tags(true)
+            .allow_unclosed_tags(true),
     )
     .context("Could not parse XML append document")?;
 
