@@ -3,12 +3,19 @@
 ### Added
 
 - `mod.util.eval` function for evaluating Lua code from Lua.
+- `mod.xml.append` function for executing XML append files from Lua.
+- `Node:clone` function for cloning XML nodes in Lua.
 - Flat variants of existing colorschemes that disable all rounded corners.
+- The mod manager will automatically check for and notify you of updates.
 
 ### Changed
 
 - Lua chunks are now given better names which means Lua stack traces will be slightly cleaner.
 - Moved some settings under an "Advanced settings" collapsible section.
+
+### Fixed
+
+- Unclosed tags are now allowed in mod XML (fixes compatibility with some mods).
 
 ## [v0.5.3]
 
