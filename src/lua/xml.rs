@@ -6,10 +6,14 @@ use gc_arena::{
 };
 use mlua::{prelude::*, FromLua, UserData, UserDataFields};
 
-use crate::xmltree::{
-    self,
-    dom::{
-        self, node_insert_after, node_insert_before, ElementChildren, GcElement, GcNode, GcText, NodeExt, NodeTraits,
+use crate::{
+    apply::XmlAppendType,
+    xmltree::{
+        self,
+        dom::{
+            self, node_insert_after, node_insert_before, ElementChildren, GcElement, GcNode, GcText, NodeExt,
+            NodeTraits,
+        },
     },
 };
 
@@ -787,6 +791,57 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 Ok(lua.create_string(writer.finish()?.into_inner()))
             })
         })?,
+    )?;
+
+    table.raw_set(
+        "append",
+        lua.create_function(
+            |lua, (lower, upper, options): (LuaString, LuaString, Option<LuaTable>)| {
+                let mut kind = XmlAppendType::Append;
+
+                if let Some(options) = options {
+                    let mut it = options.pairs::<LuaString, LuaValue>();
+                    while let Some((name, value)) = it.next().transpose()? {
+                        match &name.as_bytes()[..] {
+                            b"type" => {
+                                let lua_type =
+                                    LuaString::from_lua(value, lua).context("`type` option value must be a string")?;
+                                kind = match &lua_type.as_bytes()[..] {
+                                    b"xml.append" => XmlAppendType::Append,
+                                    b"xml.rawappend" => XmlAppendType::RawAppend,
+                                    _ => {
+                                        return Err(LuaError::runtime(format!(
+                                            "`{}` is not a valid append type",
+                                            // TODO: ByteStr instead once stable
+                                            String::from_utf8_lossy(&lua_type.as_bytes()[..])
+                                        )));
+                                    }
+                                };
+                            }
+                            name => {
+                                return Err(LuaError::runtime(format!(
+                                    "`{}` is not a valid append option name",
+                                    // TODO: ByteStr instead once stable
+                                    String::from_utf8_lossy(name)
+                                )));
+                            }
+                        }
+                    }
+                }
+
+                let lower_bytes = lower.as_bytes();
+                let lower = std::str::from_utf8(&lower_bytes[..])
+                    .map_err(LuaError::runtime)
+                    .context("Failed to decode document")?;
+                let upper_bytes = upper.as_bytes();
+                let upper = std::str::from_utf8(&upper_bytes[..])
+                    .map_err(LuaError::runtime)
+                    .context("Failed to decode patch")?;
+                let result = crate::apply::apply_one_xml(lower, upper, kind).map_err(LuaError::runtime)?;
+
+                Ok(lua.create_string(result))
+            },
+        )?,
     )?;
 
     Ok(table)
