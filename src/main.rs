@@ -907,6 +907,10 @@ impl eframe::App for App {
                                 }
                             });
 
+                            if self.hyperspace_installer.is_some() {
+                                ui.add_space(5.);
+                            }
+
                             // TODO: Separate this into a separate widget
                             egui::ScrollArea::vertical().id_salt("mod scroll area").show_rows(
                                 ui,
