@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 
 use annotate_snippets::{Level, Message, Snippet};
-use speedy_xml::{
-    reader::{ErrorKind, Options},
-    Reader,
-};
+use speedy_xml::{reader::Options, Reader};
 
 use crate::util::StringArena;
 
@@ -16,7 +13,10 @@ pub fn validate_xml<'a>(
     _strings: &'a StringArena,
     origin: Option<&'a str>,
 ) -> bool {
-    let mut reader = Reader::with_options(source, options.allow_unmatched_closing_tags(true));
+    let mut reader = Reader::with_options(
+        source,
+        options.allow_unmatched_closing_tags(true).allow_unclosed_tags(true),
+    );
     let mut element_stack = Vec::new();
     let mut parsing_would_succeed = true;
     let newlines = {
@@ -122,13 +122,9 @@ pub fn validate_xml<'a>(
             Some(Err(e)) => {
                 parsing_would_succeed = false;
 
-                let snippet = match e.kind() {
-                    // This is handled after the whole document is parsed instead.
-                    ErrorKind::UnclosedElement => continue,
-                    _ => make_snippet(e.span().start, None)
-                        .fold(true)
-                        .annotation(Level::Error.span(e.span()).label(e.kind().message())),
-                };
+                let snippet = make_snippet(e.span().start, None)
+                    .fold(true)
+                    .annotation(Level::Error.span(e.span()).label(e.kind().message()));
 
                 messages.push(Level::Error.title("parse error").snippet(snippet));
             }
@@ -136,11 +132,12 @@ pub fn validate_xml<'a>(
                 for unclosed in element_stack {
                     let span = unclosed.position_in(&reader);
                     messages.push(
-                        Level::Error.title("unclosed element").snippet(
+                        Level::Warning.title("unclosed element").snippet(
                             make_snippet(span.start, None)
+                                .fold(true)
                                 .annotation(Level::Info.span(span).label("opened here"))
                                 .annotation(
-                                    Level::Error
+                                    Level::Warning
                                         .span(source.len()..source.len())
                                         .label("encountered end of file before closing tag"),
                                 ),
