@@ -53,6 +53,12 @@ pub unsafe trait NodeTraits<'gc>: Node<'gc> + Sized {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum CloneMode {
+    Shallow,
+    Deep,
+}
+
 pub trait NodeExt<'gc> {
     fn kind(&self) -> NodeKind;
     fn previous_sibling(&self) -> Option<GcNode<'gc>>;
@@ -165,6 +171,25 @@ pub fn node_insert_after<'gc>(this: GcNode<'gc>, mc: &Mutation<'gc>, node: GcNod
     }
 }
 
+pub fn clone_any<'gc>(mc: &Mutation<'gc>, node: GcNode<'gc>, mode: CloneMode) -> GcNode<'gc> {
+    let kind = node.borrow().kind();
+
+    macro_rules! downcast_and_clone {
+        ($type: ty$(, $mode: ident)?) => {
+            unsize_node!(unsafe { <$type>::downcast_gc_unchecked(node) }
+                .borrow_mut(mc)
+                .clone(mc $(, $mode)?))
+        };
+    }
+
+    match kind {
+        NodeKind::Element => downcast_and_clone!(Element, mode),
+        NodeKind::Comment => downcast_and_clone!(Comment),
+        NodeKind::CData => downcast_and_clone!(CData),
+        NodeKind::Text => downcast_and_clone!(Text),
+    }
+}
+
 trait RefCellNodeExt<'gc> {
     fn borrow_header(&self) -> Ref<NodeHeader<'gc>>;
     fn borrow_header_mut(&self, mc: &Mutation<'gc>) -> RefMut<NodeHeader<'gc>>;
@@ -204,6 +229,18 @@ macro_rules! define_simple_node {
                 GcRefLock::new(mc, RefLock::new(Self {
                     _header: unsafe { NodeHeader::new(Self::KIND) },
                     $($field_name),*
+                }))
+            }
+
+            pub fn clone(
+                &self,
+                mc: &Mutation<'gc>,
+            ) -> GcRefLock<'gc, Self> {
+                GcRefLock::new(
+                    mc,
+                    RefLock::new(Self {
+                        _header: unsafe { NodeHeader::new(Self::KIND) },
+                        $($field_name: self.$field_name.clone(),)*
                 }))
             }
         }
@@ -314,19 +351,6 @@ pub struct Element<'gc> {
     last_child: Option<GcNode<'gc>>,
 }
 
-impl Clone for Element<'_> {
-    fn clone(&self) -> Self {
-        Self {
-            _header: unsafe { NodeHeader::new(NodeKind::Element) },
-            prefix: self.prefix.clone(),
-            name: self.name.clone(),
-            attributes: BTreeMap::new(),
-            first_child: None,
-            last_child: None,
-        }
-    }
-}
-
 impl std::fmt::Debug for Element<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self._header
@@ -416,6 +440,31 @@ impl<'gc> Element<'gc> {
     pub fn descendants(&self) -> ElementDescendants<'gc> {
         ElementDescendants {
             stack: vec![self.children()],
+        }
+    }
+
+    fn clone(&self, mc: &Mutation<'gc>, mode: CloneMode) -> GcElement<'gc> {
+        let shallow = GcRefLock::new(
+            mc,
+            RefLock::new(Self {
+                _header: unsafe { NodeHeader::new(NodeKind::Element) },
+                prefix: self.prefix.clone(),
+                name: self.name.clone(),
+                attributes: self.attributes.clone(),
+                first_child: None,
+                last_child: None,
+            }),
+        );
+
+        match mode {
+            CloneMode::Shallow => shallow,
+            CloneMode::Deep => {
+                for child in self.children() {
+                    shallow.borrow_mut(mc).append_child(mc, clone_any(mc, child, mode));
+                }
+
+                shallow
+            }
         }
     }
 }

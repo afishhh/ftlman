@@ -11,8 +11,8 @@ use crate::{
     xmltree::{
         self,
         dom::{
-            self, node_insert_after, node_insert_before, ElementChildren, GcElement, GcNode, GcText, NodeExt,
-            NodeTraits,
+            self, node_insert_after, node_insert_before, CloneMode, ElementChildren, GcElement, GcNode, GcText,
+            NodeExt, NodeTraits,
         },
     },
 };
@@ -240,6 +240,24 @@ fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
             })
         },
     );
+
+    methods.add_method("clone", |lua, this, mode: Option<LuaString>| {
+        let mode = match mode.as_ref().map(|s| s.as_bytes()).as_deref() {
+            Some(b"shallow") => CloneMode::Shallow,
+            Some(b"deep") | None => CloneMode::Deep,
+            Some(other) => {
+                return Err(LuaError::runtime(format!(
+                    "`{}` is not a valid clone mode",
+                    String::from_utf8_lossy(other)
+                )))
+            }
+        };
+
+        lua.gc().mutate(|mc, roots| {
+            let this = unsafe { this.get_node() };
+            gc_into_lua(mc, roots, lua, dom::clone_any(mc, this, mode)).transpose()
+        })
+    });
 }
 
 impl UserData for LuaDocument {
