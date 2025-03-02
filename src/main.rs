@@ -1,6 +1,7 @@
 #![feature(offset_of_enum)] // :)
 
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     fmt::Debug,
     fs::File,
@@ -20,10 +21,11 @@ use eframe::{
     },
 };
 use egui_dnd::DragDropItem;
-use log::{debug, error};
+use log::{debug, error, info, warn};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -56,6 +58,7 @@ const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const EFRAME_PERSISTENCE_LOCATION: &str = "ftlman/eguistate.ron";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
+static PARSED_VERSION: LazyLock<semver::Version> = LazyLock::new(|| semver::Version::parse(VERSION).unwrap());
 static USER_AGENT: LazyLock<String> = LazyLock::new(|| format!("FTL Manager v{}", crate::VERSION));
 static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
     ureq::AgentBuilder::new()
@@ -294,6 +297,27 @@ impl Default for ThemeSetting {
     }
 }
 
+fn get_latest_release() -> Result<github::Release> {
+    github::Repository::new("afishhh", "ftlman")
+        .releases()?
+        .into_iter()
+        .find(|release| !release.prerelease)
+        .ok_or_else(|| anyhow::anyhow!("No non-prerelease releases"))
+}
+
+fn get_latest_release_or_none() -> Option<github::Release> {
+    match get_latest_release() {
+        Ok(release) => {
+            info!("Latest project release tag is {}", release.tag_name);
+            Some(release)
+        }
+        Err(error) => {
+            error!("Failed to fetch latest project release: {error}");
+            None
+        }
+    }
+}
+
 pub struct SharedState {
     // whether something is currently being done with the mods
     // (if this is true and apply_state is None that means we're scanning)
@@ -423,6 +447,8 @@ struct App {
     shared: Arc<Mutex<SharedState>>,
     hyperspace_installer: Option<Result<Result<hyperspace::Installer, String>>>,
 
+    last_ftlman_release: Option<Promise<Option<github::Release>>>,
+
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
     ignore_releases_fetch_error: bool,
 
@@ -472,6 +498,11 @@ impl App {
             last_hovered_mod: None,
             shared: shared.clone(),
             hyperspace_installer: None,
+
+            last_ftlman_release: Some(Promise::spawn_thread(
+                "fetch last ftlman release",
+                get_latest_release_or_none,
+            )),
 
             hyperspace_releases: ResettableLazy::new(|| {
                 Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
@@ -807,7 +838,7 @@ impl eframe::App for App {
                                                     ui.label(name);
                                                 } else {
                                                     ui.label(
-                                                        egui::RichText::new("Unavailable")
+                                                        RichText::new("Unavailable")
                                                             .color(ui.style().visuals.error_fg_color)
                                                     );
                                                 }
@@ -1156,6 +1187,49 @@ impl eframe::App for App {
                         }
                     });
                 });
+        }
+
+        if let Some(Some(release)) = self.last_ftlman_release.as_ref().and_then(Promise::ready) {
+            if let Some(version) = release.find_semver_in_metadata() {
+                if version.cmp_precedence(&PARSED_VERSION) == Ordering::Greater {
+                    let close = egui::Modal::new(egui::Id::new("update modal"))
+                        .show(ctx, |ui| {
+                            ui.label(i18n::style(
+                                &ctx.style(),
+                                &l!(
+                                    "update-modal",
+                                    "latest" => &release.tag_name,
+                                    "current" => format!("v{}", VERSION),
+                                ),
+                            ));
+
+                            static PLACEHOLDER_REGEX: LazyLock<Regex> =
+                                LazyLock::new(|| Regex::new(r"@[^@]+@").unwrap());
+
+                            {
+                                let message = l!("update-modal-link");
+                                let m = PLACEHOLDER_REGEX.find(&message).unwrap();
+
+                                let (a, b) = (&message[..m.start()], &message[m.end()..]);
+                                ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                    ui.label(a);
+                                    ui.hyperlink_to(&message[m.start() + 1..m.end() - 1], &release.html_url);
+                                    ui.label(b);
+                                });
+                            }
+
+                            ui.vertical_centered(|ui| ui.button("Dismiss").clicked())
+                        })
+                        .inner
+                        .inner;
+                    if close {
+                        self.last_ftlman_release = None;
+                    }
+                }
+            } else {
+                warn!("Failed to find version in mod manager release {release:#?}");
+            }
         }
 
         self.sandbox.render(ctx, "XML Sandbox", egui::vec2(620., 480.));

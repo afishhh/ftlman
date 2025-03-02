@@ -6,9 +6,11 @@ use std::{
     },
 };
 
+use eframe::egui;
 use fluent::{concurrent::FluentBundle, FluentArgs, FluentMessage, FluentResource};
 use log::{error, warn};
 use parking_lot::Mutex;
+use regex::Regex;
 use std::collections::HashMap;
 
 const LOCALE_DEFINITIONS: &[(&str, &str)] = &[
@@ -189,6 +191,33 @@ pub fn resolve(id: &str, args: Option<&FluentArgs>) -> Cow<'static, str> {
         error!("{}", error)
     }
     result
+}
+
+pub fn style(style: &egui::Style, message: &str) -> egui::text::LayoutJob {
+    static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[/?([a-z_-]+)\]").unwrap());
+
+    let mut job = egui::text::LayoutJob::default();
+    let mut current_format =
+        egui::text::TextFormat::simple(egui::TextStyle::Body.resolve(style), style.visuals.text_color());
+
+    let mut last = 0;
+    for captures in TAG_REGEX.captures_iter(message) {
+        let m = captures.get(0).unwrap();
+        job.append(&message[last..m.start()], 0.0, current_format.clone());
+        last = m.end();
+
+        let (whole, [tag]) = captures.extract::<1>();
+        let closing = whole.as_bytes()[1] == b'/';
+        match (closing, tag) {
+            (true, "s") => current_format.color = style.visuals.text_color(),
+            (false, "s") => current_format.color = style.visuals.strong_text_color(),
+            _ => warn!("Invalid formatting tag"),
+        }
+    }
+
+    job.append(&message[last..], 0.0, current_format);
+
+    job
 }
 
 #[macro_export]

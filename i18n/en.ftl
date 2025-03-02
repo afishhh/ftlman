@@ -70,3 +70,9 @@ settings-repack-archive-tooltip =
     Turning this off will slightly speed up patching but
     make the archive larger and potentially slow down startup.
     The impact mostly depends on the number of applied mods.
+
+update-modal =
+    A newer version of the mod manager is available!
+    Latest version is [s]{$latest}[/s] while this version is [s]{$current}[/s].
+update-modal-link =
+    Click @here@ to open the new release in a web browser.

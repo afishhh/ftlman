@@ -60,9 +60,11 @@ impl Repository {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub url: String,
+    pub html_url: String,
     pub id: u64,
     pub tag_name: String,
     pub name: String,
+    pub prerelease: bool,
     pub body: String,
     pub assets: Vec<ReleaseAsset>,
 }
