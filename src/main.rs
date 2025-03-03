@@ -235,6 +235,8 @@ pub struct Settings {
     repack_ftl_data: bool,
     #[serde(default = "value_false")]
     disable_hs_installer: bool,
+    #[serde(default = "value_true")]
+    autoupdate: bool,
     #[serde(default)]
     theme: ThemeSetting,
 }
@@ -280,6 +282,7 @@ impl Default for Settings {
             ftl_is_zip: true,
             repack_ftl_data: true,
             disable_hs_installer: false,
+            autoupdate: true,
             theme: ThemeSetting {
                 style: ThemeStyle::Dark,
                 opacity: 1.,
@@ -499,10 +502,9 @@ impl App {
             shared: shared.clone(),
             hyperspace_installer: None,
 
-            last_ftlman_release: Some(Promise::spawn_thread(
-                "fetch last ftlman release",
-                get_latest_release_or_none,
-            )),
+            last_ftlman_release: settings
+                .autoupdate
+                .then(|| Promise::spawn_thread("fetch last ftlman release", get_latest_release_or_none)),
 
             hyperspace_releases: ResettableLazy::new(|| {
                 Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
@@ -1189,6 +1191,9 @@ impl eframe::App for App {
                             self.hyperspace_installer = None;
                             ctx.request_repaint();
                         }
+
+                        ui.checkbox(&mut self.settings.autoupdate, l!("settings-autoupdate"))
+                            .changed();
                     });
                 });
         }

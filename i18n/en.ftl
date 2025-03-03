@@ -65,6 +65,7 @@ settings-background-opacity = Background opacity
 
 settings-advanced-header = Advanced settings
 settings-disable-hs-installer = Disable Hyperspace installer
+settings-autoupdate = Automatically check for updates on startup
 settings-repack-archive = Repack FTL data archive
 settings-repack-archive-tooltip = 
     Turning this off will slightly speed up patching but
