@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.5.4]
+
 ### Added
 
 - `mod.util.eval` function for evaluating Lua code from Lua.
@@ -81,7 +83,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.5.3...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.5.4...HEAD
+[v0.5.4]: https://github.com/afishhh/ftlman/compare/v0.5.3...v0.5.4
 [v0.5.3]: https://github.com/afishhh/ftlman/compare/v0.5.2...v0.5.3
 [v0.5.2]: https://github.com/afishhh/ftlman/compare/v0.5.1...v0.5.2
 [v0.5.1]: https://github.com/afishhh/ftlman/compare/v0.5.0...v0.5.1
