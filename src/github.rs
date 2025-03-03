@@ -39,7 +39,7 @@ impl Repository {
     pub fn releases(&self) -> Result<Vec<Release>> {
         let bytes = CACHE.read_or_create_with_ttl(
             &format!("{}/releases", self.cache_subdir()),
-            std::time::Duration::from_secs(10 * 60),
+            std::time::Duration::from_secs(15 * 60),
             || -> Result<_> {
                 let url: String = format!(
                     "{API_ROOT}/repos/{owner}/{repo}/releases",
