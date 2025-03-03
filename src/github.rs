@@ -60,10 +60,16 @@ impl Repository {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Release {
     pub url: String,
+    // HACK: This is a backwards compat hack, since HyperspaceRelease stores a
+    //       Release internally, this struct cannot be extended without adding
+    //       defaults to avoid breaking deserialization of modorder.json.
+    // TODO: Migrate hyperspace state in modorder.json to a specialized structure.
+    #[serde(default)]
     pub html_url: String,
     pub id: u64,
     pub tag_name: String,
     pub name: String,
+    #[serde(default)]
     pub prerelease: bool,
     pub body: String,
     pub assets: Vec<ReleaseAsset>,
