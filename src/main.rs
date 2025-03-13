@@ -46,6 +46,7 @@ mod hyperspace;
 mod i18n;
 mod lazy;
 mod lua;
+mod patch;
 mod scan;
 mod update;
 mod util;

@@ -41,6 +41,9 @@ pub struct PatchCommand {
     #[clap(long = "data-dir", short = 'd')]
     data_path: Option<PathBuf>,
 
+    #[clap(long = "experimental-patcher")]
+    new_patcher: bool,
+
     /// List of paths to .ftl or .zip files
     ///
     /// If the path has only one component it will be interpreted as
@@ -217,42 +220,62 @@ pub fn main(command: Command) -> Result<()> {
 
             let mut diagnostics = Diagnostics::new();
 
-            let result = crate::apply::apply_ftl(
-                data_dir,
-                command
-                    .mods
-                    .into_iter()
-                    .map(|path| {
-                        Mod::new_with_enabled(
-                            if path.is_dir() {
-                                ModSource::Directory { path }
-                            } else {
-                                ModSource::Zip { path }
-                            },
-                            true,
-                        )
-                    })
-                    .collect(),
-                |stage| match stage {
-                    crate::apply::ApplyStage::Preparing => {
-                        info!("Preparing...")
-                    }
-                    crate::apply::ApplyStage::Mod { .. } => {}
-                    crate::apply::ApplyStage::Repacking => {
-                        info!("Repacking...")
-                    }
-                    _ => unreachable!(),
-                },
-                true,
-                Some(&mut diagnostics),
-            );
+            let mods = command
+                .mods
+                .into_iter()
+                .map(|path| {
+                    Mod::new_with_enabled(
+                        if path.is_dir() {
+                            ModSource::Directory { path }
+                        } else {
+                            ModSource::Zip { path }
+                        },
+                        true,
+                    )
+                })
+                .collect();
 
-            let renderer = Renderer::styled();
-            for message in diagnostics.take_messages() {
-                eprintln!("{}", renderer.render(message))
+            if command.new_patcher {
+                let dat = data_dir.join("ftl.dat");
+                let tmp_path = "/tmp/test.dat";
+                std::fs::copy(dat, tmp_path).unwrap();
+                crate::patch::patch(
+                    &mut silpkg::sync::Pkg::parse(
+                        std::fs::OpenOptions::new()
+                            .read(true)
+                            .write(true)
+                            .open(tmp_path)
+                            .unwrap(),
+                    )
+                    .unwrap(),
+                    mods,
+                );
+                Ok(())
+            } else {
+                let result = crate::apply::apply_ftl(
+                    &data_dir,
+                    mods,
+                    |stage| match stage {
+                        crate::apply::ApplyStage::Preparing => {
+                            info!("Preparing...")
+                        }
+                        crate::apply::ApplyStage::Mod { .. } => {}
+                        crate::apply::ApplyStage::Repacking => {
+                            info!("Repacking...")
+                        }
+                        _ => unreachable!(),
+                    },
+                    true,
+                    Some(&mut diagnostics),
+                );
+
+                let renderer = Renderer::styled();
+                for message in diagnostics.take_messages() {
+                    eprintln!("{}", renderer.render(message))
+                }
+
+                result
             }
-
-            result
         }
         Command::HyperspaceInstall(command) => {
             let settings = load_settings();
