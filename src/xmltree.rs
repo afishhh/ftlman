@@ -140,6 +140,15 @@ impl emitter::TreeEmitter for SimpleTreeEmitter {
 }
 
 impl Element {
+    pub fn new(prefix: Option<Box<str>>, name: Box<str>) -> Self {
+        Self {
+            prefix,
+            name,
+            attributes: BTreeMap::new(),
+            children: Vec::new(),
+        }
+    }
+
     pub fn get_text_trim(&self) -> String {
         let mut result = String::new();
         for child in self.children.iter() {
