@@ -20,13 +20,20 @@ llvm-strip --strip-all target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/releas
 [[ -e release ]] || mkdir release
 cd release
 
-ln -f ../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
-ln -f ../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/windows_gui_wrapper.exe ftlman_gui.exe
-7z a ftlman-x86_64-pc-windows-gnu.zip ftlman_gui.exe ftlman.exe
-rm ftlman_gui.exe ftlman.exe
+mkdir ftlman
+cd ftlman
+mkdir mods
+ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
+ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/windows_gui_wrapper.exe ftlman_gui.exe
+cd ..
+7z a ftlman-x86_64-pc-windows-gnu.zip ftlman
+rm -r ftlman
 
 for target in "${UNIXLIKES[@]}"; do
-  ln -f ../target/"$target"/release/ftlman ftlman
+  mkdir -p ftlman/mods
+  cd ftlman
+  ln -f ../../target/"$target"/release/ftlman ftlman
+  cd ..
   tar cvaf "ftlman-$target.tar.gz" ftlman
-  rm ftlman
+  rm -r ftlman
 done
