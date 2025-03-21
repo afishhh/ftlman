@@ -75,11 +75,11 @@ static EXE_DIRECTORY: LazyLock<PathBuf> = LazyLock::new(|| {
         .to_path_buf()
 });
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+// Conditionally enabled below, one variant is always dead
+#[expect(dead_code)]
 enum ReleaseKind {
-    #[serde(rename = "portable")]
     Portable,
-    #[serde(rename = "source")]
     Source,
 }
 
