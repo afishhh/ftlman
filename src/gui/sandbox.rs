@@ -35,8 +35,7 @@ use crate::{
         ModLuaRuntime,
     },
     render_error_chain,
-    util::StringArena,
-    validate::xml::validate_xml,
+    validate::{xml::validate_xml, Diagnostics, FileDiagnosticBuilder},
 };
 
 use super::{regexedit::RegexEdit, WindowState};
@@ -106,9 +105,9 @@ static LUA_ERROR_LINE_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<p
 
 fn extract_lua_error_diagnostic<'a>(
     source: &'a str,
-    arena: &'a StringArena,
+    builder: &mut FileDiagnosticBuilder<'a, '_>,
     error: &mlua::Error,
-) -> Option<Message<'a>> {
+) -> Option<()> {
     let error_string = error.to_string();
     let captures = LUA_ERROR_LINE_REGEX.captures(&error_string)?;
     let line_number = captures[1].parse::<usize>().ok()?;
@@ -135,11 +134,13 @@ fn extract_lua_error_diagnostic<'a>(
         current_line += 1;
     }
 
-    Some(
-        Level::Error
-            .title(arena.insert(error_string))
-            .snippet(Snippet::source(&source[line_start..line_end]).line_start(snippet_start_line)),
-    )
+    builder.message_interned(
+        Level::Error,
+        error_string,
+        Snippet::source(&source[line_start..line_end]).line_start(snippet_start_line),
+    );
+
+    Some(())
 }
 
 impl PatchWorker {
@@ -188,16 +189,14 @@ impl PatchWorker {
                         }
                     };
 
-                    let mut messages = Vec::new();
-                    let message_strings = StringArena::new();
+                    let mut diagnostics = Diagnostics::new();
+                    let mut file_diagnostics = diagnostics.file(&patch, None);
                     let result = match mode {
                         PatchMode::XmlAppend => {
                             if validate_xml(
                                 &patch,
                                 Options::default().allow_top_level_text(true),
-                                &mut messages,
-                                &message_strings,
-                                None,
+                                &mut file_diagnostics,
                             ) {
                                 apply::apply_one_xml(&source_text, &patch, apply::XmlAppendType::Append).map_err(Some)
                             } else {
@@ -219,10 +218,13 @@ impl PatchWorker {
                                     Ok(Ok(ok)) => Ok(ok),
                                     Err(err) => Err(Some(anyhow::Error::from(err))),
                                     Ok(Err(err)) => {
-                                        if let Some(diagnostic) = err.downcast_ref::<mlua::Error>().and_then(|error| {
-                                            extract_lua_error_diagnostic(&patch, &message_strings, error)
-                                        }) {
-                                            messages.push(diagnostic);
+                                        if err
+                                            .downcast_ref::<mlua::Error>()
+                                            .and_then(|error| {
+                                                extract_lua_error_diagnostic(&patch, &mut file_diagnostics, error)
+                                            })
+                                            .is_some()
+                                        {
                                             Err(None)
                                         } else {
                                             Err(Some(err))
@@ -269,7 +271,7 @@ impl PatchWorker {
                         }
                     };
 
-                    for message in messages {
+                    for message in diagnostics.take_messages() {
                         push_message(message)
                     }
 

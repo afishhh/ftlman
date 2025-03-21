@@ -203,8 +203,8 @@ impl StringArena {
         }
     }
 
-    pub fn insert(&self, string: String) -> &str {
-        let ptr = Box::into_raw(string.into_boxed_str());
+    pub fn insert(&self, string: impl Into<Box<str>>) -> &str {
+        let ptr = Box::into_raw(string.into());
         // SAFETY: No reference to self.strings is handed out and the returned
         //         string has its lifetime tied to self.
         unsafe {
