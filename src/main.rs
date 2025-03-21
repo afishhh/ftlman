@@ -66,6 +66,13 @@ static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
         .https_only(true)
         .build()
 });
+static EXE_DIRECTORY: LazyLock<PathBuf> = LazyLock::new(|| {
+    std::env::current_exe()
+        .expect("Failed to get exe path")
+        .parent()
+        .expect("Failed to get exe path parent")
+        .to_path_buf()
+});
 
 fn main() -> ExitCode {
     env_logger::builder()
@@ -269,6 +276,10 @@ impl Settings {
                 path.push("data")
             }
         }
+    }
+
+    fn effective_mod_directory(&self) -> PathBuf {
+        EXE_DIRECTORY.join(&self.mod_directory)
     }
 }
 
@@ -475,7 +486,7 @@ impl App {
         let mut settings = Settings::load(&settings_path).unwrap_or_default();
         let mut error_popups = Vec::new();
         if settings.mod_directory == Settings::default().mod_directory {
-            std::fs::create_dir_all(&settings.mod_directory)?;
+            std::fs::create_dir_all(settings.effective_mod_directory())?;
         }
         if settings.ftl_directory.is_none() {
             match findftl::find_steam_ftl() {
@@ -541,7 +552,7 @@ impl eframe::App for App {
             .unwrap_or_else(|e| error!("Failed to save settings: {e}"));
         debug!("Saving mod order");
         let order = self.shared.lock().mod_configuration();
-        match std::fs::File::create(self.settings.mod_directory.join(MOD_ORDER_FILENAME)) {
+        match std::fs::File::create(self.settings.effective_mod_directory().join(MOD_ORDER_FILENAME)) {
             Ok(f) => {
                 if let Err(e) = serde_json::to_writer(f, &order) {
                     error!("Failed to write mod order: {e}")

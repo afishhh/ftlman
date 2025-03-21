@@ -22,13 +22,14 @@ pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> 
     lock.ctx.request_repaint();
     drop(lock);
 
-    let mod_config_state = match std::fs::File::open(settings.mod_directory.join(MOD_ORDER_FILENAME)) {
+    let mod_directory = settings.effective_mod_directory();
+    let mod_config_state = match std::fs::File::open(mod_directory.join(MOD_ORDER_FILENAME)) {
         Ok(f) => serde_json::from_reader(std::io::BufReader::new(f))
             .with_context(|| format!("Failed to deserialize mod order from {MOD_ORDER_FILENAME}"))?,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             let mut result = ModConfigurationState::default();
 
-            match std::fs::read_to_string(settings.mod_directory.join("modorder.txt")) {
+            match std::fs::read_to_string(mod_directory.join("modorder.txt")) {
                 Ok(file) => {
                     info!("Importing mod order from Slipstream modorder.txt");
                     for filename in file.lines().map(str::trim).filter(|l| !l.is_empty()) {
@@ -51,7 +52,7 @@ pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> 
     }
     let mod_order_map = mod_config_state.order.into_order_map();
 
-    for result in std::fs::read_dir(&settings.mod_directory).context("Failed to open mod directory")? {
+    for result in std::fs::read_dir(mod_directory).context("Failed to open mod directory")? {
         let entry = result.context("Failed to read entry from mod directory")?;
 
         if let Some(mut m) = ModSource::new(&settings, entry.path()).map(Mod::new) {
