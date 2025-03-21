@@ -55,6 +55,7 @@ use util::{to_human_size_units, SloppyVersion};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
+const EXE_RELATIVE_SETTINGS_LOCATION: &str = "settings.json";
 const EFRAME_PERSISTENCE_LOCATION: &str = "ftlman/eguistate.ron";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
 
@@ -73,6 +74,19 @@ static EXE_DIRECTORY: LazyLock<PathBuf> = LazyLock::new(|| {
         .expect("Failed to get exe path parent")
         .to_path_buf()
 });
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize)]
+enum ReleaseKind {
+    #[serde(rename = "portable")]
+    Portable,
+    #[serde(rename = "source")]
+    Source,
+}
+
+#[cfg(feature = "portable-release")]
+const CURRENT_RELEASE_KIND: ReleaseKind = ReleaseKind::Portable;
+#[cfg(not(feature = "portable-release"))]
+const CURRENT_RELEASE_KIND: ReleaseKind = ReleaseKind::Source;
 
 fn main() -> ExitCode {
     env_logger::builder()
@@ -249,8 +263,23 @@ pub struct Settings {
 }
 
 impl Settings {
-    fn default_path() -> PathBuf {
+    fn global_path() -> PathBuf {
         dirs::config_local_dir().unwrap().join(SETTINGS_LOCATION)
+    }
+
+    fn exe_relative_path() -> PathBuf {
+        EXE_DIRECTORY.join(EXE_RELATIVE_SETTINGS_LOCATION)
+    }
+
+    fn detect_path() -> (PathBuf, bool) {
+        let global = Self::global_path();
+        match global.exists() {
+            true => (global, true),
+            false => match CURRENT_RELEASE_KIND {
+                ReleaseKind::Portable => (Self::exe_relative_path(), false),
+                ReleaseKind::Source => (global, true),
+            },
+        }
     }
 
     pub fn load(path: &Path) -> Option<Settings> {
@@ -281,12 +310,14 @@ impl Settings {
     fn effective_mod_directory(&self) -> PathBuf {
         EXE_DIRECTORY.join(&self.mod_directory)
     }
-}
 
-impl Default for Settings {
-    fn default() -> Self {
+    fn default_with(global: bool) -> Self {
         Self {
-            mod_directory: dirs::data_local_dir().unwrap().join("ftlman/mods"),
+            mod_directory: if global {
+                dirs::data_local_dir().unwrap().join("ftlman/mods")
+            } else {
+                PathBuf::from("mods")
+            },
             ftl_directory: None,
             zips_are_mods: true,
             dirs_are_mods: true,
@@ -482,10 +513,11 @@ struct App {
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Result<Self> {
-        let settings_path = Settings::default_path();
-        let mut settings = Settings::load(&settings_path).unwrap_or_default();
+        let (settings_path, is_global) = Settings::detect_path();
+        let mut settings = Settings::load(&settings_path).unwrap_or_else(|| Settings::default_with(is_global));
+
         let mut error_popups = Vec::new();
-        if settings.mod_directory == Settings::default().mod_directory {
+        if settings.mod_directory == Settings::default_with(is_global).mod_directory {
             std::fs::create_dir_all(settings.effective_mod_directory())?;
         }
         if settings.ftl_directory.is_none() {

@@ -103,7 +103,9 @@ pub struct Args {
 pub fn main(command: Command) -> Result<()> {
     match command {
         Command::Patch(mut command) => {
-            let settings = Settings::load(&Settings::default_path()).unwrap_or_default();
+            let (settings_path, are_settings_global) = Settings::detect_path();
+            let settings =
+                Settings::load(&settings_path).unwrap_or_else(|| Settings::default_with(are_settings_global));
             let Some(data_dir) = command.data_path.or(settings.ftl_directory) else {
                 bail!("--data-dir not set and ftl data directory is not set in settings");
             };
