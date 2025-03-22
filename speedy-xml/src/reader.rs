@@ -43,6 +43,14 @@ impl<'a> StartEvent<'a> {
         parser.range_for_ptrs(self.text.as_bytes().as_ptr_range())
     }
 
+    pub fn name_position_in(&self, parser: &Reader) -> Range<usize> {
+        parser.range_for_ptrs(self.name().as_bytes().as_ptr_range())
+    }
+
+    pub fn prefix_position_in(&self, parser: &Reader) -> Option<Range<usize>> {
+        (self.prefix_end > 0).then(|| parser.range_for_ptrs(self.text[..self.prefix_end].as_bytes().as_ptr_range()))
+    }
+
     pub fn attributes(&self) -> Attributes<'a> {
         Attributes(ParsingBuffer::new(&self.text[self.name_end..]))
     }
@@ -88,6 +96,10 @@ impl<'a> AttributeEvent<'a> {
 
     pub fn name_position_in(&self, reader: &Reader) -> Range<usize> {
         reader.range_for_ptrs(self.name().as_bytes().as_ptr_range())
+    }
+
+    pub fn value_position_in(&self, reader: &Reader) -> Range<usize> {
+        reader.range_for_ptrs(self.raw_value().as_bytes().as_ptr_range())
     }
 }
 
