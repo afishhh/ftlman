@@ -1578,6 +1578,7 @@ dependencies = [
  "poll-promise",
  "quick-xml 0.37.2",
  "regex",
+ "regex-syntax",
  "ryu",
  "semver",
  "serde",
