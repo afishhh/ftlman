@@ -83,12 +83,11 @@ impl<'a> FileDiagnosticBuilder<'a, '_> {
             Err(i) => self.newlines.get(i).copied().unwrap_or(self.source.len()),
         });
 
-        let snippet = Snippet::source(if let Some(end) = end_line_end {
-            &self.source[line_start..end]
+        let snippet = if let Some(end) = end_line_end {
+            Snippet::source(&self.source[line_start..end]).line_start(line_idx + 1)
         } else {
-            self.source
-        })
-        .line_start(line_idx + 1);
+            Snippet::source(self.source)
+        };
 
         if let Some(origin) = self.origin {
             snippet.origin(origin)
