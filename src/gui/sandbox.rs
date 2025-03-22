@@ -376,7 +376,7 @@ impl Sandbox {
 
             patch_mode: PatchMode::XmlAppend,
             patch_on_change: true,
-            always_show_diagnostics: false,
+            always_show_diagnostics: true,
 
             current_file: None,
             shared: Arc::new(Shared {
