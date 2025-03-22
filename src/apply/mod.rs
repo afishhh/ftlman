@@ -293,7 +293,7 @@ pub fn apply_one_xml<'a>(
                     // get to.
                 }
             }
-            crate::append::patch(lower, &script).map_err(|_| anyhow!("Failed to apply append script"))
+            crate::append::patch(lower, &script).context("Failed to apply append script")
         })?,
         XmlAppendType::RawAppend => raw_append_xml(document, patch),
     })
