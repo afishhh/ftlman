@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use log::warn;
-use speedy_xml::reader::{self, Error as ParseError, Event, Reader};
+use speedy_xml::reader::{self, Error as ParseError, Event, Reader, StartEvent};
 
 pub trait TreeBuilder {
     type Element;
@@ -109,6 +109,24 @@ pub fn parse_all_with_options<B: TreeBuilder>(
 
 pub fn parse<B: TreeBuilder>(builder: &mut B, text: &str) -> Result<Option<B::Element>, ParseError> {
     parse_with_options(builder, text, reader::Options::default())
+}
+
+pub fn parse_element_after<B: TreeBuilder>(
+    builder: &mut B,
+    start: &StartEvent,
+    reader: &mut speedy_xml::Reader,
+) -> Result<B::Element, ParseError> {
+    let mut new_element = builder.create_element(
+        start.prefix(),
+        start.name(),
+        start.attributes().map(|attr| (attr.name(), attr.value())),
+    );
+
+    if !start.is_empty() {
+        build_under(reader, builder, &mut new_element)?;
+    }
+
+    Ok(new_element)
 }
 
 pub fn parse_with_options<B: TreeBuilder>(

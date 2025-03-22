@@ -1,5 +1,6 @@
 use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf};
 
+use annotate_snippets::Renderer;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use log::{error, info};
@@ -10,6 +11,7 @@ use crate::{
         LuaContext, ModLuaRuntime,
     },
     util::{crc32_from_reader, to_human_size_units},
+    validate::Diagnostics,
     Mod, ModSource, Settings,
 };
 
@@ -183,17 +185,37 @@ pub fn main(command: Command) -> Result<()> {
             let source = std::fs::read_to_string(&command.document).context("Failed to read source file")?;
             let patch = std::fs::read_to_string(&command.patch).context("Failed to read patch file")?;
 
+            let mut diagnostics = Diagnostics::new();
+
             let patched = match kind {
                 crate::apply::AppendType::Xml(xml_append_type) => {
-                    crate::apply::apply_one_xml(&source, &patch, xml_append_type)?
+                    match crate::apply::apply_one_xml(
+                        &source,
+                        &patch,
+                        xml_append_type,
+                        Some((&mut diagnostics, Some(patch_name))),
+                    ) {
+                        Ok(value) => Ok(value),
+                        Err(error) => Err(error),
+                    }
                 }
                 crate::apply::AppendType::LuaAppend => {
                     let runtime = ModLuaRuntime::new().context("Failed to initialize Lua runtime")?;
-                    crate::apply::apply_one_lua(&source, &patch, &format!("@{}", command.document.display()), &runtime)?
+                    Ok(crate::apply::apply_one_lua(
+                        &source,
+                        &patch,
+                        &format!("@{}", command.document.display()),
+                        &runtime,
+                    )?)
                 }
             };
 
-            std::io::stdout().write_all(patched.as_bytes())?;
+            let renderer = Renderer::styled();
+            for message in diagnostics.take_messages() {
+                eprintln!("{}", renderer.render(message))
+            }
+
+            std::io::stdout().write_all(patched?.as_bytes())?;
 
             Ok(())
         }

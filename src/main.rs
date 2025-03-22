@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
+mod append;
 mod apply;
 mod bps;
 mod cache;

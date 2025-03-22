@@ -198,7 +198,13 @@ impl PatchWorker {
                                 Options::default().allow_top_level_text(true),
                                 &mut file_diagnostics,
                             ) {
-                                apply::apply_one_xml(&source_text, &patch, apply::XmlAppendType::Append).map_err(Some)
+                                apply::apply_one_xml(
+                                    &source_text,
+                                    &patch,
+                                    apply::XmlAppendType::Append,
+                                    Some((&mut diagnostics, None)),
+                                )
+                                .map_err(Some)
                             } else {
                                 Err(None)
                             }

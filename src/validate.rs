@@ -1,6 +1,6 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, ops::Range};
 
-use annotate_snippets::{Level, Message, Snippet};
+use annotate_snippets::{Annotation, Level, Message, Snippet};
 
 use crate::util::StringArena;
 
@@ -24,6 +24,27 @@ impl<'a> Diagnostics<'a> {
         FileDiagnosticBuilder {
             parent: self,
             source,
+            origin: filename,
+            newlines: {
+                let mut result = Vec::new();
+
+                for (i, b) in source.bytes().enumerate() {
+                    if b == b'\n' {
+                        result.push(i);
+                    }
+                }
+
+                result
+            },
+        }
+    }
+
+    pub fn file_cloned<'b>(&'b mut self, source: &str, filename: Option<&'a str>) -> FileDiagnosticBuilder<'a, 'b> {
+        // TODO: See below, make the arena a different object
+        let interned = unsafe { std::mem::transmute::<&str, &str>(self.strings.insert(source)) };
+        FileDiagnosticBuilder {
+            parent: self,
+            source: interned,
             origin: filename,
             newlines: {
                 let mut result = Vec::new();
@@ -93,6 +114,36 @@ impl<'a> FileDiagnosticBuilder<'a, '_> {
             .messages
             // NOTE: std::mem::transmute is for erasing the 'a lifetime and converting it into 'static.
             .push(unsafe { std::mem::transmute(message) });
+    }
+
+    // This forges a lifetime, it must be unsafe.
+    // TODO: Maybe expose StringArena differently so it can actually be used safely.
+    //       This could be done by decoupling it from Diagnostics, and having it be part of the 'a lifetime.
+    #[allow(clippy::missing_transmute_annotations)]
+    pub unsafe fn annotation_interned(
+        &mut self,
+        level: Level,
+        span: Range<usize>,
+        label: impl Into<Box<str>>,
+    ) -> Annotation<'static> {
+        unsafe { std::mem::transmute(level.span(span).label(self.parent.strings.insert(label.into()))) }
+    }
+}
+
+/// Represents an error that was already via [`Diagnostics`].
+#[derive(Debug, Clone, Copy)]
+pub struct AlreadyReported;
+
+pub trait OptionExt<T> {
+    // Useful for working with Option<&mut FileDiagnosticBuilder>
+    fn with_mut(&mut self, fun: impl FnOnce(&mut T));
+}
+
+impl<T> OptionExt<T> for Option<T> {
+    fn with_mut(&mut self, fun: impl FnOnce(&mut T)) {
+        if let Some(ref mut value) = self {
+            fun(value)
+        }
     }
 }
 
