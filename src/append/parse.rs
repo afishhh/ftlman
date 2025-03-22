@@ -318,7 +318,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                                     .annotation(
                                         Level::Info
                                             .span(name_span.clone())
-                                            .label("expected any find, mod-before or mod-after tag"),
+                                            .label("must be a find or mod-before/mod-after tag"),
                                     )
                                     .annotation(Level::Error.span(name_span).label("unexpected tag")),
                             ),
@@ -601,6 +601,22 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         let mut commands = Vec::new();
 
         loop {
+            let unrecognised_command = |this: &mut Self, start: &StartEvent| {
+                this.diag.with_mut(|builder| {
+                    let name_span = start.prefixed_name_position_in(&this.reader);
+                    builder.message_interned(
+                        Level::Error,
+                        "invalid mod command",
+                        builder
+                            .make_snippet(name_span.start, None)
+                            .fold(true)
+                            .annotation(Level::Error.span(name_span).label("unrecognized mod command")),
+                    );
+                });
+
+                Command::Error
+            };
+
             let command = match self.reader.next().transpose()? {
                 Some(Event::Start(start) | Event::Empty(start)) => match start.prefix() {
                     Some("mod") => match self.try_parse_find(&start) {
@@ -660,23 +676,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                             }?,
                             _ => {
                                 self.skip_to_element_end_if_non_empty(&start)?;
-
-                                self.diag.with_mut(|builder| {
-                                    let name_span = start.name_position_in(&self.reader);
-                                    let start = start
-                                        .prefix_position_in(&self.reader)
-                                        .map_or(name_span.start, |pref| pref.start);
-                                    let whole_name_span = start..name_span.end;
-                                    builder.message_interned(
-                                        Level::Error,
-                                        "invalid mod command",
-                                        builder.make_snippet(whole_name_span.start, None).fold(true).annotation(
-                                            Level::Error.span(whole_name_span).label("unrecognized mod command tag"),
-                                        ),
-                                    );
-                                });
-
-                                Command::Error
+                                unrecognised_command(self, &start)
                             }
                         },
                     },
@@ -698,13 +698,9 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         element.prefix = None;
                         Command::Overwrite(element)
                     }
-                    Some(other) => {
+                    Some(_) | None => {
                         self.skip_to_element_end_if_non_empty(&start)?;
-                        todo!("Unrecognised mod command namespace: {:?}", other)
-                    }
-                    None => {
-                        self.skip_to_element_end_if_non_empty(&start)?;
-                        todo!("Mod command is missing a namespace")
+                        unrecognised_command(self, &start)
                     }
                 },
                 Some(Event::End(end)) => {
@@ -924,7 +920,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 self.diag.with_mut(|builder| {
                     let name_range = event.name_position_in(&self.reader);
                     builder.message(
-                        Level::Error.title("unrecognised mod find tag").snippet(
+                        Level::Error.title("unrecognized mod find tag").snippet(
                             builder
                                 .make_snippet(name_range.start, None)
                                 .fold(true)
