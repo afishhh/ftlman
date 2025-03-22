@@ -11,7 +11,6 @@ pub use parse::*;
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
 
-#[must_use = "Reports error via boolean return"]
 pub fn patch(context: &mut Element, script: &Script) -> Result<()> {
     for node in &script.0 {
         match node {
