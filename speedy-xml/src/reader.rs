@@ -51,6 +51,10 @@ impl<'a> StartEvent<'a> {
         (self.prefix_end > 0).then(|| parser.range_for_ptrs(self.text[..self.prefix_end].as_bytes().as_ptr_range()))
     }
 
+    pub fn prefixed_name_position_in(&self, parser: &Reader) -> Range<usize> {
+        parser.range_for_ptrs(self.text[1..self.name_end].as_bytes().as_ptr_range())
+    }
+
     pub fn attributes(&self) -> Attributes<'a> {
         Attributes(ParsingBuffer::new(&self.text[self.name_end..]))
     }
