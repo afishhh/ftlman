@@ -1003,7 +1003,11 @@ pub fn parse<'a: 'b, 'b>(
                     },
                 }
             }
-            Event::End(end) => unreachable!("{end:?}"),
+            Event::End(_) => {
+                // TODO: Emit a warning here (unmatched end tag)
+                continue;
+            }
+
             Event::Start(start) | Event::Empty(start) => FindOrContent::Content(Node::Element(
                 xmltree::builder::parse_element_after(&mut SimpleTreeBuilder, &start, &mut parser.reader)?,
             )),
