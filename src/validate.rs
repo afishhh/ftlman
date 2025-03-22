@@ -25,17 +25,6 @@ impl<'a> Diagnostics<'a> {
             parent: self,
             source,
             origin: filename,
-            newlines: {
-                let mut result = Vec::new();
-
-                for (i, b) in source.bytes().enumerate() {
-                    if b == b'\n' {
-                        result.push(i);
-                    }
-                }
-
-                result
-            },
         }
     }
 
@@ -46,17 +35,6 @@ impl<'a> Diagnostics<'a> {
             parent: self,
             source: interned,
             origin: filename,
-            newlines: {
-                let mut result = Vec::new();
-
-                for (i, b) in source.bytes().enumerate() {
-                    if b == b'\n' {
-                        result.push(i);
-                    }
-                }
-
-                result
-            },
         }
     }
 
@@ -68,32 +46,12 @@ impl<'a> Diagnostics<'a> {
 pub struct FileDiagnosticBuilder<'a: 'b, 'b> {
     parent: &'b mut Diagnostics<'a>,
     source: &'a str,
-    newlines: Vec<usize>,
     origin: Option<&'a str>,
 }
 
 impl<'a> FileDiagnosticBuilder<'a, '_> {
     pub fn make_snippet(&self) -> Snippet<'a> {
         let snippet = Snippet::source(self.source).fold(true);
-
-        if let Some(origin) = self.origin {
-            snippet.origin(origin)
-        } else {
-            snippet
-        }
-    }
-
-    pub fn make_unfolded_snippet(&self, Range { start, end }: Range<usize>) -> Snippet<'a> {
-        let line_idx = match self.newlines.binary_search(&start) {
-            Ok(i) | Err(i) => i,
-        };
-        let line_start = line_idx.checked_sub(1).map_or(0, |p| self.newlines[p] + 1);
-        let end_line_end = match self.newlines.binary_search(&end) {
-            Ok(i) => self.newlines[i],
-            Err(i) => self.newlines.get(i).copied().unwrap_or(self.source.len()),
-        };
-
-        let snippet = Snippet::source(&self.source[line_start..end_line_end]).line_start(line_idx + 1);
 
         if let Some(origin) = self.origin {
             snippet.origin(origin)
