@@ -4,7 +4,7 @@ use crate::{
     validate::{AlreadyReported, FileDiagnosticBuilder, OptionExt},
     xmltree::{self, Element, Node, SimpleTreeBuilder},
 };
-use annotate_snippets::Level;
+use annotate_snippets::{Level, Snippet};
 use regex::Regex;
 use speedy_xml::reader::{Event, StartEvent};
 
@@ -88,7 +88,7 @@ macro_rules! parser_get_attr {
         //        If it doesn't the wrapping can be moved into the inner macro.
         parser_get_attr!(@require_presence $self, $event,
             if $is_regex {
-                parser_get_attr!($self, $event, Regex, "a regex", $name).map(|x| x.map(StringFilter::Regex))
+                parser_get_attr!($self, $event, Regex, $name).map(|x| x.map(StringFilter::Regex))
             } else {
                 parser_get_attr!($self, $event, BoxFromStr, "this should be impossible!", $name).map(|x| x.map(|x| StringFilter::Fixed(x.0)))
             } $(, $what)?
@@ -101,6 +101,32 @@ macro_rules! parser_get_attr {
         parser_get_attr!($self, $event, $type, $type_name, $name)
             .transpose()
             .unwrap_or(Ok($default))
+    }};
+    ($self: ident, $event: ident, Regex, $name: literal) => {{
+        $event
+            .attributes()
+            .filter(|attr| attr.name() == $name)
+            .last()
+            .map(|attr| {
+                attr.value().parse::<Regex>().map_err(|error| {
+                    $self.diag.with_mut(|builder| {
+                        let span = attr.value_position_in(&$self.reader);
+                        let snippet =
+                            unsafe { Self::make_regex_error_snippet(builder, span.start, &attr.value(), error) };
+                        builder.message_interned(
+                            Level::Error,
+                            format!(
+                                concat!("mod:{}", " ", $name, " attribute has invalid value"),
+                                $event.name()
+                            ),
+                            snippet
+                        )
+                    });
+
+                    AlreadyReported
+                })
+            })
+            .transpose()
     }};
     ($self: ident, $event: ident, $type: ty, $type_name: literal, $name: literal) => {{
         // FIXME: asymptotically not very pretty
@@ -228,7 +254,10 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                     }
                 }
                 Some(_) => (),
-                None => break,
+                None => {
+                    span.end = self.reader.buffer().len();
+                    break;
+                }
             }
         }
 
@@ -349,6 +378,79 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }))
     }
 
+    unsafe fn add_regex_syntax_error_annotations(
+        offset: usize,
+        pattern: &str,
+        builder: &mut FileDiagnosticBuilder<'a, '_>,
+        mut snippet: Snippet<'a>,
+    ) -> Result<Snippet<'a>, Snippet<'a>> {
+        let Err(err) = regex_syntax::parse(pattern) else {
+            return Err(snippet);
+        };
+
+        let regex_span_to_range = |span: &regex_syntax::ast::Span| offset + span.start.offset..offset + span.end.offset;
+
+        match err {
+            regex_syntax::Error::Parse(error) => {
+                use regex_syntax::ast::ErrorKind;
+                snippet = unsafe {
+                    snippet.annotation(builder.annotation_interned(
+                        Level::Error,
+                        regex_span_to_range(error.span()),
+                        format!("regex syntax error: {}", error.kind()),
+                    ))
+                };
+                match error.kind() {
+                    ErrorKind::FlagDuplicate { original }
+                    | ErrorKind::FlagRepeatedNegation { original }
+                    | ErrorKind::GroupNameDuplicate { original } => {
+                        snippet = snippet.annotation(
+                            Level::Note
+                                .span(regex_span_to_range(original))
+                                .label("previous occurence here"),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            regex_syntax::Error::Translate(error) => {
+                snippet = unsafe {
+                    snippet.annotation(builder.annotation_interned(
+                        Level::Error,
+                        regex_span_to_range(error.span()),
+                        format!("regex translation error: {}", error.kind()),
+                    ))
+                };
+            }
+            _ => return Err(snippet),
+        }
+
+        snippet = snippet.annotation(
+            Level::Note
+                .span(offset..offset + pattern.len())
+                .label("while parsing this regex"),
+        );
+
+        Ok(snippet)
+    }
+
+    // FIXME: This results in incorrect offsets sometimes due to unescaping.
+    unsafe fn make_regex_error_snippet(
+        builder: &mut FileDiagnosticBuilder<'a, '_>,
+        offset: usize,
+        pattern: &str,
+        error: regex::Error,
+    ) -> Snippet<'a> {
+        let snippet = builder.make_snippet(offset, None).fold(true);
+        let snippet = match unsafe { Self::add_regex_syntax_error_annotations(offset, pattern, builder, snippet) } {
+            Ok(precise) => precise,
+            Err(snippet) => snippet.annotation(unsafe {
+                builder.annotation_interned(Level::Error, offset..offset + pattern.len(), error.to_string())
+            }),
+        };
+        snippet
+    }
+
     fn parse_selector(
         &mut self,
         start: &StartEvent,
@@ -363,12 +465,12 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 Err(error) => {
                     self.diag.with_mut(|builder| {
                         let span = attr.value_position_in(&self.reader);
-                        let annotation =
-                            unsafe { builder.annotation_interned(Level::Error, span.clone(), error.to_string()) };
+                        let snippet =
+                            unsafe { Self::make_regex_error_snippet(builder, span.start, &attr.value(), error) };
                         builder.message(
                             Level::Error
                                 .title("mod:selector attribute filter has invalid value")
-                                .snippet(builder.make_snippet(span.start, None).fold(true).annotation(annotation)),
+                                .snippet(snippet),
                         );
                     });
                     success = false;
@@ -382,27 +484,20 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         let value_filter = if !start.is_empty() {
             let (text, span) = self.take_element_text_trim()?;
             if !text.is_empty() {
-                match StringFilter::parse(Cow::Owned(text), regex) {
+                match StringFilter::parse(Cow::Borrowed(&text), regex) {
                     Ok(filter) => Some(filter),
                     Err(error) => {
                         self.diag.with_mut(|builder| {
-                            let annotation =
-                                unsafe { builder.annotation_interned(Level::Error, span.clone(), error.to_string()) };
-                            error
+                            let snippet = unsafe { Self::make_regex_error_snippet(builder, span.start, &text, error) }
+                                .annotation(
+                                    Level::Note
+                                        .span(start.position_in(&self.reader))
+                                        .label("in this selector element"),
+                                );
                             builder.message(
                                 Level::Error
                                     .title("mod:parse selector value filter is invalid")
-                                    .snippet(
-                                        builder
-                                            .make_snippet(span.start, None)
-                                            .fold(true)
-                                            .annotation(annotation)
-                                            .annotation(
-                                                Level::Note
-                                                    .span(start.position_in(&self.reader))
-                                                    .label("in this selector element"),
-                                            ),
-                                    ),
+                                    .snippet(snippet),
                             );
                         });
                         return Ok(SelectorFilterOrError::Error);
