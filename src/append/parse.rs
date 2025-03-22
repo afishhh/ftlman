@@ -199,15 +199,6 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }
     }
 
-    // TODO: Make this a method of StartEvent
-    fn element_start_name_span(&self, start: &StartEvent) -> Range<usize> {
-        let name_span = start.name_position_in(&self.reader);
-        let start = start
-            .prefix_position_in(&self.reader)
-            .map_or(name_span.start, |pref| pref.start);
-        start..name_span.end
-    }
-
     fn skip_to_element_end(&mut self) -> Result<(), speedy_xml::reader::Error> {
         let mut depth = 1;
 
@@ -315,8 +306,8 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         _ => (),
                     }
 
-                    let name_span = self.element_start_name_span(&start);
                     self.diag.with_mut(|builder| {
+                        let name_span = start.prefixed_name_position_in(&self.reader);
                         let parent_span = event.position_in(&self.reader);
                         builder.message(
                             Level::Error.title("mod:insertByFind contains unexpected tag").snippet(
@@ -345,8 +336,8 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }
 
         let Some(find) = found_find else {
-            let span = self.element_start_name_span(event);
             self.diag.with_mut(|builder| {
+                let span = event.position_in(&self.reader);
                 let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
                     Level::Error
                         .span(span)
@@ -363,8 +354,8 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         };
 
         if before.is_empty() && after.is_empty() {
-            let span = self.element_start_name_span(event);
             self.diag.with_mut(|builder| {
+                let span = event.position_in(&self.reader);
                 let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
                     Level::Error
                         .span(span)
