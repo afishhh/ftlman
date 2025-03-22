@@ -26,8 +26,7 @@ pub fn validate_xml<'a>(source: &'a str, options: Options, builder: &mut FileDia
                             builder.message(
                                 Level::Warning.title("duplicate attribute").snippet(
                                     builder
-                                        .make_snippet(previous.start, None)
-                                        .fold(true)
+                                        .make_snippet()
                                         .annotation(Level::Info.span(previous).label("previous occurrence here"))
                                         .annotation(
                                             Level::Warning
@@ -48,8 +47,7 @@ pub fn validate_xml<'a>(source: &'a str, options: Options, builder: &mut FileDia
                                 .title("element closing tag doesn't match opening tag")
                                 .snippet(
                                     builder
-                                        .make_snippet(start_span.start, None)
-                                        .fold(true)
+                                        .make_snippet()
                                         .annotation(Level::Info.span(start_span).label("opening tag here"))
                                         .annotation(
                                             Level::Warning.span(end_span).label("doesn't match this closing tag"),
@@ -62,7 +60,7 @@ pub fn validate_xml<'a>(source: &'a str, options: Options, builder: &mut FileDia
                         let end_span = end.position_in(&reader);
                         builder.message(
                             Level::Error.title("unmatched end tag").snippet(
-                                builder.make_snippet(end_span.start, None).fold(true).annotation(
+                                builder.make_snippet().annotation(
                                     Level::Error
                                         .span(end_span)
                                         .label("end tag doesn't have a corresponding opening tag"),
@@ -82,8 +80,7 @@ pub fn validate_xml<'a>(source: &'a str, options: Options, builder: &mut FileDia
                 parsing_would_succeed = false;
 
                 let snippet = builder
-                    .make_snippet(e.span().start, None)
-                    .fold(true)
+                    .make_snippet()
                     .annotation(Level::Error.span(e.span()).label(e.kind().message()));
 
                 builder.message(Level::Error.title("parse error").snippet(snippet));
@@ -94,8 +91,7 @@ pub fn validate_xml<'a>(source: &'a str, options: Options, builder: &mut FileDia
                     builder.message(
                         Level::Warning.title("unclosed element").snippet(
                             builder
-                                .make_snippet(span.start, None)
-                                .fold(true)
+                                .make_snippet()
                                 .annotation(Level::Info.span(span).label("opened here"))
                                 .annotation(
                                     Level::Warning

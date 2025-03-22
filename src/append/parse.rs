@@ -147,8 +147,7 @@ macro_rules! parser_get_attr {
                                 concat!("mod:{}", " ", $name, " attribute has invalid value"),
                                 $event.name()
                             ),
-                            builder.make_snippet(span.start, None)
-                                .fold(true)
+                            builder.make_snippet()
                                 .annotation(Level::Info.span(span).label(concat!("expected ", $type_name)))
                                 .annotation(error_annotation)
                         )
@@ -170,8 +169,7 @@ macro_rules! parser_get_attr {
                             concat!("mod:{}", " is missing ", $what, " attribute"),
                             $event.name()
                         ),
-                        builder.make_snippet(tag_span.start, None)
-                            .fold(true)
+                        builder.make_snippet()
                             .annotation(Level::Error.span(tag_span).label(concat!("tag is missing ", $what, " attribute")))
                     )
                 });
@@ -312,8 +310,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         builder.message(
                             Level::Error.title("mod:insertByFind contains unexpected tag").snippet(
                                 builder
-                                    .make_snippet(parent_span.start, None)
-                                    .fold(true)
+                                    .make_snippet()
                                     .annotation(Level::Note.span(parent_span).label("in this mod:insertByFind"))
                                     .annotation(
                                         Level::Info
@@ -338,7 +335,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         let Some(find) = found_find else {
             self.diag.with_mut(|builder| {
                 let span = event.position_in(&self.reader);
-                let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
+                let snippet = builder.make_snippet().annotation(
                     Level::Error
                         .span(span)
                         .label("this mod:insertByFind is missing a find tag"),
@@ -356,7 +353,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         if before.is_empty() && after.is_empty() {
             self.diag.with_mut(|builder| {
                 let span = event.position_in(&self.reader);
-                let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
+                let snippet = builder.make_snippet().annotation(
                     Level::Error
                         .span(span)
                         .label("this mod:insertByFind is missing a mod-before or mod-after tag"),
@@ -450,7 +447,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         pattern: &str,
         error: regex::Error,
     ) -> Snippet<'a> {
-        let snippet = builder.make_snippet(offset, None).fold(true);
+        let snippet = builder.make_snippet();
         let snippet = match unsafe { Self::add_regex_syntax_error_annotations(offset, pattern, builder, snippet) } {
             Ok(precise) => precise,
             Err(snippet) => snippet.annotation(unsafe {
@@ -608,8 +605,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         Level::Error,
                         "invalid mod command",
                         builder
-                            .make_snippet(name_span.start, None)
-                            .fold(true)
+                            .make_snippet()
                             .annotation(Level::Error.span(name_span).label("unrecognized mod command")),
                     );
                 });
@@ -767,8 +763,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                             Level::Error,
                             format!("invalid {} limit attribute value", event.name()),
                             builder
-                                .make_snippet(value_span.start, None)
-                                .fold(true)
+                                .make_snippet()
                                 .annotation(Level::Error.span(value_span).label("limit must be >= -1")),
                         )
                     });
@@ -876,7 +871,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                             None => {
                                 self.diag.with_mut(|builder| {
                                     let span = event.position_in(&self.reader);
-                                    let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
+                                    let snippet = builder.make_snippet().annotation(
                                         Level::Error
                                             .span(span)
                                             .label("this mod:findComposite is missing a mod:par tag"),
@@ -922,8 +917,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                     builder.message(
                         Level::Error.title("unrecognized mod find tag").snippet(
                             builder
-                                .make_snippet(name_range.start, None)
-                                .fold(true)
+                                .make_snippet()
                                 .annotation(Level::Error.span(name_range).label("unrecognized tag name")),
                         ),
                     );

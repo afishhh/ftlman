@@ -73,21 +73,27 @@ pub struct FileDiagnosticBuilder<'a: 'b, 'b> {
 }
 
 impl<'a> FileDiagnosticBuilder<'a, '_> {
-    pub fn make_snippet(&self, start: usize, end: Option<usize>) -> Snippet<'a> {
+    pub fn make_snippet(&self) -> Snippet<'a> {
+        let snippet = Snippet::source(self.source).fold(true);
+
+        if let Some(origin) = self.origin {
+            snippet.origin(origin)
+        } else {
+            snippet
+        }
+    }
+
+    pub fn make_unfolded_snippet(&self, Range { start, end }: Range<usize>) -> Snippet<'a> {
         let line_idx = match self.newlines.binary_search(&start) {
             Ok(i) | Err(i) => i,
         };
         let line_start = line_idx.checked_sub(1).map_or(0, |p| self.newlines[p] + 1);
-        let end_line_end = end.map(|end| match self.newlines.binary_search(&end) {
+        let end_line_end = match self.newlines.binary_search(&end) {
             Ok(i) => self.newlines[i],
             Err(i) => self.newlines.get(i).copied().unwrap_or(self.source.len()),
-        });
-
-        let snippet = if let Some(end) = end_line_end {
-            Snippet::source(&self.source[line_start..end]).line_start(line_idx + 1)
-        } else {
-            Snippet::source(self.source)
         };
+
+        let snippet = Snippet::source(&self.source[line_start..end_line_end]).line_start(line_idx + 1);
 
         if let Some(origin) = self.origin {
             snippet.origin(origin)
