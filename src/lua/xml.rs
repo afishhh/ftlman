@@ -855,7 +855,7 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 let upper = std::str::from_utf8(&upper_bytes[..])
                     .map_err(LuaError::runtime)
                     .context("Failed to decode patch")?;
-                let result = crate::apply::apply_one_xml(lower, upper, kind).map_err(LuaError::runtime)?;
+                let result = crate::apply::apply_one_xml(lower, upper, kind, None).map_err(LuaError::runtime)?;
 
                 Ok(lua.create_string(result))
             },

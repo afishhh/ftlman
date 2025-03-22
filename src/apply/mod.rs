@@ -24,11 +24,10 @@ use crate::{
         LuaContext, ModLuaRuntime,
     },
     util::convert_lf_to_crlf,
+    validate::{Diagnostics, FileDiagnosticBuilder},
     xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
-
-mod append;
 
 // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267
 static WRAPPER_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(<[?]xml [^>]*?[?]>\n*)|(</?FTL>)").unwrap());
@@ -131,25 +130,16 @@ fn raw_append_xml(lower: &str, upper: &str) -> String {
 fn unwrap_rewrap_xml(
     lower: &str,
     upper: &str,
-    combine: impl FnOnce(&mut xmltree::Element, Vec<xmltree::Node>) -> Result<()>,
+    combine: impl FnOnce(&mut xmltree::Element, &str) -> Result<()>,
 ) -> Result<String> {
     let upper_without_root = unwrap_xml_text(upper);
-    let upper_elements = xmltree::builder::parse_all_with_options(
-        &mut SimpleTreeBuilder,
-        &upper_without_root,
-        Options::default()
-            .allow_top_level_text(true)
-            .allow_unmatched_closing_tags(true)
-            .allow_unclosed_tags(true),
-    )
-    .context("Could not parse XML append document")?;
 
     unwrap_rewrap_single(
         lower,
         |text| xmltree::builder::parse(&mut SimpleTreeBuilder, text).map_err(Into::into),
         &SimpleTreeEmitter,
         |lower| {
-            combine(lower, upper_elements)?;
+            combine(lower, &upper_without_root)?;
             Ok(lower)
         },
     )
@@ -276,9 +266,36 @@ impl AppendType {
     }
 }
 
-pub fn apply_one_xml(document: &str, patch: &str, kind: XmlAppendType) -> Result<String> {
+pub fn apply_one_xml<'a>(
+    document: &str,
+    patch: &str,
+    kind: XmlAppendType,
+    // TODO: This is kinda hacky, to allow for keeping the regex based unwrapping approach.
+    //       It can be cleaned up by getting rid of it, but that is a backwards compatibilty risk.
+    diag: Option<(&mut Diagnostics<'a>, Option<&'a str>)>,
+) -> Result<String> {
     Ok(match kind {
-        XmlAppendType::Append => unwrap_rewrap_xml(document, patch, append::patch)?,
+        XmlAppendType::Append => unwrap_rewrap_xml(document, patch, |lower, upper| {
+            let mut script = crate::append::Script::new();
+            let mut file_diag = if let Some((diag, filename)) = diag {
+                Some(diag.file_cloned(upper, filename))
+            } else {
+                None
+            };
+            match crate::append::parse(&mut script, upper, file_diag.as_mut()) {
+                Ok(()) => (),
+                Err(crate::append::ParseError::Xml(xml)) => {
+                    return Err(xml).context("Could not parse XML append document")
+                }
+                Err(crate::append::ParseError::AlreadyReported) => {
+                    // Continue on to execution, the Script may contain Error nodes at this point
+                    // which the patcher will abort on. This is done for backwards compatibility because
+                    // Slipstream evaluated scripts eagerly and therefore would not report errors it didn't
+                    // get to.
+                }
+            }
+            crate::append::patch(lower, &script).map_err(|_| anyhow!("Failed to apply append script"))
+        })?,
         XmlAppendType::RawAppend => raw_append_xml(document, patch),
     })
 }
@@ -652,7 +669,9 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
                 let new_text = match operation {
-                    AppendType::Xml(xml_append_type) => apply_one_xml(&original_text, &append_text, xml_append_type),
+                    AppendType::Xml(xml_append_type) => {
+                        apply_one_xml(&original_text, &append_text, xml_append_type, None)
+                    }
                     AppendType::LuaAppend => {
                         let (mut pkgfs, mut modfs) = make_lua_filesystems(&mut pkg, &mut handle)?;
                         match lua.with_filesystems(

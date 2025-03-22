@@ -7,7 +7,7 @@ pub mod builder;
 pub mod dom;
 pub mod emitter;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum Node {
     Element(Element),
     Comment(String),
@@ -39,7 +39,7 @@ impl Node {
     mk_as!(as_mut_text Text -> &mut String);
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Element {
     pub prefix: Option<Box<str>>,
     pub name: Box<str>,
@@ -155,25 +155,10 @@ impl Element {
         result
     }
 
-    pub fn get_child(&self, (name, prefix): (&str, &str)) -> Option<&Element> {
-        self.children
-            .iter()
-            .filter_map(|x| x.as_element())
-            .find(|e| e.prefix.as_deref().is_some_and(|p| p == prefix) && &*e.name == name)
-    }
-
     pub fn get_mut_child(&mut self, name: &str) -> Option<&mut Element> {
         self.children
             .iter_mut()
             .filter_map(|x| x.as_mut_element())
             .find(|e| &*e.name == name)
-    }
-
-    pub fn make_qualified_name(&self) -> String {
-        if let Some(prefix) = self.prefix.as_ref() {
-            format!("{prefix}:{}", self.name)
-        } else {
-            self.name.to_string()
-        }
     }
 }
