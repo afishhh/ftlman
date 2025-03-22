@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
-use annotate_snippets::{Level, Message, Snippet};
+use annotate_snippets::Level;
 use speedy_xml::{reader::Options, Reader};
-
-use crate::util::StringArena;
 
 use super::FileDiagnosticBuilder;
 

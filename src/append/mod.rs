@@ -1,4 +1,4 @@
-use std::mem::offset_of;
+use std::{collections::HashSet, mem::offset_of};
 
 use crate::xmltree::{Element, Node};
 use anyhow::{bail, Result};
@@ -95,28 +95,6 @@ impl ElementFilter for SimpleFilter {
     }
 }
 
-impl ElementFilter for CompositeFilter {
-    fn filter(&self, element: &Element) -> bool {
-        self.op.complement
-            ^ match self.op.operator {
-                ParOperator::And => {
-                    let mut value = true;
-                    for filter in &self.filters {
-                        value &= filter.filter(element);
-                    }
-                    value
-                }
-                ParOperator::Or => {
-                    let mut value = false;
-                    for filter in &self.filters {
-                        value |= filter.filter(element);
-                    }
-                    value
-                }
-            }
-    }
-}
-
 fn cleanup(element: &mut Element) {
     const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-prepend", "mod-overwrite"];
 
@@ -150,8 +128,57 @@ fn cleanup(element: &mut Element) {
 fn mod_find<'a>(context: &'a mut Element, find: &Find) -> Result<Vec<&'a mut Element>> {
     let mut matches = match &find.filter {
         FindFilter::Simple(filter) => filter.filter_children(context),
-        FindFilter::Composite(filter) => filter.filter_children(context),
-        FindFilter::Error => bail!("encountered error filter"),
+        // PERF: This could theoretically be optimised to run in two passes instead of using a set.
+        FindFilter::Composite(filter) => {
+            let mut it = filter.filters.iter();
+
+            let Some(first) = it.next() else {
+                return Ok(if filter.operation.complement {
+                    context.children.iter_mut().filter_map(Node::as_mut_element).collect()
+                } else {
+                    Vec::new()
+                });
+            };
+
+            let mut set: HashSet<*mut Element> = mod_find(context, first)?
+                .into_iter()
+                .map(|e| e as *mut Element)
+                .collect();
+
+            for child in it {
+                let candidates = mod_find(context, child)?;
+
+                match filter.operation.operator {
+                    ParOperator::And => {
+                        let candidate_set = candidates
+                            .into_iter()
+                            .map(|x| x as *mut Element)
+                            .collect::<HashSet<_>>();
+                        set.retain(|x| candidate_set.contains(x));
+                    }
+                    ParOperator::Or => {
+                        set.extend(candidates.into_iter().map(|x| x as *mut Element));
+                    }
+                }
+            }
+
+            if filter.operation.complement {
+                context
+                    .children
+                    .iter_mut()
+                    .filter_map(Node::as_mut_element)
+                    .map(|c| c as *mut Element)
+                    .filter(|c| !set.contains(c))
+                    // SAFETY: These were just created from a vector so they're all unique
+                    //         and no existing mutable references to them can exist.
+                    .map(|c| unsafe { &mut *c })
+                    .collect()
+            } else {
+                // SAFETY: `set` is a set so obviously all the pointers are going to be unique.
+                //         There are no existing mutable references that can point to these elements.
+                set.into_iter().map(|x| unsafe { &mut *x }).collect()
+            }
+        }
     };
 
     // TODO: Simplify this by iterating in reverse in filter_children

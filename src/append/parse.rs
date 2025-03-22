@@ -42,15 +42,14 @@ pub enum SimpleFilter {
 
 #[derive(Debug)]
 pub struct CompositeFilter {
-    pub op: ParOperation,
-    pub filters: Box<[SimpleFilter]>,
+    pub operation: ParOperation,
+    pub filters: Box<[Find]>,
 }
 
 #[derive(Debug)]
 pub enum FindFilter {
     Simple(SimpleFilter),
     Composite(CompositeFilter),
-    Error,
 }
 
 #[derive(Debug)]
@@ -96,7 +95,7 @@ macro_rules! parser_get_attr {
         )
     };
     ($self: ident, $event: ident, $type: ty, $type_name: literal, $name: literal, required($what: literal)) => {{
-        parser_get_attr!(@require_presence $self, $event, get_attr!($self, $event, $type, $type_name, $name), $what)
+        parser_get_attr!(@require_presence $self, $event, parser_get_attr!($self, $event, $type, $type_name, $name), $what)
     }};
     ($self: ident, $event: ident, $type: ty, $type_name: literal, $name: literal, $default: expr) => {{
         parser_get_attr!($self, $event, $type, $type_name, $name)
@@ -119,7 +118,7 @@ macro_rules! parser_get_attr {
                         builder.message_interned(
                             Level::Error,
                             format!(
-                                concat!("failed to parse mod:{}", " ", $name, " attribute value"),
+                                concat!("mod:{}", " ", $name, " attribute has invalid value"),
                                 $event.name()
                             ),
                             builder.make_snippet(span.start, None)
@@ -142,7 +141,7 @@ macro_rules! parser_get_attr {
                     builder.message_interned(
                         Level::Error,
                         format!(
-                            concat!("missing mod:{}", " is missing ", $what, " attribute"),
+                            concat!("mod:{}", " is missing ", $what, " attribute"),
                             $event.name()
                         ),
                         builder.make_snippet(tag_span.start, None)
@@ -242,7 +241,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
     }
 
     fn parse_insert_by_find(&mut self, event: &StartEvent) -> Result<Command, ParseError> {
-        let add_anyway = parser_get_attr!(self, event, bool, "a boolean", "addAnyway", true)?;
+        let add_anyway = parser_get_attr!(self, event, bool, "a boolean", "addAnyway", true);
 
         let mut found_find = None;
         let mut before = Vec::new();
@@ -328,7 +327,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                     snippet.annotation(
                         Level::Note
                             .span(closing_span)
-                            .label("closed here without any mod-before or mod-after tag"),
+                            .label("closed here without any mod-before or mod-after tags"),
                     )
                 } else {
                     snippet
@@ -344,7 +343,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
 
         Ok(Command::InsertByFind(InsertByFind {
             find,
-            add_anyway,
+            add_anyway: add_anyway?,
             before: before.into_boxed_slice(),
             after: after.into_boxed_slice(),
         }))
@@ -363,12 +362,12 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 Ok(filter) => filter,
                 Err(error) => {
                     self.diag.with_mut(|builder| {
-                        let span = attr.position_in(&self.reader);
+                        let span = attr.value_position_in(&self.reader);
                         let annotation =
                             unsafe { builder.annotation_interned(Level::Error, span.clone(), error.to_string()) };
                         builder.message(
                             Level::Error
-                                .title("failed to parse selector attribute filter value")
+                                .title("mod:selector attribute filter has invalid value")
                                 .snippet(builder.make_snippet(span.start, None).fold(true).annotation(annotation)),
                         );
                     });
@@ -389,18 +388,21 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         self.diag.with_mut(|builder| {
                             let annotation =
                                 unsafe { builder.annotation_interned(Level::Error, span.clone(), error.to_string()) };
+                            error
                             builder.message(
-                                Level::Error.title("failed to parse selector value filter").snippet(
-                                    builder
-                                        .make_snippet(span.start, None)
-                                        .fold(true)
-                                        .annotation(annotation)
-                                        .annotation(
-                                            Level::Note
-                                                .span(start.position_in(&self.reader))
-                                                .label("in this selector element"),
-                                        ),
-                                ),
+                                Level::Error
+                                    .title("mod:parse selector value filter is invalid")
+                                    .snippet(
+                                        builder
+                                            .make_snippet(span.start, None)
+                                            .fold(true)
+                                            .annotation(annotation)
+                                            .annotation(
+                                                Level::Note
+                                                    .span(start.position_in(&self.reader))
+                                                    .label("in this selector element"),
+                                            ),
+                                    ),
                             );
                         });
                         return Ok(SelectorFilterOrError::Error);
@@ -424,10 +426,73 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }
     }
 
-    // TODO: Allow for failures and emit Error commands here too
+    fn parse_par(
+        &mut self,
+        event: &StartEvent,
+    ) -> Result<Result<CompositeFilter, AlreadyReported>, speedy_xml::reader::Error> {
+        let Ok(operation) = parser_get_attr!(
+            self,
+            event,
+            ParOperation,
+            "any of AND, OR, NOR or NAND",
+            "op",
+            required("an op")
+        ) else {
+            self.skip_to_element_end_if_non_empty(event)?;
+            return Ok(Err(AlreadyReported));
+        };
+
+        let mut filters = Vec::new();
+
+        loop {
+            match self.reader.next().transpose()? {
+                Some(Event::Start(start) | Event::Empty(start)) => {
+                    if start.prefix() == Some("mod") && start.name() == "par" {
+                        match self.parse_par(&start)? {
+                            Ok(filter) => {
+                                filters.push(Find {
+                                    reverse: false,
+                                    start: 0,
+                                    limit: usize::MAX,
+                                    panic: false,
+                                    filter: FindFilter::Composite(filter),
+                                    commands: Box::new([]),
+                                });
+                            }
+                            Err(AlreadyReported) => {
+                                self.skip_to_element_end_if_non_empty(&start)?;
+                                return Ok(Err(AlreadyReported));
+                            }
+                        }
+                    } else {
+                        match self
+                            .try_parse_find(&start)
+                            .map_err(|err| self.skip_unrecognized_find(&start, err))
+                        {
+                            Ok(find) => filters.push(find),
+                            Err(ParseError::AlreadyReported) => {
+                                return Ok(Err(AlreadyReported));
+                            }
+                            Err(ParseError::Xml(error)) => return Err(error),
+                        }
+                    }
+                }
+                Some(Event::End(_)) | None => break,
+                _ => (),
+            }
+        }
+
+        Ok(Ok(CompositeFilter {
+            operation,
+            filters: filters.into_boxed_slice(),
+        }))
+    }
+
     fn parse_commands(
         &mut self,
         mut selector_slot: Option<(&mut Option<SelectorFilterOrError>, bool)>,
+        mut par_slot: Option<&mut Option<Result<CompositeFilter, AlreadyReported>>>,
+        end_span_slot: Option<&mut Range<usize>>,
     ) -> Result<Vec<Command>, ParseError> {
         let mut commands = Vec::new();
 
@@ -436,10 +501,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 Some(Event::Start(start) | Event::Empty(start)) => match start.prefix() {
                     Some("mod") => match self.try_parse_find(&start) {
                         Ok(find) => Command::Find(find),
-                        Err(ModFindParseError::AlreadyReported) => {
-                            self.skip_to_element_end_if_non_empty(&start)?;
-                            return Err(ParseError::AlreadyReported);
-                        }
+                        Err(ModFindParseError::AlreadyReported) => Command::Error,
                         Err(ModFindParseError::Xml(error)) => return Err(ParseError::Xml(error)),
                         Err(ModFindParseError::Unrecognized) => match start.name() {
                             "selector" => {
@@ -451,7 +513,11 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                                 continue;
                             }
                             "par" => {
-                                self.skip_to_element_end_if_non_empty(&start)?;
+                                if let Some(slot) = par_slot.as_mut().filter(|slot| slot.is_none()) {
+                                    **slot = Some(self.parse_par(&start)?);
+                                } else {
+                                    self.skip_to_element_end_if_non_empty(&start)?;
+                                }
                                 continue;
                             }
                             "setAttributes" => {
@@ -484,7 +550,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                             "insertByFind" => match self.parse_insert_by_find(&start) {
                                 Err(ParseError::AlreadyReported) => {
                                     self.skip_to_element_end_if_non_empty(&start)?;
-                                    Err(ParseError::AlreadyReported)
+                                    Ok(Command::Error)
                                 }
                                 other => other,
                             }?,
@@ -504,9 +570,9 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                                             Level::Error.span(whole_name_span).label("unrecognized mod command tag"),
                                         ),
                                     );
-                                    todo!();
                                 });
-                                continue;
+
+                                Command::Error
                             }
                         },
                     },
@@ -537,7 +603,13 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         todo!("Mod command is missing a namespace")
                     }
                 },
-                Some(Event::End(_)) | None => break,
+                Some(Event::End(end)) => {
+                    if let Some(slot) = end_span_slot {
+                        *slot = end.position_in(&self.reader);
+                    }
+                    break;
+                }
+                None => break,
                 Some(_) => continue,
             };
 
@@ -550,8 +622,10 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
     fn parse_commands_or_fallback(
         &mut self,
         selector_out: Option<(&mut Option<SelectorFilterOrError>, bool)>,
+        par_slot: Option<&mut Option<Result<CompositeFilter, AlreadyReported>>>,
+        end_span_slot: Option<&mut Range<usize>>,
     ) -> Result<Box<[Command]>, speedy_xml::reader::Error> {
-        match self.parse_commands(selector_out) {
+        match self.parse_commands(selector_out, par_slot, end_span_slot) {
             Ok(commands) => Ok(commands.into_boxed_slice()),
             Err(ParseError::AlreadyReported) => {
                 self.skip_to_element_end()?;
@@ -567,36 +641,42 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 return Err(ModFindParseError::Unrecognized);
             }
 
-            let search_reverse =
-                parser_get_attr!(self, event, bool, "a boolean", "reverse", event.name() == "findName")?;
-            let search_start = parser_get_attr!(self, event, usize, "a non-negative integer", "start", 0)?;
-            let search_limit = parser_get_attr!(
+            let attr_reverse = parser_get_attr!(self, event, bool, "a boolean", "reverse", event.name() == "findName");
+            let attr_start = parser_get_attr!(self, event, usize, "a non-negative integer", "start", 0);
+            let attr_limit = parser_get_attr!(
                 self,
                 event,
                 isize,
                 "an integer",
                 "limit",
                 if event.name() == "findName" { 1 } else { -1 }
-            )?;
+            );
 
-            if search_limit < -1 {
-                self.diag.with_mut(|builder| {
-                    let value_span = event
-                        .attributes()
-                        .filter(|attr| attr.name() == "limit")
-                        .last()
-                        .unwrap()
-                        .value_position_in(&self.reader);
-                    builder.message_interned(
-                        Level::Error,
-                        format!("invalid {} limit attribute value", event.name()),
-                        builder
-                            .make_snippet(value_span.start, None)
-                            .fold(true)
-                            .annotation(Level::Error.span(value_span).label("limit must be >= -1")),
-                    )
-                })
-            }
+            let limit = match attr_limit {
+                Ok(limit @ 0..) => Ok(limit as usize),
+                Ok(-1) => Ok(usize::MAX),
+                Ok(..-1) => {
+                    self.diag.with_mut(|builder| {
+                        let value_span = event
+                            .attributes()
+                            .filter(|attr| attr.name() == "limit")
+                            .last()
+                            .unwrap()
+                            .value_position_in(&self.reader);
+                        builder.message_interned(
+                            Level::Error,
+                            format!("invalid {} limit attribute value", event.name()),
+                            builder
+                                .make_snippet(value_span.start, None)
+                                .fold(true)
+                                .annotation(Level::Error.span(value_span).label("limit must be >= -1")),
+                        )
+                    });
+
+                    Err(AlreadyReported)
+                }
+                Err(AlreadyReported) => Err(AlreadyReported),
+            };
 
             let panic = parser_get_attr!(self, event, bool, "a boolean", "panic", false)?;
 
@@ -606,97 +686,124 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
 
             match event.name() {
                 "findName" => {
-                    let search_regex = parser_get_attr!(self, event, bool, "a boolean", "regex", false)?;
+                    let attr_regex = parser_get_attr!(self, event, bool, "a boolean", "regex", false);
+                    let parse_as_regex = attr_regex.unwrap_or(false);
                     let search_name =
-                        parser_get_attr!(self, event, StringFilter(search_regex), "name", required("a name"))?;
-                    let search_type = parser_get_attr!(self, event, StringFilter(search_regex), "type")?;
+                        parser_get_attr!(self, event, StringFilter(parse_as_regex), "name", required("a name"));
+                    let attr_type = parser_get_attr!(self, event, StringFilter(parse_as_regex), "type");
 
                     commands = if !event.is_empty() {
-                        self.parse_commands_or_fallback(None)?
+                        self.parse_commands_or_fallback(None, None, None)?
                     } else {
                         Box::new([])
                     };
 
+                    attr_regex?;
                     filter = FindFilter::Simple(SimpleFilter::Selector(SelectorFilter {
-                        name: search_type,
-                        attrs: Box::new([("name".into(), search_name)]),
+                        name: attr_type?,
+                        attrs: Box::new([("name".into(), search_name?)]),
                         value: None,
                     }))
                 }
                 "findLike" => {
-                    let search_regex = parser_get_attr!(self, event, bool, "a boolean", "regex", false)?;
-                    let search_type = parser_get_attr!(self, event, StringFilter(search_regex), "type")?;
+                    let attr_regex = parser_get_attr!(self, event, bool, "a boolean", "regex", false);
+                    let parse_as_regex = attr_regex.unwrap_or(false);
+                    let attr_type = parser_get_attr!(self, event, StringFilter(parse_as_regex), "type");
 
                     let mut selector = None;
                     commands = if !event.is_empty() {
-                        self.parse_commands_or_fallback(Some((&mut selector, search_regex)))?
+                        self.parse_commands_or_fallback(Some((&mut selector, attr_regex?)), None, None)?
                     } else {
                         Box::new([])
                     };
 
-                    filter = 'filter: {
+                    filter = {
                         let selector = match selector {
                             Some(SelectorFilterOrError::SelectorFilter(filter)) => filter,
-                            Some(SelectorFilterOrError::Error) => {
-                                break 'filter FindFilter::Error;
-                            }
+                            Some(SelectorFilterOrError::Error) => return Err(ModFindParseError::AlreadyReported),
                             None => SelectorFilter::default(),
                         };
 
+                        attr_regex?;
                         FindFilter::Simple(SimpleFilter::Selector(SelectorFilter {
-                            name: search_type,
+                            name: attr_type?,
                             ..selector
                         }))
                     }
                 }
                 "findWithChildLike" => {
-                    let search_regex = parser_get_attr!(self, event, bool, "a boolean", "regex", false)?;
-                    let search_type = parser_get_attr!(self, event, StringFilter(search_regex), "type")?;
-                    let search_child_type = parser_get_attr!(self, event, StringFilter(search_regex), "child-type")?;
+                    let attr_regex = parser_get_attr!(self, event, bool, "a boolean", "regex", false);
+                    let parse_as_regex = attr_regex.unwrap_or(false);
+                    let attr_type = parser_get_attr!(self, event, StringFilter(parse_as_regex), "type");
+                    let attr_child_type = parser_get_attr!(self, event, StringFilter(parse_as_regex), "child-type");
 
                     let mut selector = None;
                     commands = if !event.is_empty() {
-                        self.parse_commands_or_fallback(Some((&mut selector, search_regex)))?
+                        self.parse_commands_or_fallback(Some((&mut selector, parse_as_regex)), None, None)?
                     } else {
                         Box::new([])
                     };
 
-                    filter = 'filter: {
+                    filter = {
                         let selector = match selector {
                             Some(SelectorFilterOrError::SelectorFilter(filter)) => filter,
-                            Some(SelectorFilterOrError::Error) => {
-                                break 'filter FindFilter::Error;
-                            }
+                            Some(SelectorFilterOrError::Error) => return Err(ModFindParseError::AlreadyReported),
                             None => SelectorFilter::default(),
                         };
 
                         FindFilter::Simple(SimpleFilter::WithChild(WithChildFilter {
-                            name: search_type,
+                            name: attr_type?,
                             child_filter: SelectorFilter {
-                                name: search_child_type,
+                                name: attr_child_type?,
                                 ..selector
                             },
                         }))
                     }
                 }
                 "findComposite" => {
-                    todo!();
-                    // let Some(par) = event.get_child(("par", "mod")) else {
-                    //     todo!()
-                    //     // bail!("findComposite element is missing a par child");
-                    // };
+                    let mut par = None;
+                    let mut end_span = 0..0;
+                    commands = if !event.is_empty() {
+                        self.parse_commands_or_fallback(None, Some(&mut par), Some(&mut end_span))?
+                    } else {
+                        Box::new([])
+                    };
+
+                    filter = {
+                        FindFilter::Composite(match par {
+                            Some(Ok(filter)) => filter,
+                            Some(Err(AlreadyReported)) => return Err(ModFindParseError::AlreadyReported),
+                            None => {
+                                self.diag.with_mut(|builder| {
+                                    let span = event.position_in(&self.reader);
+                                    let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
+                                        Level::Error
+                                            .span(span)
+                                            .label("this mod:findComposite is missing a mod:par tag"),
+                                    );
+                                    let snippet = if end_span != (0..0) {
+                                        snippet.annotation(
+                                            Level::Note.span(end_span).label("closed here without a mod:par tag"),
+                                        )
+                                    } else {
+                                        snippet
+                                    };
+                                    builder
+                                        .message(Level::Error.title("mod:findComposite without par").snippet(snippet));
+                                });
+
+                                return Err(ModFindParseError::AlreadyReported);
+                            }
+                        })
+                    }
                 }
                 _ => unreachable!(),
             };
 
             Ok(Find {
-                reverse: search_reverse,
-                start: search_start,
-                limit: if search_limit == -1 {
-                    usize::MAX
-                } else {
-                    search_limit as usize
-                },
+                reverse: attr_reverse?,
+                start: attr_start?,
+                limit: limit?,
                 panic,
                 filter,
                 commands,
@@ -706,23 +813,27 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }
     }
 
-    fn process_unrecognized_find(&mut self, event: &StartEvent, error: ModFindParseError) -> ParseError {
+    fn skip_unrecognized_find(&mut self, event: &StartEvent, error: ModFindParseError) -> ParseError {
         match error {
             ModFindParseError::Xml(error) => ParseError::Xml(error),
             ModFindParseError::Unrecognized => {
                 self.diag.with_mut(|builder| {
                     let name_range = event.name_position_in(&self.reader);
                     builder.message(
-                        Level::Error.title("invalid mod find").snippet(
+                        Level::Error.title("unrecognised mod find tag").snippet(
                             builder
                                 .make_snippet(name_range.start, None)
                                 .fold(true)
-                                .annotation(Level::Error.span(name_range).label("unrecognized mod find tag")),
+                                .annotation(Level::Error.span(name_range).label("unrecognized tag name")),
                         ),
                     );
                 });
 
-                ParseError::AlreadyReported
+                if let Err(error) = self.skip_to_element_end_if_non_empty(event) {
+                    ParseError::Xml(error)
+                } else {
+                    ParseError::AlreadyReported
+                }
             }
             ModFindParseError::AlreadyReported => ParseError::AlreadyReported,
         }
@@ -789,10 +900,9 @@ pub fn parse<'a: 'b, 'b>(
             Event::Start(start) | Event::Empty(start) if start.prefix() == Some("mod") => {
                 match parser.try_parse_find(&start) {
                     Ok(find) => FindOrContent::Find(find),
-                    Err(err) => match parser.process_unrecognized_find(&start, err) {
+                    Err(err) => match parser.skip_unrecognized_find(&start, err) {
                         ParseError::Xml(error) => return Err(ParseError::Xml(error)),
                         ParseError::AlreadyReported => {
-                            parser.skip_to_element_end_if_non_empty(&start)?;
                             success = false;
                             FindOrContent::Error
                         }
