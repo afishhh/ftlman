@@ -19,6 +19,7 @@ use crate::{
 pub enum Command {
     Patch(PatchCommand),
     Append(AppendCommand),
+    AppendIr(AppendIrCommand),
     LuaRun(LuaRunCommand),
     BpsPatch(BpsPatchCommand),
     BpsMeta(BpsMetaCommand),
@@ -49,6 +50,12 @@ pub struct AppendCommand {
     document: PathBuf,
     /// Append script to execute on the document
     patch: PathBuf,
+}
+
+#[derive(Parser)]
+/// Parses an XML append script and print the resulting intermediate representation
+pub struct AppendIrCommand {
+    script: PathBuf,
 }
 
 #[derive(Parser)]
@@ -218,6 +225,36 @@ pub fn main(command: Command) -> Result<()> {
             std::io::stdout().write_all(patched?.as_bytes())?;
 
             Ok(())
+        }
+        Command::AppendIr(command) => {
+            let patch_name = command
+                .script
+                .file_name()
+                .and_then(OsStr::to_str)
+                .context("Failed to get patch filename as UTF-8")?;
+
+            let source = std::fs::read_to_string(&command.script).context("Failed to read source file")?;
+
+            let mut diagnostics = Diagnostics::new();
+            let mut script = crate::append::Script::new();
+
+            let result = crate::append::parse(
+                &mut script,
+                &source,
+                Some(&mut diagnostics.file(&source, Some(patch_name))),
+            );
+
+            let renderer = Renderer::styled();
+            for message in diagnostics.take_messages() {
+                eprintln!("{}", renderer.render(message))
+            }
+
+            println!("{:#?}", script);
+
+            result.map_err(|err| match err {
+                crate::append::ParseError::Xml(error) => anyhow::Error::from(error),
+                crate::append::ParseError::AlreadyReported => anyhow::anyhow!("Failed to fully parse script"),
+            })
         }
         Command::LuaRun(command) => {
             let script_name = command
