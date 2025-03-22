@@ -149,8 +149,8 @@ macro_rules! parser_get_attr {
                             ),
                             builder.make_snippet(span.start, None)
                                 .fold(true)
+                                .annotation(Level::Info.span(span).label(concat!("expected ", $type_name)))
                                 .annotation(error_annotation)
-                                .annotation(Level::Note.span(span).label(concat!("expected ", $type_name)))
                         )
                     });
 
@@ -199,6 +199,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }
     }
 
+    // TODO: Make this a method of StartEvent
     fn element_start_name_span(&self, start: &StartEvent) -> Range<usize> {
         let name_span = start.name_position_in(&self.reader);
         let start = start
@@ -314,8 +315,25 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         _ => (),
                     }
 
+                    let name_span = self.element_start_name_span(&start);
+                    self.diag.with_mut(|builder| {
+                        let parent_span = event.position_in(&self.reader);
+                        builder.message(
+                            Level::Error.title("mod:insertByFind contains unexpected tag").snippet(
+                                builder
+                                    .make_snippet(parent_span.start, None)
+                                    .fold(true)
+                                    .annotation(Level::Note.span(parent_span).label("in this mod:insertByFind"))
+                                    .annotation(
+                                        Level::Info
+                                            .span(name_span.clone())
+                                            .label("expected any find, mod-before or mod-after tag"),
+                                    )
+                                    .annotation(Level::Error.span(name_span).label("unexpected tag")),
+                            ),
+                        );
+                    });
                     self.skip_to_element_end_if_non_empty(&start)?;
-                    todo!("insertByFind encountered unexpected tag <{}> (expected a <mod:find*>, <mod-before:*> or <mod-after:*> tag)", start.name())
                 }
                 Some(Event::End(closing)) => {
                     closing_tag_span = Some(closing.position_in(&self.reader));
