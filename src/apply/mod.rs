@@ -13,7 +13,6 @@ use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
 use silpkg::sync::Pkg;
-use speedy_xml::reader::Options;
 use zip::ZipArchive;
 
 use crate::{
@@ -24,7 +23,7 @@ use crate::{
         LuaContext, ModLuaRuntime,
     },
     util::convert_lf_to_crlf,
-    validate::{Diagnostics, FileDiagnosticBuilder},
+    validate::Diagnostics,
     xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
