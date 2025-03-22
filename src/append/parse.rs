@@ -350,7 +350,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 let snippet = builder.make_snippet(span.start, None).fold(true).annotation(
                     Level::Error
                         .span(span)
-                        .label("this mod:insertByFind is missing mod-before and mod-after tags"),
+                        .label("this mod:insertByFind is missing a mod-before or mod-after tag"),
                 );
                 let snippet = if let Some(closing_span) = closing_tag_span {
                     snippet.annotation(
