@@ -36,7 +36,7 @@ impl<'a> StartEvent<'a> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.text.as_bytes()[self.text.len() - 1] == b'/'
+        self.text.as_bytes()[self.text.len() - 2] == b'/'
     }
 
     pub fn position_in(&self, parser: &Reader) -> Range<usize> {
