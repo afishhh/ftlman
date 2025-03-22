@@ -50,6 +50,7 @@ pub fn layout_ansi(output: &mut LayoutJob, text: &str, font_id: FontId) {
                 Ok(30) => current_style.color = Color32::BLACK,
                 Ok(31) => current_style.color = Color32::RED,
                 Ok(91) => current_style.color = Color32::LIGHT_RED,
+                Ok(92) => current_style.color = Color32::LIGHT_GREEN,
                 Ok(32) => current_style.color = Color32::GREEN,
                 Ok(33) => current_style.color = Color32::YELLOW,
                 Ok(34) => current_style.color = Color32::BLUE,
