@@ -678,7 +678,7 @@ impl eframe::App for App {
                                 _ => None,
                             };
                             self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
-                                let result = apply::apply(ftl_path, shared, hs, settings);
+                                let result = apply::apply(ftl_path, shared, hs, settings, None);
                                 ctx.request_repaint();
                                 result
                             }));

@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::Range};
+use std::{cell::Cell, marker::PhantomData, ops::Range};
 
 use annotate_snippets::{Annotation, Level, Message, Snippet};
 
@@ -23,18 +23,20 @@ impl<'a> Diagnostics<'a> {
     pub fn file(&mut self, source: &'a str, filename: Option<&'a str>) -> FileDiagnosticBuilder<'a, '_> {
         FileDiagnosticBuilder {
             parent: self,
-            source,
+            source: Cell::new(FileDiagnosticsSource::Borrowed(source)),
             origin: filename,
         }
     }
 
-    pub fn file_cloned<'b>(&'b mut self, source: &str, filename: Option<&'a str>) -> FileDiagnosticBuilder<'a, 'b> {
-        // TODO: See below, make the arena a different object
-        let interned = unsafe { std::mem::transmute::<&str, &str>(self.strings.insert(source)) };
+    pub fn file_cloned<'b>(
+        &'b mut self,
+        source: &'b str,
+        filename: Option<impl Into<Box<str>>>,
+    ) -> FileDiagnosticBuilder<'a, 'b> {
         FileDiagnosticBuilder {
+            origin: filename.map(|s| unsafe { std::mem::transmute(self.strings.insert(s.into())) }),
+            source: Cell::new(FileDiagnosticsSource::CopyOnDiagnostic(source)),
             parent: self,
-            source: interned,
-            origin: filename,
         }
     }
 
@@ -45,13 +47,31 @@ impl<'a> Diagnostics<'a> {
 
 pub struct FileDiagnosticBuilder<'a: 'b, 'b> {
     parent: &'b mut Diagnostics<'a>,
-    source: &'a str,
+    source: Cell<FileDiagnosticsSource<'a, 'b>>,
     origin: Option<&'a str>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum FileDiagnosticsSource<'a, 'b> {
+    Borrowed(&'a str),
+    CopyOnDiagnostic(&'b str),
+}
+
 impl<'a> FileDiagnosticBuilder<'a, '_> {
+    fn use_source(&self) -> &'a str {
+        match self.source.get() {
+            FileDiagnosticsSource::Borrowed(source) => source,
+            FileDiagnosticsSource::CopyOnDiagnostic(to_copy) => {
+                // TODO: See below, make the arena a different object
+                let interned = unsafe { std::mem::transmute::<&str, &str>(self.parent.strings.insert(to_copy)) };
+                self.source.set(FileDiagnosticsSource::Borrowed(interned));
+                interned
+            }
+        }
+    }
+
     pub fn make_snippet(&self) -> Snippet<'a> {
-        let snippet = Snippet::source(self.source).fold(true);
+        let snippet = Snippet::source(self.use_source()).fold(true);
 
         if let Some(origin) = self.origin {
             snippet.origin(origin)
