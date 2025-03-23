@@ -1,4 +1,6 @@
-use std::{borrow::Cow, cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, sync::LazyLock};
+use std::{
+    borrow::Cow, cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, mem::MaybeUninit, str, sync::LazyLock,
+};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -221,4 +223,30 @@ impl Drop for StringArena {
             unsafe { drop(Box::from_raw(ptr)) };
         }
     }
+}
+
+pub fn concat_into_box(strings: &[&str]) -> Box<str> {
+    let len = strings.iter().map(|s| s.len()).sum::<usize>();
+    let mut result = Box::new_uninit_slice(len);
+
+    let mut i = 0;
+    for &s in strings {
+        unsafe {
+            result
+                .get_unchecked_mut(i..i + s.len())
+                .copy_from_slice(std::mem::transmute::<&[u8], &[MaybeUninit<u8>]>(s.as_bytes()));
+        }
+        i += s.len();
+    }
+    debug_assert_eq!(i, len);
+
+    unsafe { str::from_boxed_utf8_unchecked(result.assume_init()) }
+}
+
+#[test]
+fn test_concat_into_box() {
+    assert_eq!(&*concat_into_box(&["a", "b", "c"]), "abc");
+    assert_eq!(&*concat_into_box(&["abc", "abc", "abc"]), "abcabcabc");
+    assert_eq!(&*concat_into_box(&["嗚呼", "箱", "ああ"]), "嗚呼箱ああ");
+    assert_eq!(&*concat_into_box(&["one string"]), "one string");
 }

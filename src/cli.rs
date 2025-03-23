@@ -151,7 +151,9 @@ pub fn main(command: Command) -> Result<()> {
                 }
             }
 
-            crate::apply::apply_ftl(
+            let mut diagnostics = Diagnostics::new();
+
+            let result = crate::apply::apply_ftl(
                 &data_dir,
                 command
                     .mods
@@ -178,7 +180,15 @@ pub fn main(command: Command) -> Result<()> {
                     _ => unreachable!(),
                 },
                 true,
-            )
+                Some(&mut diagnostics),
+            );
+
+            let renderer = Renderer::styled();
+            for message in diagnostics.take_messages() {
+                eprintln!("{}", renderer.render(message))
+            }
+
+            result
         }
         Command::Append(command) => {
             let patch_name = command
@@ -200,7 +210,7 @@ pub fn main(command: Command) -> Result<()> {
                         &source,
                         &patch,
                         xml_append_type,
-                        Some((&mut diagnostics, Some(patch_name))),
+                        Some((&mut diagnostics, Some(patch_name.into()))),
                     ) {
                         Ok(value) => Ok(value),
                         Err(error) => Err(error),

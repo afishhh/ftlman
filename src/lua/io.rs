@@ -90,7 +90,7 @@ impl LuaDirectoryFS {
 
 impl LuaFS for LuaDirectoryFS {
     fn stat(&mut self, path: &str) -> std::io::Result<Option<LuaFileStats>> {
-        match self.resolve_path_if_exists(&path) {
+        match self.resolve_path_if_exists(path) {
             Ok(Some(path)) => {
                 let metadata = path.metadata()?;
                 let ft = metadata.file_type();
@@ -127,7 +127,7 @@ impl LuaFS for LuaDirectoryFS {
     }
 
     fn read_whole(&mut self, path: &str) -> std::io::Result<Vec<u8>> {
-        self.resolve_path(&path).and_then(std::fs::read).map_err(Into::into)
+        self.resolve_path(path).and_then(std::fs::read)
     }
 
     fn write_whole(&mut self, _path: &str, _data: &[u8]) -> std::io::Result<()> {

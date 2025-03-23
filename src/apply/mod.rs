@@ -22,7 +22,7 @@ use crate::{
         io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
     },
-    util::convert_lf_to_crlf,
+    util::{concat_into_box, convert_lf_to_crlf},
     validate::Diagnostics,
     xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
@@ -271,7 +271,7 @@ pub fn apply_one_xml<'a>(
     kind: XmlAppendType,
     // TODO: This is kinda hacky, to allow for keeping the regex based unwrapping approach.
     //       It can be cleaned up by getting rid of it, but that is a backwards compatibilty risk.
-    diag: Option<(&mut Diagnostics<'a>, Option<&'a str>)>,
+    diag: Option<(&mut Diagnostics<'_>, Option<Box<str>>)>,
 ) -> Result<String> {
     Ok(match kind {
         XmlAppendType::Append => unwrap_rewrap_xml(document, patch, |lower, upper| {
@@ -566,7 +566,13 @@ fn make_lua_filesystems<'a, 'b>(
     ))
 }
 
-pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(ApplyStage), repack: bool) -> Result<()> {
+pub fn apply_ftl(
+    ftl_path: &Path,
+    mods: Vec<Mod>,
+    mut on_progress: impl FnMut(ApplyStage),
+    repack: bool,
+    mut diagnostics: Option<&mut Diagnostics<'_>>,
+) -> Result<()> {
     on_progress(ApplyStage::Preparing);
 
     let data_file = {
@@ -668,9 +674,14 @@ pub fn apply_ftl(ftl_path: &Path, mods: Vec<Mod>, mut on_progress: impl FnMut(Ap
                 .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
 
                 let new_text = match operation {
-                    AppendType::Xml(xml_append_type) => {
-                        apply_one_xml(&original_text, &append_text, xml_append_type, None)
-                    }
+                    AppendType::Xml(xml_append_type) => apply_one_xml(
+                        &original_text,
+                        &append_text,
+                        xml_append_type,
+                        diagnostics
+                            .as_deref_mut()
+                            .map(|diagnostics| (diagnostics, Some(concat_into_box(&[m.filename(), "/", &name])))),
+                    ),
                     AppendType::LuaAppend => {
                         let (mut pkgfs, mut modfs) = make_lua_filesystems(&mut pkg, &mut handle)?;
                         match lua.with_filesystems(
@@ -792,6 +803,7 @@ pub fn apply(
     state: Arc<Mutex<SharedState>>,
     hs: Option<hyperspace::Installer>,
     settings: Settings,
+    diagnostics: Option<&mut Diagnostics<'_>>,
 ) -> Result<()> {
     let mut lock = state.lock();
 
@@ -887,6 +899,7 @@ pub fn apply(
             lock.ctx.request_repaint();
         },
         settings.repack_ftl_data,
+        diagnostics,
     )?;
 
     let apply_duration = Instant::now() - apply_start;
