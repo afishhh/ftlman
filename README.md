@@ -26,7 +26,7 @@ If you find a mod that fails to patch with ftlman but works with slipstream or o
 
 #### Pre-built binaries
 
-Pre-built binaries for both Linux and Windows are available in the [Releases](https://github.com/afishhh/ftlman/releases) tab.
+Pre-built binaries for Linux, MacOS and Windows are available in the [Releases](https://github.com/afishhh/ftlman/releases) tab.
 
 #### Compiling from source
 
