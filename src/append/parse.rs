@@ -103,6 +103,7 @@ macro_rules! parser_get_attr {
             .unwrap_or(Ok($default))
     }};
     ($self: ident, $event: ident, Regex, $name: literal) => {{
+        // FIXME: asymptotically not very pretty
         $event
             .attributes()
             .filter(|attr| attr.name() == $name)
@@ -502,7 +503,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                                 );
                             builder.message(
                                 Level::Error
-                                    .title("mod:parse selector value filter is invalid")
+                                    .title("mod:selector value filter is invalid")
                                     .snippet(snippet),
                             );
                         });

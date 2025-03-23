@@ -26,7 +26,7 @@ pub fn patch(context: &mut Element, script: &Script) -> Result<()> {
                 }
                 context.children.push(new);
             }
-            FindOrContent::Error => bail!("patcher encountered error node"),
+            FindOrContent::Error => bail!("Encountered top-level error node"),
         }
     }
 
@@ -190,7 +190,7 @@ fn mod_find<'a>(context: &'a mut Element, find: &Find) -> Result<Vec<&'a mut Ele
     matches = it.skip(find.start).take(find.limit).collect();
 
     if find.panic && matches.is_empty() {
-        bail!("{:?} element has panic=true but no elements matched", find);
+        bail!("Find instruction panicked! {:#?}", find);
     }
 
     Ok(matches)
@@ -288,7 +288,7 @@ fn mod_commands(context: &mut Element, commands: &[Command]) -> Result<()> {
                         .splice(after_insert_idx..after_insert_idx, after_cloned_iter);
                 }
             }
-            Command::Error => bail!("encountered error command"),
+            Command::Error => bail!("Encountered error command"),
         }
     }
 
