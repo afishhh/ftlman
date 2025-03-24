@@ -1,5 +1,6 @@
 use std::{
-    borrow::Cow, cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, mem::MaybeUninit, str, sync::LazyLock,
+    borrow::Cow, cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, mem::MaybeUninit, path::Path, str,
+    sync::LazyLock,
 };
 
 use regex::Regex;
@@ -251,4 +252,12 @@ fn test_concat_into_box() {
     assert_eq!(&*concat_into_box(&["abc", "abc", "abc"]), "abcabcabc");
     assert_eq!(&*concat_into_box(&["嗚呼", "箱", "ああ"]), "嗚呼箱ああ");
     assert_eq!(&*concat_into_box(&["one string"]), "one string");
+}
+
+pub fn touch_create(path: impl AsRef<Path>) -> std::io::Result<()> {
+    std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .map(|_| ())
 }

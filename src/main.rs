@@ -53,7 +53,7 @@ use apply::ApplyStage;
 use gui::{ansi::layout_diagnostic_messages, pathedit::PathEdit, DeferredWindow, WindowState};
 use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
-use util::{to_human_size_units, SloppyVersion};
+use util::{to_human_size_units, touch_create, SloppyVersion};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
@@ -577,8 +577,14 @@ impl App {
 
         let mut popups: Vec<Box<dyn Popup>> = Vec::new();
 
-        let ask_to_migrate_state = if CURRENT_RELEASE_KIND == ReleaseKind::Portable && is_global {
-            !STATE_MIGRATION_FLAG_PATH.exists()
+        let ask_to_migrate_state = if CURRENT_RELEASE_KIND == ReleaseKind::Portable {
+            if is_global {
+                !STATE_MIGRATION_FLAG_PATH.exists()
+            } else {
+                _ = std::fs::create_dir_all(STATE_MIGRATION_FLAG_PATH.parent().unwrap())
+                    .and_then(|_| touch_create(&*STATE_MIGRATION_FLAG_PATH));
+                false
+            }
         } else {
             false
         };
@@ -1435,7 +1441,7 @@ impl eframe::App for App {
                                 std::fs::rename(&self.settings.mod_directory, abs_exe_mods).map(|()| {
                                     self.settings.mod_directory = PathBuf::from("mods");
                                     self.save_non_eframe();
-                                }).context("Failed to move move directory")
+                                }).context("Failed to move mods directory")
                             });
                             if let Err(error) = result {
                                 self.popups.push(ErrorPopup::create_and_log("Failed to migrate state", &error));
@@ -1448,7 +1454,10 @@ impl eframe::App for App {
                         }
 
                         if !self.ask_to_migrate_state {
-                            if let Err(error) = std::fs::OpenOptions::new().append(true).create(true).open(&*STATE_MIGRATION_FLAG_PATH) {
+                            let result  = std::fs::create_dir_all(STATE_MIGRATION_FLAG_PATH.parent().unwrap()).and_then(|_| {
+                                touch_create(&*STATE_MIGRATION_FLAG_PATH) 
+                            });
+                            if let Err(error) = result {
                                 self.popups.push(ErrorPopup::create_and_log("Failed to create migration state flag", &error.into()));
                             }
                         }
