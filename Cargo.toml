@@ -88,5 +88,10 @@ opt-level = 2
 strip = true
 lto = "thin"
 
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = true
+
 [workspace]
 members = ["compare_with_slipstream/normalize_xml", "speedy-xml", "windows_gui_wrapper"]
