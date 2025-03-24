@@ -57,6 +57,7 @@ use util::{to_human_size_units, SloppyVersion};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
+const STATE_MIGRATION_FLAG_FILE: &str = "ftlman/did-prompt-to-migrate-state.flag";
 const EXE_RELATIVE_SETTINGS_LOCATION: &str = "settings.json";
 const EFRAME_PERSISTENCE_LOCATION: &str = "ftlman/eguistate.ron";
 const MOD_ORDER_FILENAME: &str = "modorder.json";
@@ -78,10 +79,9 @@ static EXE_DIRECTORY: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-// Conditionally enabled below, one variant is always dead
-#[expect(dead_code)]
 enum ReleaseKind {
     Portable,
+    #[cfg_attr(feature = "portable-release", expect(dead_code))]
     Source,
 }
 
@@ -539,6 +539,9 @@ impl Popup for PatchFailedPopup {
     }
 }
 
+static STATE_MIGRATION_FLAG_PATH: LazyLock<PathBuf> =
+    LazyLock::new(|| dirs::config_local_dir().unwrap().join(STATE_MIGRATION_FLAG_FILE));
+
 struct App {
     last_hovered_mod: Option<usize>,
     shared: Arc<Mutex<SharedState>>,
@@ -548,6 +551,10 @@ struct App {
 
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
     ignore_releases_fetch_error: bool,
+
+    // TODO: Plan for phasing this out?
+    //       or making this not a maintenance burden?
+    ask_to_migrate_state: bool,
 
     current_task: CurrentTask,
     settings_path: PathBuf,
@@ -569,6 +576,13 @@ impl App {
         let mut settings = Settings::load(&settings_path).unwrap_or_else(|| Settings::default_with(is_global));
 
         let mut popups: Vec<Box<dyn Popup>> = Vec::new();
+
+        let ask_to_migrate_state = if CURRENT_RELEASE_KIND == ReleaseKind::Portable && is_global {
+            !STATE_MIGRATION_FLAG_PATH.exists()
+        } else {
+            false
+        };
+
         if settings.mod_directory == Settings::default_with(is_global).mod_directory {
             std::fs::create_dir_all(settings.effective_mod_directory())?;
         }
@@ -606,6 +620,8 @@ impl App {
             }),
             ignore_releases_fetch_error: false,
 
+            ask_to_migrate_state,
+
             current_task: CurrentTask::None,
             visuals: settings.theme.visuals(),
             settings_path,
@@ -626,10 +642,8 @@ impl App {
 
         Ok(app)
     }
-}
 
-impl eframe::App for App {
-    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+    fn save_non_eframe(&mut self) {
         debug!("Saving settings");
         self.settings
             .save(&self.settings_path)
@@ -644,6 +658,12 @@ impl eframe::App for App {
             }
             Err(e) => error!("Failed to open mod order file: {e}"),
         }
+    }
+}
+
+impl eframe::App for App {
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        self.save_non_eframe();
     }
 
     fn auto_save_interval(&self) -> std::time::Duration {
@@ -1374,6 +1394,68 @@ impl eframe::App for App {
         }
 
         self.sandbox.render(ctx, "XML Sandbox", egui::vec2(620., 480.));
+
+        if self.ask_to_migrate_state {
+            egui::Modal::new(egui::Id::new("state migration")).show(ctx, |ui| {
+                ui.set_max_width(400.0);
+
+                ui.vertical_centered(|ui| {
+                    ui.heading("Migrate mod directory and settings");
+
+                    ui.label("Newer versions of ftlman store the mods/ directory and settings alongside the executable by default, but you seem to be using the old layout with settings in your user configuration directory.");
+                    ui.label("If you decline, then your mods and settings will remain untouched, otherwise they will be moved next to the ftlman executable.");
+                    ui.label("Do you want to migrate to the new layout? This popup will not be shown again.");
+
+                    ui.columns_const(|[ui1, ui2]| {
+                        let yes = ui1.allocate_ui_with_layout(
+                            Vec2::ZERO,
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.add_space(10.0);
+                                ui.button("Yes").clicked()
+                            }
+                        ).inner;
+                        let no = ui2.allocate_ui_with_layout(
+                            Vec2::ZERO,
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add_space(10.0);
+                                ui.button("No").clicked()
+                            }
+                        ).inner;
+
+                        if yes {
+                            let new_settings = Settings::exe_relative_path();
+                            let result = std::fs::rename(&self.settings_path, &new_settings)
+                                .context("Failed to move settings file").and_then(|()| {
+                                self.settings_path = new_settings;
+                                let abs_exe_mods = EXE_DIRECTORY.join("mods");
+                                // this is required on old Windows versions I think.
+                                _ = std::fs::remove_dir(&abs_exe_mods);
+                                std::fs::rename(&self.settings.mod_directory, abs_exe_mods).map(|()| {
+                                    self.settings.mod_directory = PathBuf::from("mods");
+                                    self.save_non_eframe();
+                                }).context("Failed to move move directory")
+                            });
+                            if let Err(error) = result {
+                                self.popups.push(ErrorPopup::create_and_log("Failed to migrate state", &error));
+                            }
+                            self.ask_to_migrate_state = false;
+                        }
+
+                        if no {
+                            self.ask_to_migrate_state = false;
+                        }
+
+                        if !self.ask_to_migrate_state {
+                            if let Err(error) = std::fs::OpenOptions::new().append(true).create(true).open(&*STATE_MIGRATION_FLAG_PATH) {
+                                self.popups.push(ErrorPopup::create_and_log("Failed to create migration state flag", &error.into()));
+                            }
+                        }
+                    })
+                });
+            });
+        }
     }
 }
 
