@@ -27,6 +27,7 @@ use parking_lot::Mutex;
 use poll_promise::Promise;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use validate::Diagnostics;
 use walkdir::WalkDir;
 use zip::ZipArchive;
 
@@ -49,7 +50,7 @@ mod validate;
 mod xmltree;
 
 use apply::ApplyStage;
-use gui::{pathedit::PathEdit, DeferredWindow, WindowState};
+use gui::{ansi::layout_diagnostic_messages, pathedit::PathEdit, DeferredWindow, WindowState};
 use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
 use util::{to_human_size_units, SloppyVersion};
@@ -379,14 +380,15 @@ pub struct SharedState {
 
 enum CurrentTask {
     Scan(Promise<Result<()>>),
-    Apply(Promise<Result<()>>),
+    Apply(Promise<(Result<()>, Diagnostics<'static>)>),
     None,
 }
 
 impl CurrentTask {
     pub fn is_idle(&self) -> bool {
         match self {
-            CurrentTask::Scan(p) | CurrentTask::Apply(p) => p.ready().is_some(),
+            CurrentTask::Scan(p) => p.ready().is_some(),
+            CurrentTask::Apply(p) => p.ready().is_some(),
             CurrentTask::None => true,
         }
     }
@@ -430,6 +432,13 @@ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Ite
     ui.label(galley);
 }
 
+trait Popup {
+    // or None for modal
+    fn window_title(&self) -> Option<&str>;
+    fn id(&self) -> egui::Id;
+    fn show(&self, ui: &mut Ui) -> bool;
+}
+
 struct ErrorPopup {
     id: egui::Id,
     title: String,
@@ -455,23 +464,10 @@ impl ErrorPopup {
     }
 
     #[must_use]
-    pub fn create_and_log(title: String, error: &anyhow::Error) -> Self {
-        let new = Self::new(title, error);
+    pub fn create_and_log(title: impl Into<String>, error: &anyhow::Error) -> Box<Self> {
+        let new = Self::new(title.into(), error);
         new.log();
-        new
-    }
-
-    fn render(&self, ui: &mut Ui) -> bool {
-        let mut open = true;
-        // TODO: Switch to egui::Modal
-        egui::Window::new(&self.title)
-            .resizable(true)
-            .frame(egui::Frame::popup(ui.style()))
-            .id(self.id)
-            .open(&mut open)
-            .show(ui.ctx(), |ui| render_error_chain(ui, self.error_chain.iter()));
-
-        open
+        Box::new(new)
     }
 
     fn log(&self) {
@@ -485,6 +481,61 @@ impl ErrorPopup {
         if let Some(backtrace) = self.backtrace.as_ref() {
             error!("{}", backtrace);
         }
+    }
+}
+
+impl Popup for ErrorPopup {
+    fn window_title(&self) -> Option<&str> {
+        Some(&self.title)
+    }
+
+    fn id(&self) -> egui::Id {
+        self.id
+    }
+
+    fn show(&self, ui: &mut Ui) -> bool {
+        render_error_chain(ui, self.error_chain.iter());
+        true
+    }
+}
+
+struct PatchFailedPopup {
+    error_chain: Vec<String>,
+    diagnostic_output: LayoutJob,
+}
+
+impl Popup for PatchFailedPopup {
+    fn window_title(&self) -> Option<&str> {
+        None
+    }
+
+    fn id(&self) -> egui::Id {
+        egui::Id::new("patch failed popup")
+    }
+
+    fn show(&self, ui: &mut Ui) -> bool {
+        let mut open = true;
+
+        ui.set_max_height(ui.ctx().screen_rect().height() * 0.75);
+
+        ui.horizontal(|ui| {
+            ui.heading("Failed to patch mods");
+            ui.set_max_height(ui.min_rect().height());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let x_text = egui::RichText::new("🗙")
+                    .text_style(egui::TextStyle::Heading)
+                    .size(egui::TextStyle::Heading.resolve(ui.style()).size * 0.8);
+                open &= !ui.add(egui::Button::new(x_text).frame(false)).clicked();
+            });
+        });
+        ui.add_space(5.0);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            render_error_chain(ui, self.error_chain.iter());
+            ui.label(self.diagnostic_output.clone());
+        });
+
+        open
     }
 }
 
@@ -506,7 +557,7 @@ struct App {
 
     sandbox: gui::DeferredWindow<gui::Sandbox>,
 
-    error_popups: Vec<ErrorPopup>,
+    popups: Vec<Box<dyn Popup>>,
 
     // % of window width
     vertical_divider_pos: f32,
@@ -517,7 +568,7 @@ impl App {
         let (settings_path, is_global) = Settings::detect_path();
         let mut settings = Settings::load(&settings_path).unwrap_or_else(|| Settings::default_with(is_global));
 
-        let mut error_popups = Vec::new();
+        let mut popups: Vec<Box<dyn Popup>> = Vec::new();
         if settings.mod_directory == Settings::default_with(is_global).mod_directory {
             std::fs::create_dir_all(settings.effective_mod_directory())?;
         }
@@ -528,7 +579,7 @@ impl App {
                     settings.fix_ftl_directrory();
                 }
                 Ok(None) => {}
-                Err(err) => error_popups.push(ErrorPopup::create_and_log(
+                Err(err) => popups.push(ErrorPopup::create_and_log(
                     l!("findftl-failed-title").into_owned(),
                     &err.context("An error occurred while trying to detect ftl game directory"),
                 )),
@@ -563,7 +614,7 @@ impl App {
 
             sandbox: DeferredWindow::new(egui::ViewportId::from_hash_of("sandbox viewport"), gui::Sandbox::new()),
 
-            error_popups,
+            popups,
 
             vertical_divider_pos: 0.50,
         };
@@ -632,7 +683,7 @@ impl eframe::App for App {
                         .clicked()
                     {
                         if let Err(e) = self.sandbox.state().open(self.settings.ftl_directory.as_ref().unwrap()) {
-                            self.error_popups
+                            self.popups
                                 .push(ErrorPopup::create_and_log(l!("sandbox-open-failed").into_owned(), &e))
                         } else {
                             ctx.request_repaint();
@@ -678,9 +729,10 @@ impl eframe::App for App {
                                 _ => None,
                             };
                             self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
-                                let result = apply::apply(ftl_path, shared, hs, settings, None);
+                                let mut diagnostics = Diagnostics::new();
+                                let result = apply::apply(ftl_path, shared, hs, settings, Some(&mut diagnostics));
                                 ctx.request_repaint();
-                                result
+                                (result, diagnostics)
                             }));
                         }
 
@@ -754,23 +806,38 @@ impl eframe::App for App {
                         }
                     });
 
-                    if let Some((title, error)) = match &self.current_task {
-                        CurrentTask::Scan(p) => p
-                            .ready()
-                            .and_then(|x| x.as_ref().err())
-                            .map(|x| ("Could not scan mod folder", x)),
-                        CurrentTask::Apply(p) => p
-                            .ready()
-                            .and_then(|x| x.as_ref().err())
-                            .map(|x| ("Could not apply mods", x)),
-                        CurrentTask::None => None,
-                    } {
-                        lock.apply_stage = None;
-                        self.error_popups
-                            .push(ErrorPopup::create_and_log(title.to_string(), error));
-                        self.current_task = CurrentTask::None;
-                        // TODO: Make this cleaner
-                        lock.locked = false;
+                    match &mut self.current_task {
+                        CurrentTask::Scan(p) => {
+                            if let Some(error) = p.ready()
+                                    .and_then(|x| x.as_ref().err()) {
+                                self.popups
+                                    .push(ErrorPopup::create_and_log("Could not scan mod folder", error));
+                                self.current_task = CurrentTask::None;
+                                // TODO: Make this cleaner
+                                lock.locked = false;
+                            }
+                        },
+                        CurrentTask::Apply(p) => {
+                            if let Some((error, diagnostics)) = p.ready_mut()
+                                    .and_then(|(r, d)| r.as_mut().err().map(|e| (e, d))) {
+
+                                let popup = ErrorPopup::create_and_log("Could not apply mods", error);
+
+                                self.popups.push(Box::new(PatchFailedPopup {
+                                    error_chain: popup.error_chain,
+                                    diagnostic_output: {
+                                        let mut job = LayoutJob::default();
+                                        layout_diagnostic_messages(&mut job, diagnostics.take_messages());
+                                        job
+                                    }
+                                }));
+
+                                lock.apply_stage = None;
+                                self.current_task = CurrentTask::None;
+                                lock.locked = false;
+                            }
+                        },
+                        CurrentTask::None => (),
                     }
                 });
 
@@ -1115,7 +1182,28 @@ impl eframe::App for App {
                 })
             });
 
-            self.error_popups.retain(|popup| popup.render(ui));
+            self.popups.retain(|popup| {
+                if let Some(title) = popup.window_title() {
+                    let mut open = true;
+
+                    open &= egui::Window::new(title)
+                        .resizable(true)
+                        .frame(egui::Frame::popup(ui.style()))
+                        .id(popup.id())
+                        .open(&mut open)
+                        .show(ui.ctx(), |ui| popup.show(ui))
+                        .is_some_and(|i| i.inner.unwrap_or(true));
+
+                    open
+                } else {
+                    let mut open = true;
+
+                    egui::Modal::new(popup.id())
+                        .show(ui.ctx(), |ui| open &= popup.show(ui));
+
+                    open
+                }
+            });
         });
 
         if self.settings_open {

@@ -5,7 +5,7 @@ use speedy_xml::{reader::Options, Reader};
 
 use super::FileDiagnosticBuilder;
 
-pub fn validate_xml<'a>(source: &'a str, options: Options, builder: &mut FileDiagnosticBuilder) -> bool {
+pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnosticBuilder) -> bool {
     let mut reader = Reader::with_options(
         source,
         options.allow_unmatched_closing_tags(true).allow_unclosed_tags(true),

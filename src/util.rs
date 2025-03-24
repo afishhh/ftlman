@@ -216,6 +216,8 @@ impl StringArena {
     }
 }
 
+unsafe impl Send for StringArena {}
+
 impl Drop for StringArena {
     fn drop(&mut self) {
         for ptr in std::mem::take(self.strings.get_mut()) {

@@ -1,4 +1,6 @@
+use annotate_snippets::{Message, Renderer};
 use eframe::egui::{
+    self,
     text::{LayoutJob, LayoutSection},
     Color32, FontId, TextFormat,
 };
@@ -75,5 +77,25 @@ pub fn layout_ansi(output: &mut LayoutJob, text: &str, font_id: FontId) {
             byte_range: start..output.text.len(),
             format: current_style,
         });
+    }
+}
+
+pub fn layout_diagnostic_messages<'a>(job: &mut LayoutJob, messages: impl IntoIterator<Item = Message<'a>>) {
+    let renderer = Renderer::styled();
+
+    for message in messages {
+        if let Some(last) = job.sections.last_mut() {
+            job.text.push('\n');
+            last.byte_range.end += 1;
+        }
+
+        layout_ansi(
+            job,
+            &renderer.render(message).to_string(),
+            egui::FontId {
+                family: egui::FontFamily::Monospace,
+                ..Default::default()
+            },
+        );
     }
 }

@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::{Level, Message, Renderer, Snippet};
+use annotate_snippets::{Level, Snippet};
 use anyhow::{anyhow, Context, Error, Result};
 use eframe::egui::{
     self, scroll_area,
@@ -28,7 +28,7 @@ use speedy_xml::reader::Options;
 
 use crate::{
     apply::{self, LuaPkgFS},
-    gui::ansi::layout_ansi,
+    gui::ansi::layout_diagnostic_messages,
     l,
     lua::{
         io::{LuaFS, LuaFileStats, LuaFileType},
@@ -242,25 +242,10 @@ impl PatchWorker {
                     let end = Instant::now();
                     debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
 
-                    let mut output = self.shared.output.lock();
-
                     let mut message_output = LayoutJob::default();
-                    let renderer = Renderer::styled();
-                    let mut push_message = |message: Message<'_>| {
-                        if let Some(last) = message_output.sections.last_mut() {
-                            message_output.text.push('\n');
-                            last.byte_range.end += 1;
-                        }
+                    layout_diagnostic_messages(&mut message_output, diagnostics.take_messages());
 
-                        layout_ansi(
-                            &mut message_output,
-                            &renderer.render(message).to_string(),
-                            egui::FontId {
-                                family: egui::FontFamily::Monospace,
-                                ..Default::default()
-                            },
-                        );
-                    };
+                    let mut output = self.shared.output.lock();
 
                     match result {
                         Ok(patched) => {
@@ -276,10 +261,6 @@ impl PatchWorker {
                             output.patch = Some(PatchOutput::Error(error));
                         }
                     };
-
-                    for message in diagnostics.take_messages() {
-                        push_message(message)
-                    }
 
                     output.diagnostics = Some(message_output);
 
