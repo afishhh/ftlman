@@ -1198,8 +1198,8 @@ impl eframe::App for App {
                 } else {
                     let mut open = true;
 
-                    egui::Modal::new(popup.id())
-                        .show(ui.ctx(), |ui| open &= popup.show(ui));
+                    open &= !egui::Modal::new(popup.id())
+                        .show(ui.ctx(), |ui| open &= popup.show(ui)).should_close();
 
                     open
                 }
