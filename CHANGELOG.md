@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+### Added
+
+- XML append script syntax errors are now reported using the diagnostics system like in the sandbox.
+- Relative paths are now allowed in the mod directory field in settings. (will be relative to the `ftlman` executable's parent directory)
+
+### Changed
+
+- Release archives now contain a more Slipstream-like directory structure, which is
+  now used instead of the global `mods` and `settings.json` set up by default previously.
+  If you already have the global setup in place, you will be asked whether you wish
+  to migrate to the new setup or keep using the existing global state.
+
+### Fixed
+
+- FTL autodetection via Steam on Windows, previously string unescaping would yield an incorrect path and prevent the detection from working.
+
 ## [v0.5.4]
 
 ### Added
