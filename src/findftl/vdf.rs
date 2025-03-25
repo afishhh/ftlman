@@ -69,24 +69,40 @@ fn tokenize(content: &str) -> Vec<Token> {
     result
 }
 
-fn unescape_vdf_string(mut content: &str) -> String {
-    let mut result = String::new();
+fn unescape_vdf_string(string: &str) -> String {
+    let mut replaced = String::new();
 
-    while let Some(backslash) = content.find('\\') {
-        result.push_str(&content[..backslash]);
-        let mut it = content[backslash + 1..].char_indices();
-        match it.next() {
-            // At least '\' can be escaped in vdf strings.
-            // FIXME: Anything else? Probably won't matter for our uses anyway though.
-            Some((_, c)) => result.push(c),
-            None => unreachable!(),
-        };
-        content = &content[it.offset()..];
+    let mut current = string;
+    while let Some(next) = current.find('\\') {
+        let next_c = current[next + 1..].chars().next();
+
+        replaced.push_str(&current[..next]);
+        if let Some(c) = next_c {
+            replaced.push(c);
+        } else {
+            replaced.push('\\');
+        }
+
+        current = &current[next + 1 + next_c.map_or(0, |c| c.len_utf8())..];
     }
 
-    result.push_str(content);
+    replaced.push_str(current);
+    replaced
+}
 
-    result
+#[test]
+fn test_vdf_string_unescaping() {
+    assert_eq!(
+        unescape_vdf_string(r"C:\\Program Files (x86)\\Steam"),
+        r"C:\Program Files (x86)\Steam"
+    );
+
+    assert_eq!(
+        unescape_vdf_string(r"/home/fishhh/.local/share/Steam"),
+        r"/home/fishhh/.local/share/Steam"
+    );
+
+    assert_eq!(unescape_vdf_string(r"/home/fishhh\"), r"/home/fishhh\");
 }
 
 fn parse_rec(
