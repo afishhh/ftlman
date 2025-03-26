@@ -217,10 +217,10 @@ impl ThemeSetting {
                 &mut base.widgets.active,
                 &mut base.widgets.open,
             ] {
-                wv.rounding = egui::Rounding::default();
+                wv.corner_radius = egui::CornerRadius::default();
             }
-            base.window_rounding = egui::Rounding::default();
-            base.menu_rounding = egui::Rounding::default();
+            base.window_corner_radius = egui::CornerRadius::default();
+            base.menu_corner_radius = egui::CornerRadius::default();
         }
 
         base
@@ -228,7 +228,7 @@ impl ThemeSetting {
 
     pub fn apply_to_progress_bar(&self, bar: egui::ProgressBar) -> egui::ProgressBar {
         if self.style.is_flat() {
-            bar.rounding(egui::Rounding::default())
+            bar.corner_radius(egui::CornerRadius::default())
         } else {
             bar
         }

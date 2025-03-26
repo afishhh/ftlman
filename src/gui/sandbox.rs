@@ -635,21 +635,18 @@ impl WindowState for Sandbox {
                                     let ccrange = egui::text::CCursorRange {
                                         primary: CCursor::new(start_cc),
                                         secondary: CCursor::new(end_cc),
+                                        h_pos: None,
                                     };
                                     selection_cursor = Some(ccrange);
                                 }
 
                                 let mut galley = layouter(ui, xml, ui.available_width(), "xml");
-                                let selection_crange = selection_cursor.map(|ccrange| egui::text::CursorRange {
-                                    primary: galley.from_ccursor(ccrange.primary),
-                                    secondary: galley.from_ccursor(ccrange.secondary),
-                                });
 
                                 if let (Some(crange), Some((id, Some(mut state)))) = (
-                                    selection_crange.filter(|_| do_scroll),
+                                    selection_cursor.filter(|_| do_scroll),
                                     self.output_scroll_id.map(|id| (id, scroll_area::State::load(ctx, id))),
                                 ) {
-                                    let scroll_y = galley.pos_from_cursor(&crange.primary).min.y;
+                                    let scroll_y = galley.pos_from_cursor(crange.primary).min.y;
                                     state.offset.y = (scroll_y - ui.available_height() / 2.0)
                                         .clamp(0.0, galley.size().y - ui.available_height());
                                     state.store(ctx, id);
@@ -657,7 +654,7 @@ impl WindowState for Sandbox {
 
                                 // sequel, this time with match highlighting
                                 let mut layouter2 = |_: &Ui, _: &str, _: f32| {
-                                    if let Some(crange) = selection_crange {
+                                    if let Some(crange) = selection_cursor {
                                         let mut v = ui.visuals().clone();
                                         v.selection.bg_fill = Color32::GREEN;
                                         paint_text_selection(&mut galley, &v, &crange, None);
