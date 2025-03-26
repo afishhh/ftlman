@@ -1555,7 +1555,7 @@ dependencies = [
 
 [[package]]
 name = "ftlman"
-version = "0.6.0-pre.1"
+version = "0.6.0"
 dependencies = [
  "annotate-snippets",
  "anyhow",
