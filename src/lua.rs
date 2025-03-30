@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{mem::ManuallyDrop, ops::Deref};
 
 use gc_arena::{DynamicRootSet, Rootable};
 use mlua::prelude::*;
@@ -7,6 +7,7 @@ use crate::xmltree::dom::unsize_node;
 
 mod debug;
 pub mod io;
+mod meta;
 mod util;
 mod xml;
 
@@ -14,6 +15,8 @@ type LuaArena = gc_arena::Arena<Rootable![DynamicRootSet<'_>]>;
 
 trait LuaExt {
     fn gc(&self) -> mlua::AppDataRef<LuaArena>;
+    fn execution_context(&self) -> mlua::AppDataRefMut<LuaExecutionContext>;
+    fn create_empty_environment(&self) -> LuaResult<LuaTable>;
     fn protect_table(&self, table: &LuaTable) -> LuaResult<()>;
     fn create_protected_table(&self) -> LuaResult<LuaTable>;
     fn create_overlay_table(&self, lower: &LuaTable) -> LuaResult<LuaTable>;
@@ -23,6 +26,17 @@ impl LuaExt for Lua {
     fn gc(&self) -> mlua::AppDataRef<LuaArena> {
         self.app_data_ref::<LuaArena>()
             .expect("lua object should contain a dynamic gc arena")
+    }
+
+    fn execution_context(&self) -> mlua::AppDataRefMut<LuaExecutionContext> {
+        self.app_data_mut::<LuaExecutionContext>()
+            .expect("lua object should contain an execution context")
+    }
+
+    fn create_empty_environment(&self) -> LuaResult<LuaTable> {
+        let env = self.create_overlay_table(&self.globals())?;
+        env.raw_set("_G", &env)?;
+        Ok(env)
     }
 
     fn protect_table(&self, table: &LuaTable) -> LuaResult<()> {
@@ -81,6 +95,31 @@ pub struct LuaContext {
     pub print_arena_stats: bool,
 }
 
+struct LuaExecutionContext {
+    current_file: Option<Box<str>>,
+}
+
+impl LuaExecutionContext {
+    fn set_current_file_guarded<'a>(&mut self, lua: &'a Lua, current_file: Option<Box<str>>) -> impl Drop + 'a {
+        struct RestoreContext<'a> {
+            lua: &'a Lua,
+            old_current_file: ManuallyDrop<Option<Box<str>>>,
+        }
+
+        impl Drop for RestoreContext<'_> {
+            fn drop(&mut self) {
+                let mut ctx = self.lua.execution_context();
+                ctx.current_file = unsafe { ManuallyDrop::take(&mut self.old_current_file) };
+            }
+        }
+
+        RestoreContext {
+            lua,
+            old_current_file: ManuallyDrop::new(std::mem::replace(&mut self.current_file, current_file)),
+        }
+    }
+}
+
 impl ModLuaRuntime {
     pub fn new() -> LuaResult<Self> {
         let lua = mlua::Lua::new_with(
@@ -137,6 +176,11 @@ impl ModLuaRuntime {
             xml::create_xml_lib(&lua).context("Failed to create xml library table")?,
         )?;
 
+        lib_table.raw_set(
+            "meta",
+            meta::create_meta_lib(&lua).context("Failed to create meta library table")?,
+        )?;
+
         debug::extend_debug_library(&lua, lib_table.get::<LuaTable>("debug")?)
             .context("Failed to load debug builtins")?;
 
@@ -172,11 +216,16 @@ impl ModLuaRuntime {
         })
     }
 
-    pub fn run(&self, code: &str, chunk_name: &str, context: &mut LuaContext) -> LuaResult<()> {
+    pub fn run(
+        &self,
+        code: &str,
+        chunk_name: &str,
+        meta_path: Option<&str>,
+        context: &mut LuaContext,
+    ) -> LuaResult<()> {
         let lua = &self.lua;
 
-        let env = lua.create_overlay_table(&lua.globals())?;
-        env.raw_set("_G", &env)?;
+        let env = lua.create_empty_environment()?;
 
         if let Some(ref root) = context.document_root {
             env.set(
@@ -185,6 +234,12 @@ impl ModLuaRuntime {
                     root: xml::LuaElement(root.clone()),
                 })?,
             )?;
+        }
+
+        if let Some(path) = meta_path {
+            lua.set_app_data(LuaExecutionContext {
+                current_file: Some(path.into()),
+            });
         }
 
         lua.load(code)

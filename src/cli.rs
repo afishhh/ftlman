@@ -222,6 +222,7 @@ pub fn main(command: Command) -> Result<()> {
                         &source,
                         &patch,
                         &format!("@{}", command.document.display()),
+                        None,
                         &runtime,
                     )?)
                 }
@@ -297,7 +298,7 @@ pub fn main(command: Command) -> Result<()> {
                     print_arena_stats: command.print_arena_stats,
                 };
 
-                if let Err(error) = runtime.run(&code, &format!("@{script_name}"), &mut context) {
+                if let Err(error) = runtime.run(&code, &format!("@{script_name}"), Some(script_name), &mut context) {
                     error!("{error}");
                     std::process::exit(1)
                 }

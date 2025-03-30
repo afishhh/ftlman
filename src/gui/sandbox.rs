@@ -219,7 +219,7 @@ impl PatchWorker {
                                     overlay: HashMap::new(),
                                 };
                                 match rt.with_filesystems([("pkg", &mut overlay as &mut dyn LuaFS)], || {
-                                    Ok(apply::apply_one_lua(&source_text, &patch, "=<patch>", rt))
+                                    Ok(apply::apply_one_lua(&source_text, &patch, "=<patch>", None, rt))
                                 }) {
                                     Ok(Ok(ok)) => Ok(ok),
                                     Err(err) => Err(Some(anyhow::Error::from(err))),

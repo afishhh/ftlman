@@ -299,7 +299,13 @@ pub fn apply_one_xml<'a>(
     })
 }
 
-pub fn apply_one_lua(document: &str, patch: &str, chunk_name: &str, runtime: &ModLuaRuntime) -> Result<String> {
+pub fn apply_one_lua(
+    document: &str,
+    patch: &str,
+    chunk_name: &str,
+    meta_path: Option<&str>,
+    runtime: &ModLuaRuntime,
+) -> Result<String> {
     unwrap_rewrap_single(
         document,
         |text| {
@@ -318,7 +324,7 @@ pub fn apply_one_lua(document: &str, patch: &str, chunk_name: &str, runtime: &Mo
                 document_root: Some(lower.clone()),
                 print_arena_stats: false,
             };
-            runtime.run(patch, chunk_name, &mut context)?;
+            runtime.run(patch, chunk_name, meta_path, &mut context)?;
             // SAFETY: This pointer will only be *read* by the emitter.
             Ok(unsafe { *lower.as_ptr() })
         },
@@ -689,7 +695,15 @@ pub fn apply_ftl(
                                 ("pkg", &mut pkgfs as &mut dyn LuaFS),
                                 ("mod", &mut *modfs as &mut dyn LuaFS),
                             ],
-                            || Ok(apply_one_lua(&original_text, &append_text, &format!("@{name}"), &lua)),
+                            || {
+                                Ok(apply_one_lua(
+                                    &original_text,
+                                    &append_text,
+                                    &format!("@{name}"),
+                                    Some(&format!("/{name}")),
+                                    &lua,
+                                ))
+                            },
                         ) {
                             Ok(Ok(text)) => Ok(text),
                             Ok(Err(other_error)) => Err(other_error),
