@@ -11,6 +11,7 @@ const fn true_fn() -> bool {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PrettyPrintOptions {
     #[serde(default = "true_fn")]
     recursive: bool,
