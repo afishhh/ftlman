@@ -17,7 +17,7 @@
 - **Breaking change**: `mod:insertByFind` tags with unknown tags as children now properly make patching fail instead of being ignored.
   This was a regression introduced in v0.6.0 and is now being fixed.
 
-## [0.6.0]
+## [v0.6.0]
 
 ### Added
 
