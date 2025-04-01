@@ -5,6 +5,7 @@
 - `mod.meta.current_path` field for getting the path of the currently executing Lua script.
 - `mod.util.eval` now accepts an additional option `path` that allows you to set the path that will be returned by
   `mod.meta.current_path` inside the evaluated code. If this option is not provided `mod.meta.current_path` will return nil.
+- If an XML parse error occurs during patching, a diagnostic will be emitted for it.
 
 ### Changed
 

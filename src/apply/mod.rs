@@ -8,6 +8,7 @@ use std::{
     time::Instant,
 };
 
+use annotate_snippets::Level;
 use anyhow::{anyhow, bail, Context, Result};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
@@ -23,7 +24,7 @@ use crate::{
         LuaContext, ModLuaRuntime,
     },
     util::{concat_into_box, convert_lf_to_crlf},
-    validate::Diagnostics,
+    validate::{Diagnostics, OptionExt},
     xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
     HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
 };
@@ -283,8 +284,17 @@ pub fn apply_one_xml<'a>(
             };
             match crate::append::parse(&mut script, upper, file_diag.as_mut()) {
                 Ok(()) => (),
-                Err(crate::append::ParseError::Xml(xml)) => {
-                    return Err(xml).context("Could not parse XML append document")
+                Err(crate::append::ParseError::Xml(error)) => {
+                    // FIXME: this is copied from the xml validator (for consistency), should it not be?
+                    file_diag.with_mut(|builder| {
+                        let snippet = builder
+                            .make_snippet()
+                            .annotation(Level::Error.span(error.span()).label(error.kind().message()));
+
+                        builder.message(Level::Error.title("parse error").snippet(snippet));
+                    });
+
+                    return Err(error).context("Could not parse XML append document");
                 }
                 Err(crate::append::ParseError::AlreadyReported) => {
                     // Continue on to execution, the Script may contain Error nodes at this point
