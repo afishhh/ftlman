@@ -263,6 +263,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
     fn parse_insert_by_find(&mut self, event: &StartEvent) -> Result<Command, ParseError> {
         let add_anyway = parser_get_attr!(self, event, bool, "a boolean", "addAnyway", true);
 
+        let mut had_unknown_tag = false;
         let mut found_find = None;
         let mut before = Vec::new();
         let mut after = Vec::new();
@@ -305,6 +306,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         _ => (),
                     }
 
+                    had_unknown_tag = true;
                     self.diag.with_mut(|builder| {
                         let name_span = start.prefixed_name_position_in(&self.reader);
                         let parent_span = event.position_in(&self.reader);
@@ -348,6 +350,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 };
                 builder.message(Level::Error.title("mod:insertByFind without find").snippet(snippet));
             });
+
             return Ok(Command::Error);
         };
 
@@ -374,6 +377,10 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         .snippet(snippet),
                 );
             });
+            return Ok(Command::Error);
+        }
+
+        if had_unknown_tag {
             return Ok(Command::Error);
         }
 

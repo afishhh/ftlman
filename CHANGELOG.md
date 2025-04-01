@@ -12,6 +12,11 @@
 - **Breaking change**: `mod.debug.pretty_print` and `mod.debug.pretty_string` no longer accept unknown fields in their options.
   This was never intended to be allowed and allows for future compatible additions of more options.
 
+### Fixed
+
+- **Breaking change**: `mod:insertByFind` tags with unknown tags as children now properly make patching fail instead of being ignored.
+  This was a regression introduced in v0.6.0 and is now being fixed.
+
 ## [0.6.0]
 
 ### Added
