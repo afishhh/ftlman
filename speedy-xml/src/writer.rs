@@ -327,3 +327,27 @@ impl<W: Write> Writer<W> {
         self.writer.flush()
     }
 }
+
+#[test]
+fn reader_writer_roundtrip() {
+    const CASES: &[&str] = &[
+        "hello world",
+        "<some xml='text'/>",
+        r#"more stuff<then a_tag="here">with content and <![CDATA[value]]></end>"#,
+        "text <!-- something with comments --> text text",
+    ];
+
+    for &input in CASES {
+        let mut writer = Writer::new(std::io::Cursor::new(Vec::new()));
+        let mut reader = reader::Reader::with_options(input, reader::Options::default().allow_top_level_text(true));
+
+        while let Some(event) = reader.next().transpose().unwrap() {
+            dbg!(event);
+            writer.write_event(&event).unwrap();
+        }
+
+        let result = writer.finish().unwrap().into_inner();
+
+        assert_eq!(std::str::from_utf8(&result).unwrap(), input)
+    }
+}
