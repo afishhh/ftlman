@@ -6,7 +6,7 @@ use std::{
 use crate::{
     escape::{comment_escape, content_escape},
     lut::{is_invalid_attribute_name, is_invalid_name},
-    reader::{self, AttributeEvent, AttributeQuote, CDataEvent, DoctypeEvent, TextEvent},
+    reader::{self, AttributeEvent, AttributeQuote, CDataEvent, CommentEvent, DoctypeEvent, TextEvent},
 };
 
 #[non_exhaustive]
@@ -280,7 +280,7 @@ impl<W: Write> Writer<W> {
 
     pub fn write_event(&mut self, event: &reader::Event) -> Result<(), Error> {
         match event {
-            reader::Event::Start(start) => {
+            reader::Event::Start(start) | reader::Event::Empty(start) => {
                 if start.is_empty() {
                     self.write_empty(start.prefix(), start.name())?;
                 } else {
@@ -294,8 +294,8 @@ impl<W: Write> Writer<W> {
                 Ok(())
             }
             reader::Event::End(end) => self.write_end(end.prefix(), end.name()),
-            reader::Event::Empty(empty) => self.write_empty(empty.prefix(), empty.name()),
-            &reader::Event::CData(CDataEvent { text })
+            &reader::Event::Comment(CommentEvent { text })
+            | &reader::Event::CData(CDataEvent { text })
             | &reader::Event::Doctype(DoctypeEvent { text })
             | &reader::Event::Text(TextEvent { text }) => {
                 self.ensure_tag_closed()?;
@@ -304,7 +304,6 @@ impl<W: Write> Writer<W> {
 
                 Ok(())
             }
-            reader::Event::Comment(comment) => self.write_raw_comment_unchecked(comment.text).map_err(Into::into),
         }
     }
 
