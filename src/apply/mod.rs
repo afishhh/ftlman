@@ -596,7 +596,10 @@ pub fn apply_ftl(
         let vanilla_path = ftl_path.join(BACKUP_FILENAME);
         let original_path = ftl_path.join("ftl.dat");
 
-        if vanilla_path.exists() {
+        if vanilla_path
+            .try_exists()
+            .context("Failed to check dat backup existence")?
+        {
             std::fs::copy(vanilla_path, &original_path)
                 .with_context(|| format!("Failed to copy {BACKUP_FILENAME} to ftl.dat"))?;
         } else {
