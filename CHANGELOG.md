@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.6.1]
+
 ### Added
 
 - `mod.meta.current_path` field for getting the path of the currently executing Lua script.
@@ -119,7 +121,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.0...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.1...HEAD
+[v0.6.1]: https://github.com/afishhh/ftlman/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/afishhh/ftlman/compare/v0.5.4...v0.6.0
 [v0.5.4]: https://github.com/afishhh/ftlman/compare/v0.5.3...v0.5.4
 [v0.5.3]: https://github.com/afishhh/ftlman/compare/v0.5.2...v0.5.3
