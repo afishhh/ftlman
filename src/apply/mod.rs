@@ -763,36 +763,47 @@ pub fn apply_ftl(
 
                 if name.ends_with(".xml") {
                     let original_text = read_encoded_text(&mut handle.open(&archive_name)?)?;
-                    let mut reader = quick_xml::Reader::from_str(&original_text);
-                    reader.config_mut().check_end_names = false;
-                    let mut writer = quick_xml::Writer::new_with_indent(std::io::Cursor::new(vec![]), b' ', 4);
-                    let mut buf = vec![];
-                    let mut element_stack = vec![];
-                    loop {
-                        let event = reader.read_event_into(&mut buf)?;
-                        if matches!(event, quick_xml::events::Event::Eof) {
-                            break;
-                        }
 
+                    let mut reader = speedy_xml::Reader::with_options(
+                        &original_text,
+                        speedy_xml::reader::Options::default()
+                            .allow_top_level_text(true)
+                            .allow_unclosed_tags(true),
+                    );
+                    let mut writer = speedy_xml::Writer::new(std::io::Cursor::new(vec![]));
+                    let mut element_stack = vec![];
+
+                    while let Some(event) = reader
+                        .next()
+                        .transpose()
+                        .with_context(|| format!("XML parse error encountered while processing xml file {name}"))?
+                    {
                         match event {
-                            quick_xml::events::Event::Start(ref start) => {
-                                if start.name().prefix().is_some_and(|x| {
-                                    [&b"mod"[..], &b"mod-append"[..], &b"mod-overwrite"[..]].contains(&x.into_inner())
-                                }) {
+                            speedy_xml::reader::Event::Start(start) => {
+                                if start
+                                    .prefix()
+                                    .is_some_and(|x| ["mod", "mod-append", "mod-overwrite"].contains(&x))
+                                {
                                     warn!("Useless mod namespaced tag present in non-append xml file {name}");
                                 }
-                                element_stack.push(start.to_end().into_owned());
-                                writer.write_event(event)?;
+                                element_stack.push((start.prefix(), start.name()));
+                                writer.write_event(&event)?;
                             }
-                            quick_xml::events::Event::End(_) => {
-                                writer.write_event(quick_xml::events::Event::End(element_stack.pop().unwrap()))?;
+                            speedy_xml::reader::Event::End(_) => {
+                                if let Some((prefix, name)) = element_stack.pop() {
+                                    writer.write_end(prefix, name)?;
+                                }
                             }
-                            event => writer.write_event(event)?,
+                            event => writer.write_event(&event)?,
                         }
                     }
 
+                    for (prefix, name) in element_stack.into_iter().rev() {
+                        writer.write_end(prefix, name)?;
+                    }
+
                     pkg.insert(name.clone(), INSERT_FLAGS)?
-                        .write_all(writer.into_inner().get_ref())?;
+                        .write_all(writer.finish()?.get_ref())?;
                 } else if !IGNORED_FILES_REGEX.is_match(&name) {
                     let mut reader = handle
                         .open(&archive_name)

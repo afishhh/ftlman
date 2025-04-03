@@ -16,6 +16,7 @@
 
 - **Breaking change**: `mod:insertByFind` tags with unknown tags as children now properly make patching fail instead of being ignored.
   This was a regression introduced in v0.6.0 and is now being fixed.
+- Unclosed XML elements in `.xml` files will now be properly closed during patching.
 
 ## [v0.6.0]
 
