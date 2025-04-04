@@ -681,6 +681,7 @@ pub fn apply_ftl(
                 let real_name = if !pkg.contains(&real_name) {
                     let lower = real_name.to_lowercase();
                     if let Some(corrected) = lower_paths_map.get(&lower) {
+                        warn!("Path {real_name} wasn't found in the archive, using case-insensitive match {corrected} instead");
                         corrected
                     } else {
                         &real_name
