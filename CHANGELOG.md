@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- File paths of append base files are now matched case-insensitively during patching.
+
 ## [v0.6.1]
 
 ### Added

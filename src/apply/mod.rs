@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{btree_map::Entry, BTreeMap, HashSet},
+    collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
     fs::File,
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
@@ -266,7 +266,7 @@ impl AppendType {
     }
 }
 
-pub fn apply_one_xml<'a>(
+pub fn apply_one_xml(
     document: &str,
     patch: &str,
     kind: XmlAppendType,
@@ -620,6 +620,12 @@ pub fn apply_ftl(
         compression: silpkg::EntryCompression::None,
     };
 
+    // not very good but good enough?
+    // TODO: ideally this would use the entry index directly
+    // changes in silpkg would be needed
+    let mut lower_paths_map: HashMap<String, String> =
+        pkg.paths().map(|path| (path.to_lowercase(), path.to_owned())).collect();
+
     for m in mods.into_iter().filter(|x| x.enabled) {
         let mod_name = m.title_or_filename()?.to_string();
         info!("Applying mod {}", mod_name);
@@ -671,8 +677,20 @@ pub fn apply_ftl(
 
             if let Some((real_stem, operation)) = xml_append_type {
                 let real_name = format!("{real_stem}.xml");
+
+                let real_name = if !pkg.contains(&real_name) {
+                    let lower = real_name.to_lowercase();
+                    if let Some(corrected) = lower_paths_map.get(&lower) {
+                        corrected
+                    } else {
+                        &real_name
+                    }
+                } else {
+                    &real_name
+                };
+
                 let original_text = {
-                    match pkg.open(&real_name) {
+                    match pkg.open(real_name) {
                         Ok(x) => std::io::read_to_string(x),
                         Err(silpkg::sync::OpenError::NotFound) => {
                             warn!("Ignoring {name} with non-existent base file");
@@ -726,7 +744,7 @@ pub fn apply_ftl(
                 }
                 .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
 
-                match pkg.remove(&real_name) {
+                match pkg.remove(real_name) {
                     Ok(()) => {}
                     Err(silpkg::sync::RemoveError::NotFound) => {}
                     Err(x) => return Err(x).with_context(|| format!("Failed to remove {real_name} from ftl.dat"))?,
@@ -751,7 +769,9 @@ pub fn apply_ftl(
                     trace!("Inserting {target_name}")
                 }
 
-                pkg.insert(target_name, INSERT_FLAGS)?.write_all(text.as_bytes())?;
+                pkg.insert(target_name.clone(), INSERT_FLAGS)?
+                    .write_all(text.as_bytes())?;
+                lower_paths_map.insert(target_name.to_lowercase(), target_name);
             } else {
                 if pkg.contains(&name) {
                     trace!("Overwriting {name}");
@@ -804,18 +824,24 @@ pub fn apply_ftl(
 
                     pkg.insert(name.clone(), INSERT_FLAGS)?
                         .write_all(writer.finish()?.get_ref())?;
+                    lower_paths_map.insert(name.to_lowercase(), name);
                 } else if !IGNORED_FILES_REGEX.is_match(&name) {
                     let mut reader = handle
                         .open(&archive_name)
                         .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?;
                     if name.ends_with(".txt") {
-                        pkg.insert(name.clone(), INSERT_FLAGS)?.write_all(
-                            convert_lf_to_crlf(
-                                &read_encoded_text(reader)
-                                    .with_context(|| format!("Failed to decode {name} from mod {}", m.filename()))?,
+                        pkg.insert(name.clone(), INSERT_FLAGS)?
+                            .write_all(
+                                convert_lf_to_crlf(
+                                    &read_encoded_text(reader).with_context(|| {
+                                        format!("Failed to decode {name} from mod {}", m.filename())
+                                    })?,
+                                )
+                                .as_bytes(),
                             )
-                            .as_bytes(),
-                        )
+                            .inspect(|_| {
+                                lower_paths_map.insert(name.to_lowercase(), name.clone());
+                            })
                     } else {
                         std::io::copy(&mut reader, &mut pkg.insert(name.clone(), INSERT_FLAGS)?).map(|_| ())
                     }
