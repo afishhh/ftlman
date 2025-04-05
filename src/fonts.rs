@@ -104,7 +104,10 @@ mod backend {
 
             FcPatternDestroy(pattern);
             FcFontSetDestroy(font_set);
-            FcFini();
+            // FIXME: Sometimes this triggers an assertion failure, probably when fontconfig
+            //        is compiled with assertions enabled. Presumably this is because some
+            //        memory is not freed properly in the above code.
+            // FcFini();
 
             Ok(FontData::from_owned(std::fs::read(owned_path)?))
         }

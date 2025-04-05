@@ -3,6 +3,7 @@
 ### Fixed
 
 - File paths of append base files are now matched case-insensitively during patching.
+- Worked around assertion failure on startup when linking with a fontconfig compiled with assertions enabled on Linux.
 
 ## [v0.6.1]
 
