@@ -32,7 +32,7 @@ pub enum Command {
 }
 
 #[derive(Parser)]
-/// Executes the patch phase of the mod manager.
+/// Execute the patch phase of the mod manager.
 pub struct PatchCommand {
     /// FTL data directory, will use the one from the config if not set.
     #[clap(long = "data-dir", short = 'd')]
@@ -65,7 +65,7 @@ impl FromStr for VersionOrLatest {
 }
 
 #[derive(Parser)]
-/// Executes the hyperspace installation phase of the mod manager.
+/// Execute the hyperspace installation phase of the mod manager.
 // FIXME: I can't be bothered to merge this into Patch but it should be done.
 pub struct HyperspaceInstallCommand {
     /// FTL data directory, will use the one from the config if not set.
@@ -79,7 +79,7 @@ pub struct HyperspaceInstallCommand {
 }
 
 #[derive(Parser)]
-/// Executes an append script on an XML document
+/// Execute an append script on an XML document
 pub struct AppendCommand {
     /// Document to evaluate the script on
     document: PathBuf,
@@ -88,13 +88,13 @@ pub struct AppendCommand {
 }
 
 #[derive(Parser)]
-/// Parses an XML append script and print the resulting intermediate representation
+/// Parse an XML append script and print the resulting intermediate representation
 pub struct AppendIrCommand {
     script: PathBuf,
 }
 
 #[derive(Parser)]
-// Runs a lua script using ftlman's lua runtime.
+/// Run a lua script using the lua runtime.
 pub struct LuaRunCommand {
     script: PathBuf,
     #[clap(long = "print-arena-stats")]
@@ -104,7 +104,7 @@ pub struct LuaRunCommand {
 }
 
 #[derive(Parser)]
-/// Patches a file according to a BPS patch file.
+/// Patch a file according to a BPS patch file.
 pub struct BpsPatchCommand {
     file: PathBuf,
     patch: PathBuf,
@@ -117,20 +117,20 @@ pub struct BpsMetaCommand {
 }
 
 #[derive(Parser)]
-/// Calculates the CRC32 checksum of a file.
+/// Calculate the CRC32 checksum of a file.
 pub struct Crc32Command {
     file: PathBuf,
 }
 
 #[derive(Parser)]
-/// Fetches a file from google drive by file_id.
+/// Fetch a file from Google Drive by file_id.
 pub struct FetchGDriveCommand {
     file_id: String,
     output_path: PathBuf,
 }
 
 #[derive(Parser)]
-/// Extracts an SIL archive to a directory.
+/// Extract an SIL archive to a directory.
 ///
 /// For more SIL archive manipulation capabilities please use <https://github.com/afishhh/silpkg>.
 pub struct ExtractCommand {
