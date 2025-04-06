@@ -48,6 +48,7 @@ impl Repository {
                 );
 
                 let mut out = vec![];
+                log::debug!("Fetching releases for GitHub repository {}/{}", self.owner, self.name);
                 make_get(&url).call()?.into_reader().read_to_end(&mut out)?;
                 Ok(out)
             },

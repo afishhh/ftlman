@@ -7,6 +7,7 @@ static UUID_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""([0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12})""#).unwrap());
 
 pub fn request_google_drive_download(file_id: &str) -> Result<ureq::Response> {
+    log::debug!("Downloading file {file_id} from Google Drive");
     let initial_response = crate::AGENT
         .get("https://drive.google.com/uc?export=download")
         .query("id", file_id)
