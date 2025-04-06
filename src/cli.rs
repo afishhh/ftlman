@@ -1,11 +1,12 @@
-use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf};
+use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf, str::FromStr};
 
 use annotate_snippets::Renderer;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
-use log::{error, info};
+use log::{error, info, warn};
 
 use crate::{
+    hyperspace,
     lua::{
         io::{LuaDirectoryFS, LuaFS},
         LuaContext, ModLuaRuntime,
@@ -18,6 +19,7 @@ use crate::{
 #[derive(Subcommand)]
 pub enum Command {
     Patch(PatchCommand),
+    HyperspaceInstall(HyperspaceInstallCommand),
     Append(AppendCommand),
     AppendIr(AppendIrCommand),
     LuaRun(LuaRunCommand),
@@ -41,6 +43,39 @@ pub struct PatchCommand {
     /// If the path has only one component it will be interpreted as
     /// a file in the user's configured mod directory (like in slipstream).
     mods: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone)]
+enum VersionOrLatest {
+    Version(semver::Version),
+    Latest,
+}
+
+impl FromStr for VersionOrLatest {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "latest" => Ok(Self::Latest),
+            _ => semver::Version::from_str(s.strip_prefix('v').unwrap_or(s))
+                .map(Self::Version)
+                .map_err(|_| anyhow!("not a valid version or `latest`")),
+        }
+    }
+}
+
+#[derive(Parser)]
+/// Executes the hyperspace installation phase of the mod manager.
+// FIXME: I can't be bothered to merge this into Patch but it should be done.
+pub struct HyperspaceInstallCommand {
+    /// FTL data directory, will use the one from the config if not set.
+    #[clap(long = "data-dir", short = 'd')]
+    data_path: Option<PathBuf>,
+
+    /// Hyperspace version to install.
+    ///
+    /// Use `latest` to pick the latest available version.
+    version: VersionOrLatest,
 }
 
 #[derive(Parser)]
@@ -109,12 +144,37 @@ pub struct Args {
     pub command: Option<Command>,
 }
 
+fn print_progress_bar(prefix: &str, current: u64, total: Option<u64>) {
+    let width = 30;
+    let (n, unit) = to_human_size_units(current);
+    print!("\r\x1b[2K{prefix} ");
+    if let Some(total) = total {
+        print!("[");
+        let filled = current * width / total;
+        for _ in 0..filled {
+            print!("#")
+        }
+        for _ in filled..width {
+            print!(" ")
+        }
+        print!("] ")
+    }
+    print!("{n:.3}{unit}");
+    if let Some(total) = total {
+        let (n, unit) = to_human_size_units(total);
+        print!("/{n:.3}{unit}");
+    }
+}
+
+fn load_settings() -> Settings {
+    let (settings_path, are_settings_global) = Settings::detect_path();
+    Settings::load(&settings_path).unwrap_or_else(|| Settings::default_with(are_settings_global))
+}
+
 pub fn main(command: Command) -> Result<()> {
     match command {
         Command::Patch(mut command) => {
-            let (settings_path, are_settings_global) = Settings::detect_path();
-            let settings =
-                Settings::load(&settings_path).unwrap_or_else(|| Settings::default_with(are_settings_global));
+            let settings = load_settings();
             let Some(data_dir) = command.data_path.or(settings.ftl_directory) else {
                 bail!("--data-dir not set and ftl data directory is not set in settings");
             };
@@ -189,6 +249,68 @@ pub fn main(command: Command) -> Result<()> {
             }
 
             result
+        }
+        Command::HyperspaceInstall(command) => {
+            let settings = load_settings();
+            let Some(data_dir) = command.data_path.or(settings.ftl_directory) else {
+                bail!("--data-dir not set and ftl data directory is not set in settings");
+            };
+
+            let mut releases =
+                super::hyperspace::fetch_hyperspace_releases().context("Failed to fetch Hyperspace releases")?;
+
+            for release in &releases {
+                if release.version().is_none() {
+                    warn!("Hyperspace release with no semver {:?}", release.name())
+                }
+            }
+
+            releases.sort_unstable_by(|a, b| a.version().cmp(&b.version()));
+
+            let release = match command.version {
+                VersionOrLatest::Version(version) => releases
+                    .iter()
+                    .rfind(|release| release.version().is_some_and(|v| *v == version)),
+                VersionOrLatest::Latest => releases.last(),
+            }
+            .context("No matching Hyperspace release found")?;
+
+            let installer = hyperspace::Installer::create(&data_dir)
+                .context("Failed to create Hyperspace installer")?
+                .map_err(anyhow::Error::msg)
+                .context("Unrecognized FTL installation")?;
+
+            let mut current_download_prefix = String::new();
+            crate::apply::apply_hyperspace(&data_dir, installer, release.clone(), move |message| {
+                match message {
+                    crate::apply::HyperspaceProgress::DownloadStarted { is_patch, version } => {
+                        if !current_download_prefix.is_empty() {
+                            // finish previous progress bar
+                            println!();
+                        }
+
+                        if is_patch {
+                            current_download_prefix = format!("Downloading downgrade patch for {version}");
+                        } else {
+                            current_download_prefix = format!("Downloading Hyperspace {version}");
+                        }
+                    }
+                    crate::apply::HyperspaceProgress::ProgressMade { current, max } => {
+                        print_progress_bar(&current_download_prefix, current, Some(max));
+                    }
+                    crate::apply::HyperspaceProgress::Installing => {
+                        if !current_download_prefix.is_empty() {
+                            // finish previous progress bar
+                            println!();
+                        }
+
+                        println!("Installing...")
+                    }
+                }
+                _ = std::io::stdout().flush();
+            })?;
+
+            Ok(())
         }
         Command::Append(command) => {
             let patch_name = command
@@ -349,12 +471,7 @@ pub fn main(command: Command) -> Result<()> {
 
             let response = crate::util::request_google_drive_download(&command.file_id)?;
             let data = crate::util::download_body_with_progress(response, |current, total| {
-                let (n, unit) = to_human_size_units(current);
-                print!("\r\x1b[2KDownloaded {n:.3}{unit}");
-                if let Some(total) = total {
-                    let (n, unit) = to_human_size_units(total);
-                    print!("/{n:.3}{unit}");
-                }
+                print_progress_bar("Downloaded ", current, total);
                 _ = std::io::stdout().flush();
             })?;
             println!();

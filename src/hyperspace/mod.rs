@@ -77,12 +77,11 @@ impl HyperspaceRelease {
         &self.release.body
     }
 
-    #[expect(dead_code)]
     pub fn version(&self) -> Option<&semver::Version> {
         self.version.as_ref()
     }
 
-    pub fn fetch_zip(&self, progress_callback: impl Fn(u64, u64)) -> Result<Vec<u8>> {
+    pub fn fetch_zip(&self, mut progress_callback: impl FnMut(u64, u64)) -> Result<Vec<u8>> {
         let download_url = match self.release.assets.len().cmp(&1) {
             std::cmp::Ordering::Less => {
                 bail!("Hyperspace release contains no assets")

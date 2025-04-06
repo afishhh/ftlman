@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Subcommand for downloading and installing Hyperspace via the CLI.
+
 ### Fixed
 
 - File paths of append base files are now matched case-insensitively during patching.
