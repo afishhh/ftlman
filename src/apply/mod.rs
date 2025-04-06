@@ -863,6 +863,52 @@ pub fn apply_ftl(
     Ok(())
 }
 
+#[derive(Debug)]
+pub enum HyperspaceProgress {
+    DownloadStarted { is_patch: bool, version: Box<str> },
+    ProgressMade { current: u64, max: u64 },
+    Installing,
+}
+
+pub fn apply_hyperspace(
+    ftl_path: &Path,
+    installer: hyperspace::Installer,
+    release: hyperspace::HyperspaceRelease,
+    mut on_progress: impl FnMut(HyperspaceProgress),
+) -> Result<Vec<u8>> {
+    let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
+        on_progress(HyperspaceProgress::DownloadStarted {
+            is_patch: false,
+            version: release.name().into(),
+        });
+
+        release.fetch_zip(|current, max| on_progress(HyperspaceProgress::ProgressMade { current, max }))
+    })?;
+    let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
+
+    let patcher = if let Some(patch) = installer.required_patch() {
+        if patch.is_remote() {
+            on_progress(HyperspaceProgress::DownloadStarted {
+                is_patch: true,
+                version: patch.source_version_name().into(),
+            })
+        }
+        Some(
+            patch
+                .fetch_or_load_cached(&mut zip, |current, max| {
+                    on_progress(HyperspaceProgress::ProgressMade { current, max })
+                })
+                .context("Failed to download patch")?,
+        )
+    } else {
+        None
+    };
+
+    on_progress(HyperspaceProgress::Installing);
+    installer.install(ftl_path, &mut zip, patcher.as_ref())?;
+    release.extract_hyperspace_ftl(&mut zip)
+}
+
 pub fn apply(
     ftl_path: PathBuf,
     state: Arc<Mutex<SharedState>>,
@@ -882,56 +928,32 @@ pub fn apply(
 
     if let Some(installer) = hs {
         if let Some(HyperspaceState { release }) = lock.hyperspace.clone() {
-            let egui_ctx = lock.ctx.clone();
             drop(lock);
 
-            let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
-                state.lock().apply_stage = Some(ApplyStage::Downloading {
-                    is_patch: false,
-                    version: Some(release.name().into()),
-                    progress: None,
-                });
+            let hyperspace_ftl = apply_hyperspace(&ftl_path, installer, release, |message| {
+                let mut lock = state.lock();
 
-                release.fetch_zip(|current, max| {
-                    let Some(ApplyStage::Downloading { ref mut progress, .. }) = state.lock().apply_stage else {
-                        unreachable!();
-                    };
-                    *progress = Some((current, max));
-                    egui_ctx.request_repaint();
-                })
-            })?;
-            let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
-
-            let patcher = if let Some(patch) = installer.required_patch() {
-                if patch.is_remote() {
-                    state.lock().apply_stage = Some(ApplyStage::Downloading {
-                        is_patch: true,
-                        version: Some(patch.source_version_name().into()),
-                        progress: None,
-                    });
-                }
-                Some(
-                    patch
-                        .fetch_or_load_cached(&mut zip, |current, total| {
-                            let Some(ApplyStage::Downloading { ref mut progress, .. }) = state.lock().apply_stage
-                            else {
-                                unreachable!();
-                            };
-                            *progress = Some((current, total));
-                            egui_ctx.request_repaint();
+                match message {
+                    HyperspaceProgress::DownloadStarted { is_patch, version } => {
+                        lock.apply_stage = Some(ApplyStage::Downloading {
+                            is_patch,
+                            version: Some(version.into()),
+                            progress: None,
                         })
-                        .context("Failed to download patch")?,
-                )
-            } else {
-                None
-            };
+                    }
+                    HyperspaceProgress::ProgressMade { current, max } => {
+                        let Some(ApplyStage::Downloading { ref mut progress, .. }) = lock.apply_stage else {
+                            unreachable!();
+                        };
 
-            state.lock().apply_stage = Some(ApplyStage::InstallingHyperspace);
-            installer.install(&ftl_path, &mut zip, patcher.as_ref())?;
-            release.extract_hyperspace_ftl(&mut zip)?;
+                        *progress = Some((current, max));
+                    }
+                    HyperspaceProgress::Installing => lock.apply_stage = Some(ApplyStage::InstallingHyperspace),
+                }
 
-            egui_ctx.request_repaint();
-            drop(egui_ctx);
+                lock.ctx.request_repaint();
+            })
+            .context("Failed to install Hyperspace")?;
 
             mods.insert(
                 0,
@@ -940,7 +962,7 @@ pub fn apply(
                     ..Mod::new_with_enabled(
                         ModSource::InMemoryZip {
                             filename: "hyperspace.ftl".to_string(),
-                            data: release.extract_hyperspace_ftl(&mut zip)?,
+                            data: hyperspace_ftl,
                         },
                         true,
                     )
