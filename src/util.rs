@@ -1,5 +1,12 @@
 use std::{
-    borrow::Cow, cell::UnsafeCell, fmt::Display, hash::Hasher as _, io::Read, mem::MaybeUninit, path::Path, str,
+    borrow::Cow,
+    cell::UnsafeCell,
+    fmt::{Display, Write},
+    hash::Hasher as _,
+    io::Read,
+    mem::MaybeUninit,
+    path::Path,
+    str,
     sync::LazyLock,
 };
 
@@ -260,4 +267,64 @@ pub fn touch_create(path: impl AsRef<Path>) -> std::io::Result<()> {
         .create(true)
         .open(path)
         .map(|_| ())
+}
+
+#[derive(Debug)]
+pub enum HexToBytesError {
+    TooShort,
+    TooLong,
+    InvalidDigit,
+}
+
+impl std::fmt::Display for HexToBytesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HexToBytesError::TooShort => f.write_str("string too short"),
+            HexToBytesError::TooLong => f.write_str("string too long"),
+            HexToBytesError::InvalidDigit => f.write_str("invalid digit"),
+        }
+    }
+}
+
+impl std::error::Error for HexToBytesError {}
+
+pub fn hex_to_byte_array<const N: usize>(data: &str) -> Result<[u8; N], HexToBytesError> {
+    match data.len().cmp(&(N * 2)) {
+        std::cmp::Ordering::Less => return Err(HexToBytesError::TooShort),
+        std::cmp::Ordering::Greater => return Err(HexToBytesError::TooLong),
+        std::cmp::Ordering::Equal => (),
+    }
+
+    let mut it = data.chars();
+    let mut result = [0u8; N];
+    for byte in result.iter_mut() {
+        let (Some(a), Some(b)) = (it.next(), it.next()) else {
+            return Err(HexToBytesError::TooShort);
+        };
+
+        let [Some(a), Some(b)] = [a, b].map(|c| c.to_digit(16)) else {
+            return Err(HexToBytesError::InvalidDigit);
+        };
+
+        *byte = ((a << 4) | b) as u8;
+    }
+
+    Ok(result)
+}
+
+pub fn bytes_to_hex(data: &[u8]) -> impl Display + use<'_> {
+    struct HexPrinter<'a>(&'a [u8]);
+
+    impl Display for HexPrinter<'_> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for &byte in self.0 {
+                f.write_char(char::from_digit(((byte & 0xF0) >> 4).into(), 16).unwrap())?;
+                f.write_char(char::from_digit((byte & 0xF).into(), 16).unwrap())?;
+            }
+
+            Ok(())
+        }
+    }
+
+    HexPrinter(data)
 }

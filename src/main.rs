@@ -27,6 +27,7 @@ use parking_lot::Mutex;
 use poll_promise::Promise;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use trust::TrustManifest;
 use validate::Diagnostics;
 use walkdir::WalkDir;
 use zip::ZipArchive;
@@ -45,6 +46,7 @@ mod i18n;
 mod lazy;
 mod lua;
 mod scan;
+mod trust;
 mod util;
 mod validate;
 mod xmltree;
@@ -53,7 +55,7 @@ use apply::ApplyStage;
 use gui::{ansi::layout_diagnostic_messages, pathedit::PathEdit, DeferredWindow, WindowState};
 use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
-use util::{to_human_size_units, touch_create, SloppyVersion};
+use util::{bytes_to_hex, to_human_size_units, touch_create, SloppyVersion};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
@@ -260,6 +262,8 @@ pub struct Settings {
     disable_hs_installer: bool,
     #[serde(default = "value_true")]
     autoupdate: bool,
+    #[serde(default = "value_false")]
+    mod_advanced_info: bool,
     #[serde(default)]
     theme: ThemeSetting,
 }
@@ -327,6 +331,7 @@ impl Settings {
             repack_ftl_data: true,
             disable_hs_installer: false,
             autoupdate: true,
+            mod_advanced_info: false,
             theme: ThemeSetting {
                 style: ThemeStyle::Dark,
                 opacity: 1.,
@@ -665,6 +670,79 @@ impl App {
             Err(e) => error!("Failed to open mod order file: {e}"),
         }
     }
+}
+
+// TODO: Move more gui code to separate functions
+//       Probably in the gui mode too
+fn advanced_mod_metadata_frame(ui: &mut Ui, mod_: &mut Mod) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.set_min_width(ui.available_width());
+        ui.weak("Advanced information");
+
+        let show_error = |ui: &mut Ui, error: &anyhow::Error| {
+            show_key_error(ui, "Trust Manifest", &error.to_string());
+            if error.chain().len() > 1 {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    render_error_chain(ui, error.chain().map(|e| e.to_string()));
+                });
+            }
+        };
+
+        let key = "Trust Manifest";
+        match mod_.trust_manifest() {
+            Ok(Some(Ok(trust))) => {
+                show_key_value_ui(ui, key, |ui| {
+                    _ = ui.colored_label(egui::Color32::LIGHT_GREEN, "Valid and signed")
+                });
+
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    show_key_value(ui, "Version", &(trust.version() as u32).to_string());
+                    show_key_value(ui, "Key", trust.key().name());
+
+                    if matches!(trust.key(), trust::KeyId::Test) {
+                        ui.colored_label(ui.visuals().error_fg_color, "This is an insecure test signature!");
+                    }
+
+                    let trusted_files = trust.trusted_files();
+                    if trusted_files.len() > 0 {
+                        ui.set_min_width(ui.available_width());
+                        egui::Grid::new("trusted files table")
+                            .num_columns(2)
+                            .max_col_width(ui.available_width() - 40.)
+                            .show(ui, |ui| {
+                                ui.strong("Path");
+                                ui.strong("Hash");
+                                ui.end_row();
+
+                                for (path, hash) in trusted_files {
+                                    ui.label(path);
+                                    ui.add(egui::Label::new(bytes_to_hex(hash).to_string()).truncate());
+                                    ui.end_row();
+                                }
+                            });
+                    }
+                });
+            }
+            Ok(Some(Err(error))) => show_error(ui, error),
+            Ok(None) => show_key_value(ui, key, "Absent"),
+            Err(error) => show_error(ui, &error),
+        }
+    });
+}
+
+fn show_key_value_ui(ui: &mut Ui, key: &str, show: impl FnOnce(&mut Ui)) {
+    ui.horizontal_top(|ui| {
+        ui.label(RichText::new(key).strong());
+        show(ui)
+    });
+}
+
+fn show_key_error(ui: &mut Ui, key: &str, value: &str) {
+    show_key_value_ui(ui, key, |ui| _ = ui.colored_label(ui.visuals().error_fg_color, value));
+}
+
+fn show_key_value(ui: &mut Ui, key: &str, value: &str) {
+    show_key_value_ui(ui, key, |ui| _ = ui.label(value));
 }
 
 impl eframe::App for App {
@@ -1151,8 +1229,11 @@ impl eframe::App for App {
                     }
 
                     if let Some(idx) = self.last_hovered_mod {
-                        if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
-                            ui.vertical(|ui| {
+                        ui.vertical(|ui| {
+                            let mod_ = &mut shared.mods[idx];
+                            let metadata = mod_.metadata().ok().flatten();
+                            let mut description = None;
+                            if let Some(metadata) = metadata {
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                                     ui.label(RichText::new(format!("v{}", metadata.version)).heading());
 
@@ -1165,24 +1246,16 @@ impl eframe::App for App {
                                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
                                 ui.spacing_mut().item_spacing.y = 6.0;
 
-                                let key_value = |ui: &mut Ui, key: &str, value: &str| {
-                                    ui.horizontal_top(|ui| {
-                                        ui.label(RichText::new(key).strong());
-                                        ui.label(value)
-                                    })
-                                };
+                                show_key_value(ui, &l!("mod-meta-authors"), &metadata.author);
 
-
-                                key_value(ui, &l!("mod-meta-authors"), &metadata.author);
-
-                                if let Some(hs_metadata) = shared.mods[idx].hs_metadata().ok().flatten() {
+                                if let Some(hs_metadata) = mod_.hs_metadata().ok().flatten() {
                                     if let Some(req_version) = hs_metadata.required_hyperspace.as_ref() {
-                                        key_value(ui, &l!("mod-meta-hs-req"), &req_version.to_string());
+                                        show_key_value(ui, &l!("mod-meta-hs-req"), &req_version.to_string());
                                     } else {
                                         ui.label(RichText::new(l!("mod-meta-hs-req-fallback")).strong());
                                     };
 
-                                    key_value(ui, &l!("mod-meta-hs-overwrites"),
+                                    show_key_value(ui, &l!("mod-meta-hs-overwrites"),
                                 &if hs_metadata.overwrites_hyperspace_xml {
                                             l!("state-yes")
                                         } else {
@@ -1198,13 +1271,21 @@ impl eframe::App for App {
                                     }
                                 }
 
+                                description = Some(metadata.description.clone());
+                            } else {
+                                ui.monospace(l!("mod-meta-none"));
+                            }
+
+                            if self.settings.mod_advanced_info {
+                                advanced_mod_metadata_frame(ui, mod_);
+                            }
+
+                            if let Some(description) = description {
                                 egui::ScrollArea::vertical().show(ui, |ui| {
-                                    ui.monospace(&metadata.description);
+                                    ui.monospace(description);
                                 });
-                            });
-                        } else {
-                            ui.monospace(l!("mod-meta-none"));
-                        }
+                            }
+                        });
                     } else {
                         ui.monospace(l!("mod-meta-hint"));
                     }
@@ -1355,6 +1436,9 @@ impl eframe::App for App {
 
                         ui.checkbox(&mut self.settings.autoupdate, l!("settings-autoupdate"))
                             .changed();
+
+                        ui.checkbox(&mut self.settings.mod_advanced_info, l!("settings-mod-advanced-info"))
+                            .changed();
                     });
                 });
         }
@@ -1458,7 +1542,7 @@ impl eframe::App for App {
 
                         if !self.ask_to_migrate_state {
                             let result  = std::fs::create_dir_all(STATE_MIGRATION_FLAG_PATH.parent().unwrap()).and_then(|_| {
-                                touch_create(&*STATE_MIGRATION_FLAG_PATH) 
+                                touch_create(&*STATE_MIGRATION_FLAG_PATH)
                             });
                             if let Err(error) = result {
                                 self.popups.push(ErrorPopup::create_and_log("Failed to create migration state flag", &error.into()));
@@ -1499,6 +1583,8 @@ struct Mod {
     cached_metadata: OnceCell<Option<Metadata>>,
     /// Additional metadata for Hyperspace mods
     cached_hs_metadata: OnceCell<Option<HsMetadata>>,
+    /// Manifest containing information of trusted origin.
+    trust_manifest: OnceCell<Option<Result<TrustManifest, Arc<anyhow::Error>>>>,
 }
 
 impl DragDropItem for &mut Mod {
@@ -1712,7 +1798,41 @@ impl Mod {
             is_hyperspace_ftl: false,
             cached_metadata: Default::default(),
             cached_hs_metadata: Default::default(),
+            trust_manifest: OnceCell::default(),
         }
+    }
+
+    fn trust_manifest(&mut self) -> Result<Option<&Result<TrustManifest, Arc<anyhow::Error>>>> {
+        self.trust_manifest
+            .get_or_try_init(|| {
+                let mut mod_handle = self.source.open()?;
+
+                // NOTE: Archives with `\` explicitly not supported here (for now) because I don't want to
+                //       deal with them.
+                let Some(manifest) = mod_handle
+                    .open_if_exists("mod-appendix/trust.xml")
+                    .context("Failed to open mod-appendix/trust.xml")?
+                else {
+                    return Ok(None);
+                };
+
+                let manifest = std::io::read_to_string(manifest).context("Failed to read mod-appendix/trust.xml")?;
+
+                let Some(signature) = mod_handle
+                    .open_if_exists("mod-appendix/trust.sig")
+                    .context("Failed to open mod-appendix/trust.sig")?
+                else {
+                    return Ok(Some(Err(Arc::new(anyhow::anyhow!("Signature missing")))));
+                };
+
+                let signature = std::io::read_to_string(signature).context("Failed to read mod-appendix/trust.sig")?;
+
+                Ok(Some(
+                    TrustManifest::parse_and_verify(speedy_xml::Reader::new(&manifest), signature.trim())
+                        .map_err(Arc::new),
+                ))
+            })
+            .map(Option::as_ref)
     }
 
     fn metadata(&self) -> Result<Option<&Metadata>> {
@@ -1823,6 +1943,7 @@ struct Metadata {
     thread_url: Option<String>,
     author: String,
     version: SloppyVersion,
+    #[serde(default)]
     description: String,
 }
 
