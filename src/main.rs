@@ -1191,8 +1191,11 @@ impl eframe::App for App {
                                 }
 
                                 if let Some(url) = &metadata.thread_url {
-                                    // TODO: Make a context menu
-                                    ui.hyperlink_to(RichText::new(url.clone()), url);
+                                    if url.starts_with("https://") || url.starts_with("http://") {
+                                        ui.hyperlink_to(url, url);
+                                    } else {
+                                        ui.label(url);
+                                    }
                                 }
 
                                 egui::ScrollArea::vertical().show(ui, |ui| {
