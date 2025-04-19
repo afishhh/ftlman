@@ -183,12 +183,12 @@ pub fn main(command: Command) -> Result<()> {
                 let mut components = path.components();
                 match (components.next(), components.next()) {
                     (Some(std::path::Component::Normal(_)), None) => {
-                        let new_path = settings.mod_directory.join(&path);
+                        let new_path = settings.effective_mod_directory().join(&path);
                         if !new_path.exists() {
                             bail!(
                                 "{} does not exist in {}",
                                 path.display(),
-                                settings.mod_directory.display()
+                                settings.effective_mod_directory().display()
                             )
                         }
                         *path = new_path;
