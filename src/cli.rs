@@ -175,7 +175,7 @@ pub fn main(command: Command) -> Result<()> {
     match command {
         Command::Patch(mut command) => {
             let settings = load_settings();
-            let Some(data_dir) = command.data_path.or(settings.ftl_directory) else {
+            let Some(data_dir) = command.data_path.as_ref().or(settings.ftl_directory.as_ref()) else {
                 bail!("--data-dir not set and ftl data directory is not set in settings");
             };
 
