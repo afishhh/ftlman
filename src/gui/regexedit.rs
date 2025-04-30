@@ -48,8 +48,8 @@ impl<'a> RegexEdit<'a> {
         let id = self.id.unwrap_or_else(|| ui.next_auto_id());
 
         let theme = syntax_highlighting::CodeTheme::from_style(ui.style());
-        let mut layouter = move |ui: &Ui, text: &str, width: f32| {
-            let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, "re");
+        let mut layouter = move |ui: &Ui, text: &dyn TextBuffer, width: f32| {
+            let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text.as_str(), "re");
             layout_job.wrap.max_width = width;
             ui.fonts(|f| f.layout_job(layout_job))
         };

@@ -16,7 +16,7 @@ use eframe::egui::{
     self, scroll_area,
     text::{CCursor, LayoutJob},
     text_selection::visuals::paint_text_selection,
-    vec2, Color32, Id, Layout, Margin, Ui, Vec2,
+    vec2, Color32, Id, Layout, Margin, TextBuffer, Ui, Vec2,
 };
 use egui_extras::syntax_highlighting;
 use log::debug;
@@ -477,8 +477,8 @@ impl WindowState for Sandbox {
             });
 
         let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
-        let layouter = move |ui: &Ui, text: &str, width: f32, language: &'static str| {
-            let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text, language);
+        let layouter = move |ui: &Ui, text: &dyn TextBuffer, width: f32, language: &'static str| {
+            let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text.as_str(), language);
             layout_job.wrap.max_width = width;
             ui.fonts(|f| f.layout_job(layout_job))
         };
@@ -628,31 +628,32 @@ impl WindowState for Sandbox {
                                     },
                                 );
 
-                                let mut galley = layouter(ui, xml, ui.available_width(), "xml");
-
                                 if let Some(range) = self.output_find_matches.get(*idx).cloned() {
                                     // why does it work this way??
                                     let start_cc = xml[..range.start].chars().count();
                                     let end_cc = start_cc + xml[range.start..range.end].chars().count();
-                                    let ccrange = egui::text::CursorRange {
-                                        primary: galley.from_ccursor(CCursor::new(start_cc)),
-                                        secondary: galley.from_ccursor(CCursor::new(end_cc)),
+                                    let ccrange = egui::text::CCursorRange {
+                                        primary: CCursor::new(start_cc),
+                                        secondary: CCursor::new(end_cc),
+                                        h_pos: None,
                                     };
                                     selection_cursor = Some(ccrange);
                                 }
+
+                                let mut galley = layouter(ui, xml, ui.available_width(), "xml");
 
                                 if let (Some(crange), Some((id, Some(mut state)))) = (
                                     selection_cursor.filter(|_| do_scroll),
                                     self.output_scroll_id.map(|id| (id, scroll_area::State::load(ctx, id))),
                                 ) {
-                                    let scroll_y = galley.pos_from_cursor(&crange.primary).min.y;
+                                    let scroll_y = galley.pos_from_cursor(crange.primary).min.y;
                                     state.offset.y = (scroll_y - ui.available_height() / 2.0)
                                         .clamp(0.0, galley.size().y - ui.available_height());
                                     state.store(ctx, id);
                                 }
 
                                 // sequel, this time with match highlighting
-                                let mut layouter2 = |_: &Ui, _: &str, _: f32| {
+                                let mut layouter2 = |_: &Ui, _: &dyn TextBuffer, _: f32| {
                                     if let Some(crange) = selection_cursor {
                                         let mut v = ui.visuals().clone();
                                         v.selection.bg_fill = Color32::GREEN;
