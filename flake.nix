@@ -69,6 +69,8 @@
             pkg-config
             # For llvm-strip as rust-objcopy seems to fail in apple cross containers
             llvmPackages_latest.bintools
+            # for compare_with_slipstream
+            difftastic
           ];
           buildInputs = libs;
 
