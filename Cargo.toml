@@ -75,11 +75,6 @@ yeslogic-fontconfig-sys = "6"
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["dwrite", "winnls", "winbase", "errhandlingapi", "std"] }
 
-[patch.crates-io]
-egui = { git = "https://github.com/afishhh/egui", branch = "cache_galley_lines" }
-egui_extras = { git = "https://github.com/afishhh/egui", branch = "cache_galley_lines" }
-eframe = { git = "https://github.com/afishhh/egui", branch = "cache_galley_lines" }
-
 # Speeds up testing considerably
 [profile.dev]
 opt-level = 2

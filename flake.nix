@@ -52,12 +52,7 @@
 
               src = ./.;
 
-              cargoLock = {
-                lockFile = ./Cargo.lock;
-                outputHashes = {
-                  "ecolor-0.30.0" = "sha256-VDFyWZgbXJGc1Dkx765bSAifXKOLAxo91b4msTeCM5Q=";
-                };
-              };
+              cargoLock.lockFile = ./Cargo.lock;
             };
             # the extra parens prevent the formatter from putting the attrset on a new line
             default = (pkgs.runCommandNoCC "ftlman" {

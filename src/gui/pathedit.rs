@@ -185,7 +185,6 @@ impl Widget for PathEdit<'_> {
                         state.cursor.set_char_range(Some(eframe::egui::text::CCursorRange {
                             primary: new_pos,
                             secondary: new_pos,
-                            h_pos: None,
                         }));
                         state.store(ui.ctx(), text_edit_id);
                         changed = true;
@@ -240,12 +239,17 @@ impl Widget for PathEdit<'_> {
 
         if output.response.has_focus() {
             if let Some(cursor) = output.cursor_range.and_then(|r| r.single()) {
-                let pref = self.buffer.as_str().chars().take(cursor.index).collect::<String>();
+                let pref = self
+                    .buffer
+                    .as_str()
+                    .chars()
+                    .take(cursor.ccursor.index)
+                    .collect::<String>();
 
                 let suggestions = self.suggestions_for(&pref);
 
                 if !suggestions.is_empty() {
-                    let cursor_pos = output.galley_pos + output.galley.pos_from_cursor(cursor).max.to_vec2();
+                    let cursor_pos = output.galley_pos + output.galley.pos_from_cursor(&cursor).max.to_vec2();
 
                     let selected = {
                         let down = tab;
