@@ -27,6 +27,7 @@
           bzip2
           fontconfig
           openssl
+          wayland
         ];
         libraryPath = "/run/opengl-driver/lib:${pkgs.lib.makeLibraryPath libs}";
       in
