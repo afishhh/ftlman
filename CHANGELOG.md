@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Fixed some antivirus false positives on `ftlman_gui.exe`.
+
 ## [v0.6.2]
 
 ### Added
