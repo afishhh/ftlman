@@ -1,8 +1,11 @@
 #![windows_subsystem = "windows"]
-use std::{ffi::OsStr, fmt::Write as _, os::windows::process::CommandExt, path::Path, process::Child};
+use std::{ffi::OsStr, fmt::Write as _, os::windows::process::CommandExt, process::Child};
 
 use anyhow::{bail, Context, Result};
-use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_OK};
+use windows::{
+    core::PCWSTR,
+    Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK},
+};
 
 const RECURSION_GUARD_ENV_VAR: &str = "_FTLMAN_GUI_WRAPPER_CHILD";
 
@@ -25,28 +28,7 @@ fn run() -> Result<Child, anyhow::Error> {
 
         let path = dir.join(name);
         if path.exists() {
-            return run_via_virtual(&path);
-        }
-    }
-
-    bail!("Failed to find ftlman executable (tried: {NAMES:?})")
-}
-
-// Funny function to confuse over-eager antivirus AI/heuristics.
-// From testing I found that some simpler solutions also exist
-// like adding a `println!()` somewhere since that's apparently
-// too much for these already weirdly paranoid AVs to handle,
-// but this is simple enough and doesn't have side effects like I/O.
-fn run_via_virtual(path: &Path) -> Result<Child> {
-    trait Virtual {
-        fn run(&self, path: &Path) -> Result<Child>;
-    }
-
-    struct Runner;
-
-    impl Virtual for Runner {
-        fn run(&self, path: &Path) -> Result<Child> {
-            std::process::Command::new(path)
+            return std::process::Command::new(&path)
                 .creation_flags(0x00000008)
                 .env(RECURSION_GUARD_ENV_VAR, "1")
                 .args(std::env::args_os().skip(1))
@@ -57,11 +39,11 @@ fn run_via_virtual(path: &Path) -> Result<Child> {
                         path.file_name()
                             .map_or(OsStr::new("ftlman executable").display(), |name| name.display())
                     )
-                })
+                });
         }
     }
 
-    std::hint::black_box(&Runner as &'static dyn Virtual).run(path)
+    bail!("Failed to find ftlman executable (tried: {NAMES:?})")
 }
 
 fn encode_wstr(text: &str) -> Vec<u16> {
@@ -97,9 +79,9 @@ fn main() {
 
         unsafe {
             MessageBoxW(
-                std::ptr::null_mut(),
-                description.as_ptr(),
-                title.as_ptr(),
+                None,
+                PCWSTR::from_raw(description.as_ptr()),
+                PCWSTR::from_raw(title.as_ptr()),
                 MB_OK | MB_ICONERROR,
             );
         }

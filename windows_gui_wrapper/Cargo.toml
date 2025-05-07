@@ -5,4 +5,4 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-winapi = { version = "0.3", features = [ "winuser" ] }
+windows = { version = "0.61", features = [ "Win32_UI_WindowsAndMessaging" ] }
