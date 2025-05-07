@@ -25,8 +25,9 @@ pub enum FindOrContent {
 }
 
 #[derive(Debug)]
-pub struct FindSpan {
-    pub span: Range<usize>,
+pub struct FindPanic {
+    pub start_tag_span: Range<usize>,
+    pub message: Option<(Box<str>, Range<usize>)>,
 }
 
 #[derive(Debug)]
@@ -34,7 +35,7 @@ pub struct Find {
     pub reverse: bool,
     pub start: usize,
     pub limit: usize,
-    pub panic: Option<FindSpan>,
+    pub panic: Option<Box<FindPanic>>,
     pub filter: FindFilter,
     pub commands: Box<[Command]>,
 }
@@ -95,7 +96,7 @@ macro_rules! parser_get_attr {
             if $is_regex {
                 parser_get_attr!($self, $event, Regex, $name).map(|x| x.map(StringFilter::Regex))
             } else {
-                parser_get_attr!($self, $event, BoxFromStr, "this should be impossible!", $name).map(|x| x.map(|x| StringFilter::Fixed(x.0)))
+                Ok(parser_get_attr!($self, $event, $name).map(|x| StringFilter::Fixed(x.value().into())))
             } $(, $what)?
         )
     };
@@ -107,12 +108,15 @@ macro_rules! parser_get_attr {
             .transpose()
             .unwrap_or(Ok($default))
     }};
-    ($self: ident, $event: ident, Regex, $name: literal) => {{
+    ($self: ident, $event: ident, $name: literal) => {{
         // FIXME: asymptotically not very pretty
         $event
             .attributes()
             .filter(|attr| attr.name() == $name)
             .last()
+    }};
+    ($self: ident, $event: ident, Regex, $name: literal) => {{
+        parser_get_attr!($self, $event, $name)
             .map(|attr| {
                 attr.value().parse::<Regex>().map_err(|error| {
                     $self.diag.with_mut(|builder| {
@@ -135,11 +139,7 @@ macro_rules! parser_get_attr {
             .transpose()
     }};
     ($self: ident, $event: ident, $type: ty, $type_name: literal, $name: literal) => {{
-        // FIXME: asymptotically not very pretty
-        $event
-            .attributes()
-            .filter(|attr| attr.name() == $name)
-            .last()
+        parser_get_attr!($self, $event, $name)
             .map(|attr| {
                 attr.value().parse::<$type>().map_err(|error| {
                     $self.diag.with_mut(|builder| {
@@ -786,7 +786,20 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 Err(AlreadyReported) => Err(AlreadyReported),
             };
 
-            let panic = parser_get_attr!(self, event, bool, "a boolean", "panic", false)?;
+            let panic = match parser_get_attr!(self, event, "panic") {
+                Some(attr) => match &*attr.value() {
+                    "true" => Some(Box::new(FindPanic {
+                        start_tag_span: event.position_in(&self.reader),
+                        message: None,
+                    })),
+                    "false" => None,
+                    message => Some(Box::new(FindPanic {
+                        start_tag_span: event.position_in(&self.reader),
+                        message: Some((message.into(), attr.position_in(&self.reader))),
+                    })),
+                },
+                None => None,
+            };
 
             let commands;
             #[allow(clippy::needless_late_init)]
@@ -912,13 +925,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 reverse: attr_reverse?,
                 start: attr_start?,
                 limit: limit?,
-                panic: if panic {
-                    Some(FindSpan {
-                        span: event.position_in(&self.reader),
-                    })
-                } else {
-                    None
-                },
+                panic,
                 filter,
                 commands,
             })
@@ -1081,16 +1088,6 @@ impl FromStr for ParOperation {
             }),
             _ => Err("invalid par operation"),
         }
-    }
-}
-
-#[repr(transparent)]
-pub struct BoxFromStr(Box<str>);
-
-impl FromStr for BoxFromStr {
-    type Err = std::convert::Infallible;
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(Self(s.into()))
     }
 }
 

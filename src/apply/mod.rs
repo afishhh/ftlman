@@ -307,17 +307,28 @@ pub fn apply_one_xml(
                 Ok(()) => Ok(()),
                 Err(error) => {
                     match error {
-                        crate::append::PatchError::Panic(location) => {
+                        crate::append::PatchError::Panic(panic) => {
                             file_diag.with_mut(|builder| {
-                                builder.message(
-                                    Level::Error.title("find tag panicked").snippet(
-                                        builder.make_snippet().annotation(
-                                            Level::Error
-                                                .span(location.span.clone())
-                                                .label("this find tag didn't match anything"),
-                                        ),
-                                    ),
-                                );
+                                let snippet = if let Some((message, message_span)) = &panic.message {
+                                    builder
+                                        .make_snippet()
+                                        .annotation(unsafe {
+                                            builder.annotation_interned(Level::Error, message_span.clone(), &**message)
+                                        })
+                                        .annotation(
+                                            Level::Note.span(panic.start_tag_span.clone()).label(
+                                                "panic triggered because this find tag didn't match any elements",
+                                            ),
+                                        )
+                                } else {
+                                    builder.make_snippet().annotation(
+                                        Level::Error
+                                            .span(panic.start_tag_span.clone())
+                                            .label("this find tag didn't match any elements"),
+                                    )
+                                };
+
+                                builder.message(Level::Error.title("find tag panicked").snippet(snippet));
                             });
                         }
                         crate::append::PatchError::AlreadyReported => (),

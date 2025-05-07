@@ -11,7 +11,7 @@ pub use parse::*;
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
 
 pub enum PatchError<'s> {
-    Panic(&'s FindSpan),
+    Panic(&'s FindPanic),
     AlreadyReported,
 }
 
