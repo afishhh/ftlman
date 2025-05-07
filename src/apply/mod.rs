@@ -13,6 +13,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use silpkg::sync::Pkg;
 use zip::ZipArchive;
 
@@ -23,6 +24,7 @@ use crate::{
         io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
     },
+    patch::PatchGraph,
     util::{concat_into_box, convert_lf_to_crlf},
     validate::{Diagnostics, OptionExt},
     xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
@@ -45,6 +47,7 @@ pub enum ApplyStage {
     },
     InstallingHyperspace,
     Preparing,
+    ExecutingGraph(Arc<PatchGraph>),
     Mod {
         mod_name: String,
         file_idx: usize,
@@ -615,6 +618,28 @@ fn make_lua_filesystems<'a, 'b>(
     ))
 }
 
+fn backup_and_open_dat(ftl_path: &Path) -> Result<File> {
+    const BACKUP_FILENAME: &str = "ftl.dat.vanilla";
+    let vanilla_path = ftl_path.join(BACKUP_FILENAME);
+    let original_path = ftl_path.join("ftl.dat");
+
+    if vanilla_path
+        .try_exists()
+        .context("Failed to check dat backup existence")?
+    {
+        std::fs::copy(vanilla_path, &original_path)
+            .with_context(|| format!("Failed to copy {BACKUP_FILENAME} to ftl.dat"))?;
+    } else {
+        std::fs::copy(&original_path, vanilla_path).context("Failed to backup ftl.dat")?;
+    }
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(original_path)
+        .context("Failed to open ftl.dat")
+}
+
 pub fn apply_ftl(
     ftl_path: &Path,
     mods: Vec<Mod>,
@@ -624,27 +649,7 @@ pub fn apply_ftl(
 ) -> Result<()> {
     on_progress(ApplyStage::Preparing);
 
-    let data_file = {
-        const BACKUP_FILENAME: &str = "ftl.dat.vanilla";
-        let vanilla_path = ftl_path.join(BACKUP_FILENAME);
-        let original_path = ftl_path.join("ftl.dat");
-
-        if vanilla_path
-            .try_exists()
-            .context("Failed to check dat backup existence")?
-        {
-            std::fs::copy(vanilla_path, &original_path)
-                .with_context(|| format!("Failed to copy {BACKUP_FILENAME} to ftl.dat"))?;
-        } else {
-            std::fs::copy(&original_path, vanilla_path).context("Failed to backup ftl.dat")?;
-        }
-
-        std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(original_path)
-            .context("Failed to open ftl.dat")?
-    };
+    let data_file = backup_and_open_dat(ftl_path)?;
 
     let lua = ModLuaRuntime::new().context("Failed to initiailize Lua runtime")?;
     let mut pkg = silpkg::sync::Pkg::parse(data_file).context("Failed to parse ftl.dat")?;
@@ -946,12 +951,20 @@ pub fn apply_hyperspace(
     release.extract_hyperspace_ftl(&mut zip)
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ApplyPatcher {
+    #[default]
+    Old,
+    New,
+}
+
 pub fn apply(
     ftl_path: PathBuf,
     state: Arc<Mutex<SharedState>>,
     hs: Option<hyperspace::Installer>,
     settings: Settings,
     diagnostics: Option<&mut Diagnostics<'_>>,
+    patcher_options: ApplyPatcher,
 ) -> Result<()> {
     let mut lock = state.lock();
 
@@ -1014,17 +1027,32 @@ pub fn apply(
         drop(lock);
     };
 
-    apply_ftl(
-        &ftl_path,
-        mods,
-        |stage| {
-            let mut lock = state.lock();
-            lock.apply_stage = Some(stage);
-            lock.ctx.request_repaint();
-        },
-        settings.repack_ftl_data,
-        diagnostics,
-    )?;
+    match patcher_options {
+        ApplyPatcher::Old => {
+            apply_ftl(
+                &ftl_path,
+                mods,
+                |stage| {
+                    let mut lock = state.lock();
+                    lock.apply_stage = Some(stage);
+                    lock.ctx.request_repaint();
+                },
+                settings.repack_ftl_data,
+                diagnostics,
+            )?;
+        }
+        ApplyPatcher::New => {
+            let mut pkg = silpkg::sync::Pkg::parse(backup_and_open_dat(&ftl_path)?)?;
+            let handles = mods
+                .iter()
+                .filter_map(|m| if m.enabled { Some(m.source.open()) } else { None })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            crate::patch::patch(&mut pkg, handles, |graph| {
+                state.lock().apply_stage = Some(ApplyStage::ExecutingGraph(graph));
+            })
+        }
+    }
 
     let apply_duration = Instant::now() - apply_start;
 

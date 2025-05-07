@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf, str::FromStr};
+use std::{ffi::OsStr, fs::File, io::Write, num::NonZero, path::PathBuf, str::FromStr};
 
 use annotate_snippets::Renderer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -233,23 +233,37 @@ pub fn main(command: Command) -> Result<()> {
                         true,
                     )
                 })
-                .collect();
+                .collect::<Vec<_>>();
 
             if command.new_patcher {
+                let mut graph = crate::patch::PatchGraph::new();
+                let mut handles = Vec::new();
+                for (i, m) in mods.iter().enumerate() {
+                    let mut h = m.source.open().unwrap();
+                    graph.add_mod(
+                        crate::patch::ModIndex(NonZero::<u32>::new((i + 1) as u32).unwrap()),
+                        h.paths().unwrap().iter(),
+                    );
+                    handles.push(h);
+                }
+
                 let dat = data_dir.join("ftl.dat");
                 let tmp_path = "/tmp/test.dat";
                 std::fs::copy(dat, tmp_path).unwrap();
-                crate::patch::patch(
-                    &mut silpkg::sync::Pkg::parse(
-                        std::fs::OpenOptions::new()
-                            .read(true)
-                            .write(true)
-                            .open(tmp_path)
-                            .unwrap(),
-                    )
-                    .unwrap(),
-                    mods,
-                );
+
+                let mut pkg = silpkg::sync::Pkg::parse(
+                    std::fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .open(tmp_path)
+                        .unwrap(),
+                )?;
+                let handles = mods
+                    .iter()
+                    .filter_map(|m| if m.enabled { Some(m.source.open()) } else { None })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                crate::patch::patch(&mut pkg, handles, |_| {});
                 Ok(())
             } else {
                 let result = crate::apply::apply_ftl(

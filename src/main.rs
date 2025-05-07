@@ -53,7 +53,7 @@ mod util;
 mod validate;
 mod xmltree;
 
-use apply::ApplyStage;
+use apply::{ApplyPatcher, ApplyStage};
 use gui::{ansi::layout_diagnostic_messages, pathedit::PathEdit, DeferredWindow, WindowState};
 use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
@@ -270,6 +270,8 @@ pub struct Settings {
     autoupdate: bool,
     #[serde(default)]
     theme: ThemeSetting,
+    #[serde(default)]
+    patcher: ApplyPatcher
 }
 
 impl Settings {
@@ -334,6 +336,7 @@ impl Settings {
                 style: ThemeStyle::Dark,
                 opacity: 1.,
             },
+            patcher: ApplyPatcher::default()
         }
     }
 }
@@ -762,9 +765,11 @@ impl App {
                                 Some(Ok(Ok(ref installer))) => Some(installer.clone()),
                                 _ => None,
                             };
+
                             self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
                                 let mut diagnostics = Diagnostics::new();
-                                let result = apply::apply(ftl_path, shared, hs, settings, Some(&mut diagnostics));
+                                let patcher = settings.patcher;
+                                let result = apply::apply(ftl_path, shared, hs, settings, Some(&mut diagnostics), patcher);
                                 ctx.request_repaint();
                                 (result, diagnostics)
                             }));
@@ -831,6 +836,18 @@ impl App {
                                                 "mod" => mod_name
                                             ),
                                         ));
+                                    }
+                                    ApplyStage::ExecutingGraph(graph) => {
+                                        egui::Window::new("Patch execution graph").default_size(ctx.screen_rect().size()).resizable(true).show(ctx, |ui| {
+                                            let id = egui::Id::new("execution graph rect");
+                                            let mut rect = ui.memory(|m| m.data.get_temp(id)).unwrap_or(egui::Rect::from_min_size(egui::pos2(-250.0, 0.0), egui::vec2(500.0, 500.0)));
+                                            egui::Scene::new()
+                                                .max_inner_size(egui::Vec2::splat(2000.))
+                                                .show(ui, &mut rect, |ui| {
+                                                    graph.draw(ui);
+                                                });
+                                            ui.memory_mut(|m| m.data.insert_temp(id, rect))
+                                        });
                                     }
                                 };
                             } else {
@@ -1376,6 +1393,24 @@ impl App {
 
                         ui.checkbox(&mut self.settings.autoupdate, l!("settings-autoupdate"))
                             .changed();
+
+                    fn patcher_name(patcher: ApplyPatcher) -> &'static str {
+                        match patcher {
+                            ApplyPatcher::Old => "v1",
+                            ApplyPatcher::New => "v2",
+                        }
+                    }
+
+                    egui::ComboBox::from_label(l!("settings-patcher"))
+                        .selected_text(patcher_name(self.settings.patcher))
+                        .show_ui(ui, |ui| {
+                            for value in [
+                                ApplyPatcher::Old,
+                                ApplyPatcher::New,
+                            ] {
+                                ui.selectable_value(&mut self.settings.patcher, value, patcher_name(value));
+                            }
+                        });
                     });
                 });
         }
