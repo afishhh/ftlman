@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Find tag panics can now specify a custom message by using `panic="message here"`. For obvious reasons the message cannot be either "true" or "false".
+
 ### Changed
 
 - Find tag panics now emit a friendly diagnostic instead of displaying the `Debug` representation of the `Find` structure.
@@ -7,6 +11,7 @@
 ### Fixed
 
 - Fixed some antivirus false positives on `ftlman_gui.exe`.
+- Context is now attached more consistently to errors that occur when reading files from a mod.
 
 ## [v0.6.2]
 
