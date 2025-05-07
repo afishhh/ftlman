@@ -303,7 +303,29 @@ pub fn apply_one_xml(
                     // get to.
                 }
             }
-            crate::append::patch(lower, &script).context("Failed to apply append script")
+            match crate::append::patch(lower, &script) {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    match error {
+                        crate::append::PatchError::Panic(location) => {
+                            file_diag.with_mut(|builder| {
+                                builder.message(
+                                    Level::Error.title("find tag panicked").snippet(
+                                        builder.make_snippet().annotation(
+                                            Level::Error
+                                                .span(location.span.clone())
+                                                .label("this find tag didn't match anything"),
+                                        ),
+                                    ),
+                                );
+                            });
+                        }
+                        crate::append::PatchError::AlreadyReported => (),
+                    }
+
+                    Err(anyhow!("Failed to apply append script"))
+                }
+            }
         })?,
         XmlAppendType::RawAppend => raw_append_xml(document, patch),
     })

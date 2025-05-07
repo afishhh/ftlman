@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Changed
+
+- Find tag panics now emit a friendly diagnostic instead of displaying the `Debug` representation of the `Find` structure.
+
 ### Fixed
 
 - Fixed some antivirus false positives on `ftlman_gui.exe`.

@@ -25,11 +25,16 @@ pub enum FindOrContent {
 }
 
 #[derive(Debug)]
+pub struct FindSpan {
+    pub span: Range<usize>,
+}
+
+#[derive(Debug)]
 pub struct Find {
     pub reverse: bool,
     pub start: usize,
     pub limit: usize,
-    pub panic: bool,
+    pub panic: Option<FindSpan>,
     pub filter: FindFilter,
     pub commands: Box<[Command]>,
 }
@@ -563,7 +568,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                                     reverse: false,
                                     start: 0,
                                     limit: usize::MAX,
-                                    panic: false,
+                                    panic: None,
                                     filter: FindFilter::Composite(filter),
                                     commands: Box::new([]),
                                 });
@@ -907,7 +912,13 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 reverse: attr_reverse?,
                 start: attr_start?,
                 limit: limit?,
-                panic,
+                panic: if panic {
+                    Some(FindSpan {
+                        span: event.position_in(&self.reader),
+                    })
+                } else {
+                    None
+                },
                 filter,
                 commands,
             })

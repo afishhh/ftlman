@@ -1,7 +1,6 @@
 use std::{collections::HashSet, mem::offset_of};
 
 use crate::xmltree::{Element, Node};
-use anyhow::{bail, Result};
 
 type XMLNode = Node;
 
@@ -11,7 +10,12 @@ pub use parse::*;
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
 
-pub fn patch(context: &mut Element, script: &Script) -> Result<()> {
+pub enum PatchError<'s> {
+    Panic(&'s FindSpan),
+    AlreadyReported,
+}
+
+pub fn patch<'s>(context: &mut Element, script: &'s Script) -> Result<(), PatchError<'s>> {
     for node in &script.0 {
         match node {
             FindOrContent::Find(find) => {
@@ -26,7 +30,7 @@ pub fn patch(context: &mut Element, script: &Script) -> Result<()> {
                 }
                 context.children.push(new);
             }
-            FindOrContent::Error => bail!("Encountered top-level error node"),
+            FindOrContent::Error => return Err(PatchError::AlreadyReported),
         }
     }
 
@@ -124,7 +128,7 @@ fn cleanup(element: &mut Element) {
     }
 }
 
-fn mod_find<'a>(context: &'a mut Element, find: &Find) -> Result<Vec<&'a mut Element>> {
+fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a mut Element>, PatchError<'s>> {
     let mut matches = match &find.filter {
         FindFilter::Simple(filter) => filter.filter_children(context),
         // PERF: This could theoretically be optimised to run in two passes instead of using a set.
@@ -189,14 +193,14 @@ fn mod_find<'a>(context: &'a mut Element, find: &Find) -> Result<Vec<&'a mut Ele
 
     matches = it.skip(find.start).take(find.limit).collect();
 
-    if find.panic && matches.is_empty() {
-        bail!("Find instruction panicked! {:#?}", find);
+    if let Some(panic_location) = find.panic.as_ref().filter(|_| matches.is_empty()) {
+        return Err(PatchError::Panic(panic_location));
     }
 
     Ok(matches)
 }
 
-fn mod_commands(context: &mut Element, commands: &[Command]) -> Result<()> {
+fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<(), PatchError<'s>> {
     for command in commands {
         match command {
             Command::Find(find) => {
@@ -288,7 +292,7 @@ fn mod_commands(context: &mut Element, commands: &[Command]) -> Result<()> {
                         .splice(after_insert_idx..after_insert_idx, after_cloned_iter);
                 }
             }
-            Command::Error => bail!("Encountered error command"),
+            Command::Error => return Err(PatchError::AlreadyReported),
         }
     }
 
