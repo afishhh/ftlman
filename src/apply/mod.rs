@@ -697,6 +697,15 @@ pub fn apply_ftl(
 
             let xml_append_type = AppendType::from_filename(&name);
 
+            let mut read_from_mod_as_text = || {
+                read_encoded_text(
+                    handle
+                        .open(&archive_name)
+                        .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?,
+                )
+                .with_context(|| format!("Could not read {archive_name} from {}", m.filename()))
+            };
+
             if let Some((real_stem, operation)) = xml_append_type {
                 let real_name = format!("{real_stem}.xml");
 
@@ -726,12 +735,7 @@ pub fn apply_ftl(
 
                 trace!("Patching {real_name} according to {name}");
 
-                let append_text = read_encoded_text(
-                    handle
-                        .open(&archive_name)
-                        .with_context(|| format!("Failed to open {name} from mod {}", m.filename()))?,
-                )
-                .with_context(|| format!("Could not read {real_name} from ftl.dat"))?;
+                let append_text = read_from_mod_as_text()?;
 
                 let new_text = match operation {
                     AppendType::Xml(xml_append_type) => apply_one_xml(
@@ -783,7 +787,7 @@ pub fn apply_ftl(
                     |n| format!("{n}.xml"),
                 );
 
-                let text = read_encoded_text(&mut handle.open(&archive_name)?)?;
+                let text = read_from_mod_as_text()?;
                 if pkg.contains(&target_name) {
                     trace!("Overwriting {target_name}");
                     pkg.remove(&target_name)
@@ -805,7 +809,7 @@ pub fn apply_ftl(
                 }
 
                 if name.ends_with(".xml") {
-                    let original_text = read_encoded_text(&mut handle.open(&archive_name)?)?;
+                    let original_text = read_from_mod_as_text()?;
 
                     let mut reader = speedy_xml::Reader::with_options(
                         &original_text,
