@@ -262,7 +262,7 @@ impl PatchWorker {
                         }
                     };
 
-                    output.diagnostics = Some(message_output);
+                    output.diagnostics = Some(Arc::new(message_output));
 
                     self.shared.running.store(false, Ordering::Release);
                     waker.request_repaint();
@@ -325,7 +325,7 @@ pub struct Sandbox {
 #[derive(Default)]
 struct Output {
     patch: Option<PatchOutput>,
-    diagnostics: Option<LayoutJob>,
+    diagnostics: Option<Arc<LayoutJob>>,
 }
 
 enum PatchOutput {
