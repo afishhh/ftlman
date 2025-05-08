@@ -298,14 +298,9 @@ impl Settings {
         Ok(())
     }
 
-    // On Linux + Steam the files we're interested in are located in <FTL>/data but users
-    // might unknowingly enter <FTL>, try to detect this situation and fix it automatically.
-    // This will also fix paths acquired through automatic detection of an FTL installation.
     fn fix_ftl_directrory(&mut self) {
         if let Some(path) = self.ftl_directory.as_mut() {
-            if path.join("data/ftl.dat").exists() {
-                path.push("data")
-            }
+            fixup_ftl_directory(path);
         }
     }
 
@@ -539,6 +534,26 @@ impl Popup for PatchFailedPopup {
     }
 }
 
+// On some platforms the files we're actually interested in are deeper in the ftl
+// installation's directory structure, this function attempts to find the actually
+// important directory
+fn fixup_ftl_directory(path: &mut PathBuf) -> bool {
+    if path.join("data/ftl.dat").exists() {
+        path.push("data");
+        true
+    } else {
+        false
+    }
+}
+
+fn check_ftl_directory_candidate(mut path: PathBuf) -> Option<PathBuf> {
+    if fixup_ftl_directory(&mut path) || path.join("ftl.dat").exists() {
+        return Some(path);
+    }
+
+    None
+}
+
 static STATE_MIGRATION_FLAG_PATH: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::config_local_dir().unwrap().join(STATE_MIGRATION_FLAG_FILE));
 
@@ -592,19 +607,33 @@ impl App {
         if settings.mod_directory == Settings::default_with(is_global).mod_directory {
             std::fs::create_dir_all(settings.effective_mod_directory())?;
         }
+
         if settings.ftl_directory.is_none() {
+            let mut candidates = vec![];
+
+            if let Some(parent) = EXE_DIRECTORY.parent() {
+                candidates.push(parent.to_path_buf());
+            }
+
             match findftl::find_steam_ftl() {
-                Ok(Some(path)) => {
-                    settings.ftl_directory = Some(path);
-                    settings.fix_ftl_directrory();
-                }
+                Ok(Some(path)) => candidates.push(path),
                 Ok(None) => {}
                 Err(err) => popups.push(ErrorPopup::create_and_log(
                     l!("findftl-failed-title").into_owned(),
                     &err.context("An error occurred while trying to detect ftl game directory"),
                 )),
             }
+
+            for candidate in candidates {
+                debug!("Looking for FTL in {}", candidate.display());
+                if let Some(path) = check_ftl_directory_candidate(candidate) {
+                    info!("Selected FTL directory at {}", path.display());
+                    settings.ftl_directory = Some(path);
+                    break;
+                }
+            }
         }
+
         let shared = Arc::new(Mutex::new(SharedState {
             locked: false,
             apply_stage: None,
