@@ -1799,39 +1799,41 @@ impl Mod {
 
                 let mut overwrites_hyperspace_xml = true;
                 let mut mod_handle = self.source.open()?;
-                let mut reader = 'a: {
+                let content = 'a: {
                     for name in HYPERSPACE_META_FILES.iter().copied() {
-                        let reader = match mod_handle.open_if_exists(name)? {
-                            Some(handle) => BufReader::new(handle),
+                        break 'a match mod_handle.open_if_exists(name)? {
+                            Some(handle) => std::io::read_to_string(handle)?,
                             None => {
                                 overwrites_hyperspace_xml = false;
                                 continue;
                             }
                         };
-                        break 'a quick_xml::Reader::from_reader(reader);
                     }
                     return Ok(None);
                 };
+                let mut reader = speedy_xml::Reader::new(&content);
 
-                let mut buffer = Vec::new();
                 let mut version_req = None;
-                loop {
-                    match reader.read_event_into(&mut buffer)? {
-                        quick_xml::events::Event::Start(bytes_start)
-                            if bytes_start.local_name().into_inner() == b"version" =>
-                        {
-                            let mut content_buffer = Vec::new();
-                            let quick_xml::events::Event::Text(text) = reader.read_event_into(&mut content_buffer)?
-                            else {
+                while let Some(event) = reader.next().transpose()? {
+                    use speedy_xml::reader::Event;
+                    match event {
+                        Event::Start(bytes_start) if bytes_start.name() == "version" => {
+                            let Some(Event::Text(text)) = reader.next().transpose()? else {
                                 continue;
                             };
-                            version_req = std::str::from_utf8(&text.into_inner())
-                                .map_err(anyhow::Error::from)
-                                .and_then(|s| semver::VersionReq::parse(s).map_err(Into::into))
-                                .ok();
-                            reader.read_to_end_into(bytes_start.name(), &mut content_buffer)?;
+
+                            version_req = semver::VersionReq::parse(&text.content()).ok();
+
+                            let mut depth = 0;
+                            while let Some(event) = reader.next().transpose()? {
+                                match event {
+                                    Event::Start(_) => depth += 1,
+                                    Event::End(_) if depth == 0 => break,
+                                    Event::End(_) => depth -= 1,
+                                    _ => (),
+                                }
+                            }
                         }
-                        quick_xml::events::Event::Eof => break,
                         _ => (),
                     }
                 }
