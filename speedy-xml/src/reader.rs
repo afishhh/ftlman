@@ -48,11 +48,11 @@ impl<'a> StartEvent<'a> {
     }
 
     pub fn prefix_position_in(&self, parser: &Reader) -> Option<Range<usize>> {
-        (self.prefix_end > 0).then(|| parser.range_for_ptrs(self.text[..self.prefix_end].as_bytes().as_ptr_range()))
+        (self.prefix_end > 0).then(|| parser.range_for_ptrs(self.text.as_bytes()[..self.prefix_end].as_ptr_range()))
     }
 
     pub fn prefixed_name_position_in(&self, parser: &Reader) -> Range<usize> {
-        parser.range_for_ptrs(self.text[1..self.name_end].as_bytes().as_ptr_range())
+        parser.range_for_ptrs(self.text.as_bytes()[1..self.name_end].as_ptr_range())
     }
 
     pub fn attributes(&self) -> Attributes<'a> {
@@ -309,17 +309,17 @@ impl<'a> ParsingBuffer<'a> {
 
     #[inline]
     fn memchr(&self, start: usize, needle: u8) -> Option<usize> {
-        memchr::memchr(needle, self.text[start..].as_bytes()).map(|i| i + start)
+        memchr::memchr(needle, &self.text.as_bytes()[start..]).map(|i| i + start)
     }
 
     #[inline]
     fn memchr2(&self, start: usize, needle1: u8, needle2: u8) -> Option<usize> {
-        memchr::memchr2(needle1, needle2, self.text[start..].as_bytes()).map(|i| i + start)
+        memchr::memchr2(needle1, needle2, &self.text.as_bytes()[start..]).map(|i| i + start)
     }
 
     #[inline]
     fn memmem(&self, needle: &[u8]) -> Option<usize> {
-        memchr::memmem::find(self.text[self.current..].as_bytes(), needle).map(|value| value + self.current)
+        memchr::memmem::find(&self.text.as_bytes()[self.current..], needle).map(|value| value + self.current)
     }
 
     #[inline]
