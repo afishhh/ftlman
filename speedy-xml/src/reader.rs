@@ -416,6 +416,10 @@ impl<'a> Reader<'a> {
         self.buffer.text
     }
 
+    pub fn depth(&self) -> u32 {
+        self.depth
+    }
+
     fn range_for_ptrs(&self, range: Range<*const u8>) -> Range<usize> {
         let self_range = self.buffer.as_bytes().as_ptr_range();
         assert!(
@@ -688,6 +692,18 @@ impl<'a> Reader<'a> {
                         Err(Error::new(ErrorKind::UnclosedElementTag, span))
                     }
                 }
+            }
+        }
+    }
+
+    pub fn skip_to_end(&mut self) -> Result<Option<EndEvent<'a>>, Error> {
+        let end_depth = self.depth;
+
+        loop {
+            match self.next().transpose()? {
+                Some(Event::End(end)) if self.depth == end_depth => return Ok(Some(end)),
+                Some(_) => (),
+                None => return Ok(None),
             }
         }
     }

@@ -1824,15 +1824,7 @@ impl Mod {
 
                             version_req = semver::VersionReq::parse(&text.content()).ok();
 
-                            let mut depth = 0;
-                            while let Some(event) = reader.next().transpose()? {
-                                match event {
-                                    Event::Start(_) => depth += 1,
-                                    Event::End(_) if depth == 0 => break,
-                                    Event::End(_) => depth -= 1,
-                                    _ => (),
-                                }
-                            }
+                            reader.skip_to_end()?;
                         }
                         _ => (),
                     }
