@@ -1487,7 +1487,7 @@ impl eframe::App for App {
 
                         if !self.ask_to_migrate_state {
                             let result  = std::fs::create_dir_all(STATE_MIGRATION_FLAG_PATH.parent().unwrap()).and_then(|_| {
-                                touch_create(&*STATE_MIGRATION_FLAG_PATH) 
+                                touch_create(&*STATE_MIGRATION_FLAG_PATH)
                             });
                             if let Err(error) = result {
                                 self.popups.push(ErrorPopup::create_and_log("Failed to create migration state flag", &error.into()));
