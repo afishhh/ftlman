@@ -1028,14 +1028,13 @@ pub fn apply(
 
     let apply_duration = Instant::now() - apply_start;
 
+    let ts = jiff::Zoned::now();
     info!(
-        "Apply succeeded in {:.2}s at {}",
+        "Apply succeeded in {:.2}s at {:>02}:{:>02}:{:>02}",
         apply_duration.as_secs_f32(),
-        time::OffsetDateTime::from(std::time::SystemTime::now())
-            .to_offset(time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC))
-            .time()
-            .format(&time::format_description::parse("[hour]:[minute]:[second]").unwrap())
-            .unwrap()
+        ts.hour(),
+        ts.minute(),
+        ts.second()
     );
 
     let mut lock = state.lock();

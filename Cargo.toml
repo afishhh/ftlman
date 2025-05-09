@@ -28,7 +28,9 @@ crc32fast = "1"
 
 # Used to read/write SIL archives and mod files/dirs
 silpkg = "0.1.2"
-zip = "2"
+# https://github.com/zip-rs/zip2/pull/306 introduced a dependency on system liblzma
+# even though xz *decompression* worked fine without it previously via the `lzma-rs` crate...
+zip = { git = "https://github.com/afishhh/zip2", branch = "no-xz" }
 walkdir = "2"
 
 # Used in cache.rs
@@ -48,7 +50,7 @@ itoa = "1"
 
 memchr = "2"
 
-# For nice error source reporting, currently only used in the XML Sandbox
+# For nice error diagnostics
 annotate-snippets = "0.11.5"
 
 # Localisation
@@ -58,7 +60,7 @@ fluent = "0.16"
 semver = { version = "1", features = ["serde"] }
 
 # Used in only one place, but other crates already pull it in
-time = { version = "0.3", features = ["formatting", "local-offset"] }
+jiff = { version = "0.2" }
 
 # This dependency could be removed but it's pretty small.
 open = "5.3.1"
