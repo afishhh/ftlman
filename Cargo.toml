@@ -42,7 +42,7 @@ serde_json = "1.0"
 # TODO: Replace with speedy-xml by implementing a serde deserializer
 quick-xml = { version = "0.37", features = ["serialize"] }
 
-speedy-xml = { path = "./speedy-xml" }
+speedy-xml = { version = "0.1" }
 
 # These are dependencies of serde anyway
 ryu = "1"
@@ -102,4 +102,4 @@ strip = false
 debug = true
 
 [workspace]
-members = ["compare_with_slipstream/normalize_xml", "speedy-xml", "windows_gui_wrapper"]
+members = ["compare_with_slipstream/normalize_xml", "windows_gui_wrapper"]
