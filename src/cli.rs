@@ -11,6 +11,7 @@ use crate::{
         io::{LuaDirectoryFS, LuaFS},
         LuaContext, ModLuaRuntime,
     },
+    update,
     util::{crc32_from_reader, to_human_size_units},
     validate::Diagnostics,
     Mod, ModSource, Settings,
@@ -29,6 +30,8 @@ pub enum Command {
     #[clap(name = "fetch-gdrive")]
     FetchGDrive(FetchGDriveCommand),
     Extract(ExtractCommand),
+    #[clap(name = "__install_update", hide = true)]
+    InstallUpdate(update::InternalInstallUpdateCommand),
 }
 
 #[derive(Parser)]
@@ -173,6 +176,7 @@ fn load_settings() -> Settings {
 
 pub fn main(command: Command) -> Result<()> {
     match command {
+        Command::InstallUpdate(update) => update::install_update(update).map(|_| ()),
         Command::Patch(mut command) => {
             let settings = load_settings();
             let Some(data_dir) = command.data_path.as_ref().or(settings.ftl_directory.as_ref()) else {

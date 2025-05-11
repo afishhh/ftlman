@@ -3,12 +3,14 @@
 use std::{
     cmp::Ordering,
     collections::HashMap,
+    convert::Infallible,
     fmt::Debug,
     fs::File,
     io::{BufReader, Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     process::ExitCode,
     sync::{atomic::AtomicU64, Arc, LazyLock},
+    task::Poll,
 };
 
 use anyhow::{Context, Result};
@@ -25,7 +27,6 @@ use log::{debug, error, info, warn};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use poll_promise::Promise;
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use validate::Diagnostics;
 use walkdir::WalkDir;
@@ -45,6 +46,7 @@ mod i18n;
 mod lazy;
 mod lua;
 mod scan;
+mod update;
 mod util;
 mod validate;
 mod xmltree;
@@ -53,6 +55,7 @@ use apply::ApplyStage;
 use gui::{ansi::layout_diagnostic_messages, pathedit::PathEdit, DeferredWindow, WindowState};
 use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
+use update::{get_latest_release_or_none, UpdaterProgress};
 use util::{to_human_size_units, touch_create, SloppyVersion};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -138,6 +141,8 @@ fn main() -> ExitCode {
         }
         return ExitCode::SUCCESS;
     }
+
+    update::check_run_post_update();
 
     if let Err(error) = eframe::run_native(
         // Windows will display special characters like "POP DIRECTIONAL ISOLATE" in the title...
@@ -335,27 +340,6 @@ impl Default for ThemeSetting {
         Self {
             style: ThemeStyle::default(),
             opacity: 1.,
-        }
-    }
-}
-
-fn get_latest_release() -> Result<github::Release> {
-    github::Repository::new("afishhh", "ftlman")
-        .releases()?
-        .into_iter()
-        .find(|release| !release.prerelease)
-        .ok_or_else(|| anyhow::anyhow!("No non-prerelease releases"))
-}
-
-fn get_latest_release_or_none() -> Option<github::Release> {
-    match get_latest_release() {
-        Ok(release) => {
-            info!("Latest project release tag is {}", release.tag_name);
-            Some(release)
-        }
-        Err(error) => {
-            error!("Failed to fetch latest project release: {error}");
-            None
         }
     }
 }
@@ -563,6 +547,8 @@ struct App {
     hyperspace_installer: Option<Result<Result<hyperspace::Installer, String>>>,
 
     last_ftlman_release: Option<Promise<Option<github::Release>>>,
+    // updater_state != None -> last_ftlman_release != None
+    updater_state: Option<UpdaterState>,
 
     hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
     ignore_releases_fetch_error: bool,
@@ -583,6 +569,11 @@ struct App {
 
     // % of window width
     vertical_divider_pos: f32,
+}
+
+struct UpdaterState {
+    progress: Arc<Mutex<UpdaterProgress>>,
+    promise: Promise<Result<Infallible>>,
 }
 
 impl App {
@@ -649,6 +640,7 @@ impl App {
             last_ftlman_release: settings
                 .autoupdate
                 .then(|| Promise::spawn_thread("fetch last ftlman release", get_latest_release_or_none)),
+            updater_state: None,
 
             hyperspace_releases: ResettableLazy::new(|| {
                 Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
@@ -692,6 +684,146 @@ impl App {
                 }
             }
             Err(e) => error!("Failed to open mod order file: {e}"),
+        }
+    }
+
+    fn update_update_modal(&mut self, ctx: &egui::Context) {
+        if let Some(Some(release)) = self.last_ftlman_release.as_ref().and_then(Promise::ready) {
+            if let Some(version) = release.find_semver_in_metadata() {
+                if version.cmp_precedence(&PARSED_VERSION) == Ordering::Greater {
+                    let mut close = false;
+                    let mut run_update = false;
+
+                    let is_updater_runnable = self
+                        .updater_state
+                        .as_ref()
+                        .is_none_or(|state| matches!(state.promise.poll(), Poll::Ready(Err(..))))
+                        // Probably shouldn't update while we're in the middle of doing something
+                        && self.current_task.is_idle();
+
+                    let is_updater_running = self
+                        .updater_state
+                        .as_ref()
+                        .is_some_and(|state| state.promise.poll().is_pending());
+
+                    egui::Modal::new(egui::Id::new("update modal")).show(ctx, |ui| {
+                        ui.label(i18n::style(
+                            &ctx.style(),
+                            &l!(
+                                "update-modal",
+                                "latest" => &release.tag_name,
+                                "current" => format!("v{}", VERSION),
+                            ),
+                        ));
+
+                        let font_id = egui::FontSelection::default().resolve(ui.style());
+                        let button_padding = ui.spacing().button_padding;
+
+                        let mk_button_text = |key| {
+                            let galley = ui.fonts(|f| {
+                                f.layout_delayed_color(l!(key).into_owned(), font_id.clone(), f32::INFINITY)
+                            });
+                            let size = (button_padding * 2. + galley.size()).ceil();
+                            (galley, size)
+                        };
+
+                        let (dismiss_text, dismiss_size) = mk_button_text("update-modal-dismiss");
+                        let (open_in_browser_text, open_in_browser_size) =
+                            mk_button_text("update-modal-open-in-browser");
+                        let (run_update_text, run_update_size) = mk_button_text("update-modal-run-update");
+
+                        let avail = ui.available_size_before_wrap().x;
+                        let offset = (avail
+                            - dismiss_size.x
+                            - ui.spacing().item_spacing.x
+                            - open_in_browser_size.x
+                            - ui.spacing().item_spacing.x
+                            - run_update_size.x)
+                            .max(0.0)
+                            / 2.;
+
+                        ui.horizontal(|ui| {
+                            fn show_button_at(
+                                ui: &mut egui::Ui,
+                                pos: egui::Pos2,
+                                text: Arc<egui::Galley>,
+                                disabled: bool,
+                            ) -> egui::Response {
+                                let mut builder = egui::UiBuilder::new()
+                                    .max_rect(egui::Rect::from_pos(pos))
+                                    .layout(egui::Layout::left_to_right(egui::Align::Min));
+                                builder.disabled = disabled;
+                                ui.scope_builder(builder, |ui| ui.button(text)).inner
+                            }
+
+                            let mut pos = ui.next_widget_position();
+                            pos.y -= dismiss_size.y / 2.; // ?????
+                            pos.x += offset;
+                            close = show_button_at(ui, pos, dismiss_text, is_updater_running).clicked();
+                            pos.x += dismiss_size.x + ui.spacing().item_spacing.x;
+                            if show_button_at(ui, pos, open_in_browser_text, false).clicked() {
+                                ctx.open_url(egui::OpenUrl::new_tab(&release.html_url));
+                            }
+                            pos.x += open_in_browser_size.x + ui.spacing().item_spacing.x;
+                            if show_button_at(ui, pos, run_update_text, !is_updater_runnable).clicked() {
+                                run_update = true;
+                            }
+                        });
+
+                        if let Some(state) = self.updater_state.as_ref() {
+                            ui.add_space(5.0);
+                            match state.promise.poll() {
+                                Poll::Ready(Ok(_)) => { /* cannot happen */ }
+                                Poll::Ready(Err(error)) => {
+                                    render_error_chain(ui, error.chain().map(|e| e.to_string()));
+                                }
+                                Poll::Pending => match state.progress.lock().clone() {
+                                    UpdaterProgress::Preparing => _ = ui.label("Preparing..."),
+                                    UpdaterProgress::Downloading { current, max } => {
+                                        let (cur_iec, cur_sfx) = to_human_size_units(current);
+                                        let (max_iec, max_sfx) = to_human_size_units(max);
+
+                                        ui.add(
+                                            self.settings
+                                                .theme
+                                                .apply_to_progress_bar(egui::ProgressBar::new(
+                                                    current as f32 / max as f32,
+                                                ))
+                                                .text(l!(
+                                                    "update-modal-progress",
+                                                    "current" => format!("{cur_iec:.2}{cur_sfx}"),
+                                                    "max" => format!("{max_iec:.2}{max_sfx}")
+                                                )),
+                                        );
+                                    }
+                                    UpdaterProgress::Installing => {
+                                        _ = ui.label("Installing update...");
+                                        _ = ui.label("The application will soon restart!")
+                                    }
+                                },
+                            }
+                        }
+                    });
+
+                    if run_update && is_updater_runnable {
+                        let release = release.clone();
+                        let ctx = ctx.clone();
+                        let progress: Arc<Mutex<update::UpdaterProgress>> = Arc::default();
+                        self.updater_state = Some(UpdaterState {
+                            progress: progress.clone(),
+                            promise: Promise::spawn_thread("update", move || {
+                                update::initiate_update_to(&release, &ctx, progress)
+                            }),
+                        });
+                    }
+
+                    if close && !is_updater_running {
+                        self.last_ftlman_release = None;
+                    }
+                }
+            } else {
+                warn!("Failed to find version in mod manager release {release:#?}");
+            }
         }
     }
 }
@@ -1388,48 +1520,7 @@ impl eframe::App for App {
                 });
         }
 
-        if let Some(Some(release)) = self.last_ftlman_release.as_ref().and_then(Promise::ready) {
-            if let Some(version) = release.find_semver_in_metadata() {
-                if version.cmp_precedence(&PARSED_VERSION) == Ordering::Greater {
-                    let close = egui::Modal::new(egui::Id::new("update modal"))
-                        .show(ctx, |ui| {
-                            ui.label(i18n::style(
-                                &ctx.style(),
-                                &l!(
-                                    "update-modal",
-                                    "latest" => &release.tag_name,
-                                    "current" => format!("v{}", VERSION),
-                                ),
-                            ));
-
-                            static PLACEHOLDER_REGEX: LazyLock<Regex> =
-                                LazyLock::new(|| Regex::new(r"@[^@]+@").unwrap());
-
-                            {
-                                let message = l!("update-modal-link");
-                                let m = PLACEHOLDER_REGEX.find(&message).unwrap();
-
-                                let (a, b) = (&message[..m.start()], &message[m.end()..]);
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-                                    ui.label(a);
-                                    ui.hyperlink_to(&message[m.start() + 1..m.end() - 1], &release.html_url);
-                                    ui.label(b);
-                                });
-                            }
-
-                            ui.vertical_centered(|ui| ui.button("Dismiss").clicked())
-                        })
-                        .inner
-                        .inner;
-                    if close {
-                        self.last_ftlman_release = None;
-                    }
-                }
-            } else {
-                warn!("Failed to find version in mod manager release {release:#?}");
-            }
-        }
+        self.update_update_modal(ctx);
 
         self.sandbox.render(ctx, "XML Sandbox", egui::vec2(620., 480.));
 

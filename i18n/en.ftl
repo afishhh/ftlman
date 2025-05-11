@@ -75,5 +75,7 @@ settings-repack-archive-tooltip =
 update-modal =
     A newer version of the mod manager is available!
     Latest version is [s]{$latest}[/s] while this version is [s]{$current}[/s].
-update-modal-link =
-    Click @here@ to open the new release in a web browser.
+update-modal-dismiss = Dismiss
+update-modal-open-in-browser = Open in browser
+update-modal-run-update = Update
+update-modal-progress = Downloading update... {$current}/{$max}

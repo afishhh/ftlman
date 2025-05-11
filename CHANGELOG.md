@@ -3,6 +3,7 @@
 ### Added
 
 - Find tag panics can now specify a custom message by using `panic="message here"`. For obvious reasons the message cannot be either "true" or "false".
+- Added an automatic update installer, you will now have the option of having updates installed for you automatically.
 
 ### Changed
 

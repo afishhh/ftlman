@@ -69,6 +69,12 @@ egui_extras = { version = "0.31", features = ["syntect"] }
 mlua = { version = "0.10", features = ["lua54", "macros", "vendored", "error-send", "serialize"] }
 gc-arena = "0.5.3"
 
+# For decompressing updates, also used in silpkg and other dependencies
+flate2 = "1"
+
+# For unpacking updates for Linux and MacOS, at least seems pretty lightweight
+tar = { version = "0.4", default-features = false }
+
 # For loading system fonts on Linux
 [target.'cfg(target_os = "linux")'.dependencies]
 yeslogic-fontconfig-sys = "6"
