@@ -78,9 +78,9 @@ yeslogic-fontconfig-sys = "6"
 winapi = { version = "0.3", features = ["dwrite", "winnls", "winbase", "errhandlingapi", "std"] }
 
 [patch.crates-io]
-egui = { git = "https://github.com/afishhh/egui", branch = "fix-leading-space" }
-egui_extras = { git = "https://github.com/afishhh/egui", branch = "fix-leading-space" }
-eframe = { git = "https://github.com/afishhh/egui", branch = "fix-leading-space" }
+egui = { git = "https://github.com/emilk/egui" }
+egui_extras = { git = "https://github.com/emilk/egui" }
+eframe = { git = "https://github.com/emilk/egui" }
 
 # Speeds up testing considerably
 [profile.dev]
