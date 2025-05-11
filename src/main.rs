@@ -687,163 +687,7 @@ impl App {
         }
     }
 
-    fn update_update_modal(&mut self, ctx: &egui::Context) {
-        if let Some(Some(release)) = self.last_ftlman_release.as_ref().and_then(Promise::ready) {
-            if let Some(version) = release.find_semver_in_metadata() {
-                if version.cmp_precedence(&PARSED_VERSION) == Ordering::Greater {
-                    let mut close = false;
-                    let mut run_update = false;
-
-                    let is_updater_runnable = self
-                        .updater_state
-                        .as_ref()
-                        .is_none_or(|state| matches!(state.promise.poll(), Poll::Ready(Err(..))))
-                        // Probably shouldn't update while we're in the middle of doing something
-                        && self.current_task.is_idle();
-
-                    let is_updater_running = self
-                        .updater_state
-                        .as_ref()
-                        .is_some_and(|state| state.promise.poll().is_pending());
-
-                    egui::Modal::new(egui::Id::new("update modal")).show(ctx, |ui| {
-                        ui.label(i18n::style(
-                            &ctx.style(),
-                            &l!(
-                                "update-modal",
-                                "latest" => &release.tag_name,
-                                "current" => format!("v{}", VERSION),
-                            ),
-                        ));
-
-                        let font_id = egui::FontSelection::default().resolve(ui.style());
-                        let button_padding = ui.spacing().button_padding;
-
-                        let mk_button_text = |key| {
-                            let galley = ui.fonts(|f| {
-                                f.layout_delayed_color(l!(key).into_owned(), font_id.clone(), f32::INFINITY)
-                            });
-                            let size = (button_padding * 2. + galley.size()).ceil();
-                            (galley, size)
-                        };
-
-                        let (dismiss_text, dismiss_size) = mk_button_text("update-modal-dismiss");
-                        let (open_in_browser_text, open_in_browser_size) =
-                            mk_button_text("update-modal-open-in-browser");
-                        let (run_update_text, run_update_size) = mk_button_text("update-modal-run-update");
-
-                        let avail = ui.available_size_before_wrap().x;
-                        let offset = (avail
-                            - dismiss_size.x
-                            - ui.spacing().item_spacing.x
-                            - open_in_browser_size.x
-                            - ui.spacing().item_spacing.x
-                            - run_update_size.x)
-                            .max(0.0)
-                            / 2.;
-
-                        ui.horizontal(|ui| {
-                            fn show_button_at(
-                                ui: &mut egui::Ui,
-                                pos: egui::Pos2,
-                                text: Arc<egui::Galley>,
-                                disabled: bool,
-                            ) -> egui::Response {
-                                let mut builder = egui::UiBuilder::new()
-                                    .max_rect(egui::Rect::from_pos(pos))
-                                    .layout(egui::Layout::left_to_right(egui::Align::Min));
-                                builder.disabled = disabled;
-                                ui.scope_builder(builder, |ui| ui.button(text)).inner
-                            }
-
-                            let mut pos = ui.next_widget_position();
-                            pos.y -= dismiss_size.y / 2.; // ?????
-                            pos.x += offset;
-                            close = show_button_at(ui, pos, dismiss_text, is_updater_running).clicked();
-                            pos.x += dismiss_size.x + ui.spacing().item_spacing.x;
-                            if show_button_at(ui, pos, open_in_browser_text, false).clicked() {
-                                ctx.open_url(egui::OpenUrl::new_tab(&release.html_url));
-                            }
-                            pos.x += open_in_browser_size.x + ui.spacing().item_spacing.x;
-                            if show_button_at(ui, pos, run_update_text, !is_updater_runnable).clicked() {
-                                run_update = true;
-                            }
-                        });
-
-                        if let Some(state) = self.updater_state.as_ref() {
-                            ui.add_space(5.0);
-                            match state.promise.poll() {
-                                Poll::Ready(Ok(_)) => { /* cannot happen */ }
-                                Poll::Ready(Err(error)) => {
-                                    render_error_chain(ui, error.chain().map(|e| e.to_string()));
-                                }
-                                Poll::Pending => match state.progress.lock().clone() {
-                                    UpdaterProgress::Preparing => _ = ui.label("Preparing..."),
-                                    UpdaterProgress::Downloading { current, max } => {
-                                        let (cur_iec, cur_sfx) = to_human_size_units(current);
-                                        let (max_iec, max_sfx) = to_human_size_units(max);
-
-                                        ui.add(
-                                            self.settings
-                                                .theme
-                                                .apply_to_progress_bar(egui::ProgressBar::new(
-                                                    current as f32 / max as f32,
-                                                ))
-                                                .text(l!(
-                                                    "update-modal-progress",
-                                                    "current" => format!("{cur_iec:.2}{cur_sfx}"),
-                                                    "max" => format!("{max_iec:.2}{max_sfx}")
-                                                )),
-                                        );
-                                    }
-                                    UpdaterProgress::Installing => {
-                                        _ = ui.label("Installing update...");
-                                        _ = ui.label("The application will soon restart!")
-                                    }
-                                },
-                            }
-                        }
-                    });
-
-                    if run_update && is_updater_runnable {
-                        let release = release.clone();
-                        let ctx = ctx.clone();
-                        let progress: Arc<Mutex<update::UpdaterProgress>> = Arc::default();
-                        self.updater_state = Some(UpdaterState {
-                            progress: progress.clone(),
-                            promise: Promise::spawn_thread("update", move || {
-                                update::initiate_update_to(&release, &ctx, progress)
-                            }),
-                        });
-                    }
-
-                    if close && !is_updater_running {
-                        self.last_ftlman_release = None;
-                    }
-                }
-            } else {
-                warn!("Failed to find version in mod manager release {release:#?}");
-            }
-        }
-    }
-}
-
-impl eframe::App for App {
-    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
-        self.save_non_eframe();
-    }
-
-    fn auto_save_interval(&self) -> std::time::Duration {
-        std::time::Duration::from_secs(120)
-    }
-
-    fn persist_egui_memory(&self) -> bool {
-        true
-    }
-
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.set_visuals(self.visuals.clone());
-
+    fn update_main_ui(&mut self, ctx: &egui::Context) {
         let is_sandbox_open = self.sandbox.state().is_open();
 
         egui::TopBottomPanel::top("app_main_top_panel").show(ctx, |ui| {
@@ -1371,31 +1215,36 @@ impl eframe::App for App {
                     }
                 })
             });
-
-            self.popups.retain(|popup| {
-                if let Some(title) = popup.window_title() {
-                    let mut open = true;
-
-                    open &= egui::Window::new(title)
-                        .resizable(true)
-                        .frame(egui::Frame::popup(ui.style()))
-                        .id(popup.id())
-                        .open(&mut open)
-                        .show(ui.ctx(), |ui| popup.show(ui))
-                        .is_some_and(|i| i.inner.unwrap_or(true));
-
-                    open
-                } else {
-                    let mut open = true;
-
-                    open &= !egui::Modal::new(popup.id())
-                        .show(ui.ctx(), |ui| open &= popup.show(ui)).should_close();
-
-                    open
-                }
-            });
         });
+    }
 
+    fn update_dynamic_popups(&mut self, ctx: &egui::Context) {
+        self.popups.retain(|popup| {
+            if let Some(title) = popup.window_title() {
+                let mut open = true;
+
+                open &= egui::Window::new(title)
+                    .resizable(true)
+                    .frame(egui::Frame::popup(&*ctx.style()))
+                    .id(popup.id())
+                    .open(&mut open)
+                    .show(ctx, |ui| popup.show(ui))
+                    .is_some_and(|i| i.inner.unwrap_or(true));
+
+                open
+            } else {
+                let mut open = true;
+
+                open &= !egui::Modal::new(popup.id())
+                    .show(ctx, |ui| open &= popup.show(ui))
+                    .should_close();
+
+                open
+            }
+        });
+    }
+
+    fn update_settings_window(&mut self, ctx: &egui::Context) {
         if self.settings_open {
             egui::Window::new(l!("settings-title"))
                 .collapsible(false)
@@ -1519,11 +1368,149 @@ impl eframe::App for App {
                     });
                 });
         }
+    }
 
-        self.update_update_modal(ctx);
+    fn update_update_modal(&mut self, ctx: &egui::Context) {
+        if let Some(Some(release)) = self.last_ftlman_release.as_ref().and_then(Promise::ready) {
+            if let Some(version) = release.find_semver_in_metadata() {
+                if version.cmp_precedence(&PARSED_VERSION) == Ordering::Greater {
+                    let mut close = false;
+                    let mut run_update = false;
 
-        self.sandbox.render(ctx, "XML Sandbox", egui::vec2(620., 480.));
+                    let is_updater_runnable = self
+                        .updater_state
+                        .as_ref()
+                        .is_none_or(|state| matches!(state.promise.poll(), Poll::Ready(Err(..))))
+                        // Probably shouldn't update while we're in the middle of doing something
+                        && self.current_task.is_idle();
 
+                    let is_updater_running = self
+                        .updater_state
+                        .as_ref()
+                        .is_some_and(|state| state.promise.poll().is_pending());
+
+                    egui::Modal::new(egui::Id::new("update modal")).show(ctx, |ui| {
+                        ui.label(i18n::style(
+                            &ctx.style(),
+                            &l!(
+                                "update-modal",
+                                "latest" => &release.tag_name,
+                                "current" => format!("v{}", VERSION),
+                            ),
+                        ));
+
+                        let font_id = egui::FontSelection::default().resolve(ui.style());
+                        let button_padding = ui.spacing().button_padding;
+
+                        let mk_button_text = |key| {
+                            let galley = ui.fonts(|f| {
+                                f.layout_delayed_color(l!(key).into_owned(), font_id.clone(), f32::INFINITY)
+                            });
+                            let size = (button_padding * 2. + galley.size()).ceil();
+                            (galley, size)
+                        };
+
+                        let (dismiss_text, dismiss_size) = mk_button_text("update-modal-dismiss");
+                        let (open_in_browser_text, open_in_browser_size) =
+                            mk_button_text("update-modal-open-in-browser");
+                        let (run_update_text, run_update_size) = mk_button_text("update-modal-run-update");
+
+                        let avail = ui.available_size_before_wrap().x;
+                        let offset = (avail
+                            - dismiss_size.x
+                            - ui.spacing().item_spacing.x
+                            - open_in_browser_size.x
+                            - ui.spacing().item_spacing.x
+                            - run_update_size.x)
+                            .max(0.0)
+                            / 2.;
+
+                        ui.horizontal(|ui| {
+                            fn show_button_at(
+                                ui: &mut egui::Ui,
+                                pos: egui::Pos2,
+                                text: Arc<egui::Galley>,
+                                disabled: bool,
+                            ) -> egui::Response {
+                                let mut builder = egui::UiBuilder::new()
+                                    .max_rect(egui::Rect::from_pos(pos))
+                                    .layout(egui::Layout::left_to_right(egui::Align::Min));
+                                builder.disabled = disabled;
+                                ui.scope_builder(builder, |ui| ui.button(text)).inner
+                            }
+
+                            let mut pos = ui.next_widget_position();
+                            pos.y -= dismiss_size.y / 2.; // ?????
+                            pos.x += offset;
+                            close = show_button_at(ui, pos, dismiss_text, is_updater_running).clicked();
+                            pos.x += dismiss_size.x + ui.spacing().item_spacing.x;
+                            if show_button_at(ui, pos, open_in_browser_text, false).clicked() {
+                                ctx.open_url(egui::OpenUrl::new_tab(&release.html_url));
+                            }
+                            pos.x += open_in_browser_size.x + ui.spacing().item_spacing.x;
+                            if show_button_at(ui, pos, run_update_text, !is_updater_runnable).clicked() {
+                                run_update = true;
+                            }
+                        });
+
+                        if let Some(state) = self.updater_state.as_ref() {
+                            ui.add_space(5.0);
+                            match state.promise.poll() {
+                                Poll::Ready(Ok(_)) => { /* cannot happen */ }
+                                Poll::Ready(Err(error)) => {
+                                    render_error_chain(ui, error.chain().map(|e| e.to_string()));
+                                }
+                                Poll::Pending => match state.progress.lock().clone() {
+                                    UpdaterProgress::Preparing => _ = ui.label("Preparing..."),
+                                    UpdaterProgress::Downloading { current, max } => {
+                                        let (cur_iec, cur_sfx) = to_human_size_units(current);
+                                        let (max_iec, max_sfx) = to_human_size_units(max);
+
+                                        ui.add(
+                                            self.settings
+                                                .theme
+                                                .apply_to_progress_bar(egui::ProgressBar::new(
+                                                    current as f32 / max as f32,
+                                                ))
+                                                .text(l!(
+                                                    "update-modal-progress",
+                                                    "current" => format!("{cur_iec:.2}{cur_sfx}"),
+                                                    "max" => format!("{max_iec:.2}{max_sfx}")
+                                                )),
+                                        );
+                                    }
+                                    UpdaterProgress::Installing => {
+                                        _ = ui.label("Installing update...");
+                                        _ = ui.label("The application will soon restart!")
+                                    }
+                                },
+                            }
+                        }
+                    });
+
+                    if run_update && is_updater_runnable {
+                        let release = release.clone();
+                        let ctx = ctx.clone();
+                        let progress: Arc<Mutex<update::UpdaterProgress>> = Arc::default();
+                        self.updater_state = Some(UpdaterState {
+                            progress: progress.clone(),
+                            promise: Promise::spawn_thread("update", move || {
+                                update::initiate_update_to(&release, &ctx, progress)
+                            }),
+                        });
+                    }
+
+                    if close && !is_updater_running {
+                        self.last_ftlman_release = None;
+                    }
+                }
+            } else {
+                warn!("Failed to find version in mod manager release {release:#?}");
+            }
+        }
+    }
+
+    fn update_state_migration_popup(&mut self, ctx: &egui::Context) {
         if self.ask_to_migrate_state {
             egui::Modal::new(egui::Id::new("state migration")).show(ctx, |ui| {
                 ui.set_max_width(400.0);
@@ -1588,6 +1575,31 @@ impl eframe::App for App {
                 });
             });
         }
+    }
+}
+
+impl eframe::App for App {
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        self.save_non_eframe();
+    }
+
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(120)
+    }
+
+    fn persist_egui_memory(&self) -> bool {
+        true
+    }
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.set_visuals(self.visuals.clone());
+
+        self.update_main_ui(ctx);
+        self.update_dynamic_popups(ctx);
+        self.update_settings_window(ctx);
+        self.update_update_modal(ctx);
+        self.sandbox.render(ctx, "XML Sandbox", egui::vec2(620., 480.));
+        self.update_state_migration_popup(ctx);
     }
 }
 
