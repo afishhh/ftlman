@@ -203,6 +203,7 @@ pub fn install_update(update: InternalInstallUpdateCommand) -> Result<Infallible
 pub fn check_run_post_update() {
     if let Some(s) = std::env::var_os(POST_UPDATE_RMDIR_ENV_VAR) {
         let path = PathBuf::from(s);
+        assert!(path.starts_with(std::env::temp_dir()));
         debug!("Removing update installer temporary directory {}", path.display());
         _ = std::fs::remove_dir_all(path);
     }
