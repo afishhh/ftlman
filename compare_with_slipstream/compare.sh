@@ -15,4 +15,4 @@ INFINITY=1073741824
 export DFT_GRAPH_LIMIT=$INFINITY
 export DFT_BYTE_LIMIT=$INFINITY
 export DFT_PARSE_ERROR_LIMIT=$INFINITY
-difft --check-only --ignore-comments --skip-unchanged data-slipstream/ftl data-ftlman/ftl | grep -P -o '^.*(?= ---)'
+! difft --check-only --ignore-comments --skip-unchanged data-slipstream/ftl data-ftlman/ftl | grep -P -o '^.*(?= ---)'
