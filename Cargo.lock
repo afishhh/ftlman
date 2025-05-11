@@ -3504,9 +3504,9 @@ dependencies = [
 
 [[package]]
 name = "silpkg"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "117c29ccb05ee8f09677d0a032fd8489538e05a68314cfd5e58f3306eae1d00e"
+checksum = "cf1edad94523fbfb5434bbee4d2ccbe0483051a35f915dfa8484fa09ed953840"
 dependencies = [
  "bitflags 2.9.0",
  "flate2",
