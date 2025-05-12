@@ -143,17 +143,31 @@ pub struct InternalInstallUpdateCommand {
     install_path: PathBuf,
 }
 
+fn is_busy(err: &std::io::Error) -> bool {
+    if matches!(
+        err.kind(),
+        std::io::ErrorKind::ExecutableFileBusy | std::io::ErrorKind::ResourceBusy
+    ) {
+        return true;
+    }
+
+    // Check for ERROR_SHARING_VIOLATION, returned by Windows when interacting with an executable
+    // that's currently running. This is not converted to the above error kinds so has to be
+    // checked manually.
+    #[cfg(windows)]
+    if err.raw_os_error().is_some_and(|raw| raw == 32) {
+        return true;
+    }
+
+    return false;
+}
+
 fn retry_on_busy<R>(op: impl Fn() -> std::io::Result<R>, what: impl std::fmt::Display, times: usize) -> Result<R> {
     loop {
         let mut tries = 0;
         match op() {
             Ok(result) => return Ok(result),
-            Err(err)
-                if matches!(
-                    err.kind(),
-                    std::io::ErrorKind::ExecutableFileBusy | std::io::ErrorKind::ResourceBusy
-                ) =>
-            {
+            Err(err) if is_busy(&err) => {
                 tries += 1;
                 if tries >= times {
                     bail!("File {what} is still busy after {times} retries!");
