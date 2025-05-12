@@ -143,6 +143,28 @@ pub struct InternalInstallUpdateCommand {
     install_path: PathBuf,
 }
 
+fn retry_on_busy<R>(op: impl Fn() -> std::io::Result<R>, what: impl std::fmt::Display, times: usize) -> Result<R> {
+    loop {
+        let mut tries = 0;
+        match op() {
+            Ok(result) => return Ok(result),
+            Err(err)
+                if matches!(
+                    err.kind(),
+                    std::io::ErrorKind::ExecutableFileBusy | std::io::ErrorKind::ResourceBusy
+                ) =>
+            {
+                tries += 1;
+                if tries >= times {
+                    bail!("File {what} is still busy after {times} retries!");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(err) => return Err(err.into()),
+        };
+    }
+}
+
 pub fn install_update(update: InternalInstallUpdateCommand) -> Result<Infallible> {
     struct RemoveGuard<'a>(&'a Path);
     impl Drop for RemoveGuard<'_> {
@@ -172,23 +194,11 @@ pub fn install_update(update: InternalInstallUpdateCommand) -> Result<Infallible
     let tmp_archive_root = update.tmp_path.join("ftlman");
 
     for file in copied_files {
-        let mut tries = 0;
-        match std::fs::copy(tmp_archive_root.join(file), update.install_path.join(file)) {
-            Ok(_) => (),
-            Err(err)
-                if matches!(
-                    err.kind(),
-                    std::io::ErrorKind::ExecutableFileBusy | std::io::ErrorKind::ResourceBusy
-                ) =>
-            {
-                tries += 1;
-                if tries >= 5 {
-                    bail!("File {file} is still busy after five retries!");
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            Err(err) => return Err(err.into()),
-        };
+        retry_on_busy(
+            || std::fs::copy(tmp_archive_root.join(file), update.install_path.join(file)),
+            file,
+            5,
+        )?;
     }
 
     std::mem::forget(_guard);
@@ -205,6 +215,8 @@ pub fn check_run_post_update() {
         let path = PathBuf::from(s);
         assert!(path.starts_with(std::env::temp_dir()));
         debug!("Removing update installer temporary directory {}", path.display());
-        _ = std::fs::remove_dir_all(path);
+        if let Err(error) = retry_on_busy(|| std::fs::remove_dir_all(&path), path.display(), 5) {
+            error!("Failed to remove installer temporary directory: {error}");
+        }
     }
 }
