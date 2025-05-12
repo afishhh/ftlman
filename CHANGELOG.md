@@ -1,17 +1,19 @@
 ## [Unreleased]
 
+## [v0.6.3]
+
 ### Added
 
-- Find tag panics can now specify a custom message by using `panic="message here"`. For obvious reasons the message cannot be either "true" or "false".
-- Added an automatic update installer, you will now have the option of having updates installed for you automatically.
+- Find tag panics can now specify a custom message by using `panic="message here"`. Note that the values "true" and "false" are still treated like they were previously.
+- Added an automatic update installer, you will now have the option of having ftlman updates installed for you automatically.
 
 ### Changed
 
-- Find tag panics now emit a friendly diagnostic instead of displaying the `Debug` representation of the `Find` structure.
+- Find tag panics now emit a friendly diagnostic instead of displaying the `Debug` representation of the internal `Find` structure.
 
 ### Fixed
 
-- Fixed some antivirus false positives on `ftlman_gui.exe`.
+- Hopefully fixed some antivirus false positives on `ftlman_gui.exe`.
 - Context is now attached more consistently to errors that occur when reading files from a mod.
 
 ## [v0.6.2]
@@ -148,7 +150,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.2...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.3...HEAD
+[v0.6.3]: https://github.com/afishhh/ftlman/compare/v0.6.2...v0.6.3
 [v0.6.2]: https://github.com/afishhh/ftlman/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/afishhh/ftlman/compare/v0.6.0...v0.6.1
 [v0.6.0]: https://github.com/afishhh/ftlman/compare/v0.5.4...v0.6.0
