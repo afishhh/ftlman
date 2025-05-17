@@ -6,6 +6,7 @@
 
 - Find tag panics can now specify a custom message by using `panic="message here"`. Note that the values "true" and "false" are still treated like they were previously.
 - Added an automatic update installer, you will now have the option of having ftlman updates installed for you automatically.
+- The parent of ftlman's executable directory is now also considered a candidate for the FTL installation directory during autodetection.
 
 ### Changed
 
