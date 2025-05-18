@@ -105,16 +105,6 @@ fn cleanup(element: &mut Element) {
         element.prefix = None
     }
 
-    if element.prefix.as_deref().is_some_and(|x| MOD_NAMESPACES.contains(&x)) {
-        element.prefix = None
-    }
-
-    if let Some(ns) = element.prefix.as_deref() {
-        if MOD_NAMESPACES.contains(&ns) {
-            element.prefix = None;
-        }
-    }
-
     for child in std::mem::take(&mut element.children) {
         match child {
             XMLNode::Element(e) if e.prefix.as_deref() == Some(REMOVE_MARKER) => {}
@@ -165,6 +155,9 @@ fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a 
                 }
             }
 
+            // TODO: I believe these pointers are actually invalidated
+            //       by the time we get here but I don't care enough to fix this
+            //       right now.
             if filter.operation.complement {
                 context
                     .children
@@ -172,13 +165,9 @@ fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a 
                     .filter_map(Node::as_mut_element)
                     .map(|c| c as *mut Element)
                     .filter(|c| !set.contains(c))
-                    // SAFETY: These were just created from a vector so they're all unique
-                    //         and no existing mutable references to them can exist.
                     .map(|c| unsafe { &mut *c })
                     .collect()
             } else {
-                // SAFETY: `set` is a set so obviously all the pointers are going to be unique.
-                //         There are no existing mutable references that can point to these elements.
                 set.into_iter().map(|x| unsafe { &mut *x }).collect()
             }
         }
@@ -227,7 +216,7 @@ fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<()
                 let mut new = element.clone();
                 new.prefix = None;
 
-                // FIXME: Linked list? Benchmarks needed.
+                // FIXME: asymtotically ugly
                 context.children.insert(0, XMLNode::Element(new));
             }
             Command::Append(element) => {
