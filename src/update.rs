@@ -202,7 +202,7 @@ pub fn install_update(update: InternalInstallUpdateCommand) -> Result<Infallible
     let _guard = RemoveGuard(&update.tmp_path);
 
     let copied_files: &[&str] = if env!("TARGET").contains("windows") {
-        &["ftlman.exe", "ftlman_gui.exe"]
+        &["ftlman.exe"]
     } else {
         &["ftlman"]
     };
@@ -215,6 +215,13 @@ pub fn install_update(update: InternalInstallUpdateCommand) -> Result<Infallible
             file,
             5,
         )?;
+    }
+
+    if update.old_version <= semver::Version::new(0, 6, 3) && env!("TARGET").contains("windows") {
+        let file = "ftlman_gui.exe";
+        if let Err(error) = retry_on_busy(|| std::fs::remove_file(update.install_path.join(file)), file, 5) {
+            error!("Failed to remove obsolete ftlman_gui.exe executable: {error}")
+        }
     }
 
     std::mem::forget(_guard);

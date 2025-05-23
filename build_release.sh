@@ -25,7 +25,6 @@ done
 cd release
 
 if [[  -z $wanted_target || "x86_64-pc-windows-gnu" == $wanted_target ]]; then
-  cross +nightly build -p windows_gui_wrapper --target-dir target-x86_64-pc-windows-gnu --target x86_64-pc-windows-gnu --release
   cross +nightly build --target-dir ../target-x86_64-pc-windows-gnu --features portable-release --target x86_64-pc-windows-gnu --release
   llvm-strip --strip-all ../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/*.exe
 
@@ -33,7 +32,6 @@ if [[  -z $wanted_target || "x86_64-pc-windows-gnu" == $wanted_target ]]; then
   cd ftlman
   mkdir mods
   ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
-  ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/windows_gui_wrapper.exe ftlman_gui.exe
   cd ..
   7z a ftlman-x86_64-pc-windows-gnu.zip ftlman
   rm -r ftlman

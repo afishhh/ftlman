@@ -102,4 +102,4 @@ strip = false
 debug = true
 
 [workspace]
-members = ["compare_with_slipstream/normalize_xml", "windows_gui_wrapper"]
+members = ["compare_with_slipstream/normalize_xml"]

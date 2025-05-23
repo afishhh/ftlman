@@ -1,8 +1,0 @@
-[package]
-name = "windows_gui_wrapper"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-anyhow = "1"
-windows = { version = "0.61", features = [ "Win32_UI_WindowsAndMessaging" ] }
