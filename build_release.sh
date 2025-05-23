@@ -8,32 +8,48 @@ UNIXLIKES=(
   aarch64-apple-darwin
 )
 
-for target in "${UNIXLIKES[@]}"; do
-  cross +nightly build --features portable-release --target "$target" --release
-  llvm-strip --strip-all "target/$target/release/ftlman"
-done
+wanted_target=${1:-}
 
-cross +nightly build -p windows_gui_wrapper --target-dir target-x86_64-pc-windows-gnu  --target x86_64-pc-windows-gnu --release
-cross +nightly build --target-dir target-x86_64-pc-windows-gnu --features portable-release --target x86_64-pc-windows-gnu --release
-llvm-strip --strip-all target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/*.exe
+for target in "${UNIXLIKES[@]}"; do
+  continue=0
+  if [[ -n $wanted_target && $target != $wanted_target ]]; then
+    continue=1
+  fi
+  if [[ $continue == 0 ]]; then
+    cross +nightly build --features portable-release --target "$target" --release
+    llvm-strip --strip-all "target/$target/release/ftlman"
+  fi
+done
 
 [[ -e release ]] || mkdir release
 cd release
 
-mkdir ftlman
-cd ftlman
-mkdir mods
-ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
-ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/windows_gui_wrapper.exe ftlman_gui.exe
-cd ..
-7z a ftlman-x86_64-pc-windows-gnu.zip ftlman
-rm -r ftlman
+if [[  -z $wanted_target || "x86_64-pc-windows-gnu" == $wanted_target ]]; then
+  cross +nightly build -p windows_gui_wrapper --target-dir target-x86_64-pc-windows-gnu --target x86_64-pc-windows-gnu --release
+  cross +nightly build --target-dir ../target-x86_64-pc-windows-gnu --features portable-release --target x86_64-pc-windows-gnu --release
+  llvm-strip --strip-all ../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/*.exe
+
+  mkdir ftlman
+  cd ftlman
+  mkdir mods
+  ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
+  ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/windows_gui_wrapper.exe ftlman_gui.exe
+  cd ..
+  7z a ftlman-x86_64-pc-windows-gnu.zip ftlman
+  rm -r ftlman
+fi
 
 for target in "${UNIXLIKES[@]}"; do
-  mkdir -p ftlman/mods
-  cd ftlman
-  ln -f ../../target/"$target"/release/ftlman ftlman
-  cd ..
-  tar cvaf "ftlman-$target.tar.gz" ftlman
-  rm -r ftlman
+  continue=0
+  if [[ -n $wanted_target && $target != $wanted_target ]]; then
+    continue=1
+  fi
+  if [[ $continue == 0 ]]; then
+    mkdir -p ftlman/mods
+    cd ftlman
+    ln -f ../../target/"$target"/release/ftlman ftlman
+    cd ..
+    tar cvaf "ftlman-$target.tar.gz" ftlman
+    rm -r ftlman
+  fi
 done
