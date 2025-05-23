@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Changed
+
+- Improved error message on invalid mod zip archive.
+
 ## [v0.6.3]
 
 ### Added
