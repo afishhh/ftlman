@@ -1829,8 +1829,8 @@ impl Mod {
         self.metadata().map(|x| x.map(|x| x.title.as_str()))
     }
 
-    fn title_or_filename(&self) -> Result<&str> {
-        Ok(self.title()?.unwrap_or_else(|| self.filename()))
+    fn title_or_filename(&self) -> &str {
+        self.title().ok().flatten().unwrap_or_else(|| self.filename())
     }
 
     fn new(source: ModSource) -> Mod {

@@ -660,13 +660,13 @@ pub fn apply_ftl(
         pkg.paths().map(|path| (path.to_lowercase(), path.to_owned())).collect();
 
     for m in mods.into_iter().filter(|x| x.enabled) {
-        let mod_name = m.title_or_filename()?.to_string();
+        let mod_name = m.title_or_filename();
         info!("Applying mod {mod_name}");
 
         let mut handle = m
             .source
             .open()
-            .with_context(|| format!("Failed to open mod source for {}", m.filename()))?;
+            .with_context(|| format!("Failed to open mod {}", m.filename()))?;
         let mut skipped_top_level_dirs = HashSet::new();
         let paths = handle.paths()?;
         let path_count = paths.len();
@@ -701,7 +701,7 @@ pub fn apply_ftl(
             }
 
             on_progress(ApplyStage::Mod {
-                mod_name: mod_name.clone(),
+                mod_name: mod_name.to_owned(),
                 file_idx: j,
                 files_total: path_count,
             });
