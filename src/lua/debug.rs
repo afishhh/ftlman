@@ -256,6 +256,10 @@ impl Comparer {
     }
 
     // TODO: location tracking
+    // Lint silenced because of the above TODO, ideally we would structurally track
+    // mismatches and diff the values. This would be done by keeping extra state
+    // in `Comparer`.
+    #[expect(clippy::only_used_in_recursion)]
     pub fn compare(&mut self, a: LuaValue, b: LuaValue) -> LuaResult<Result<(), String>> {
         fn compare_simple<T: PartialEq>(a: T, b: T, err: &str) -> LuaResult<Result<(), String>> {
             if a == b {

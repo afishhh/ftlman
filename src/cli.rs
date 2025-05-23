@@ -218,7 +218,7 @@ pub fn main(command: Command) -> Result<()> {
             let mut diagnostics = Diagnostics::new();
 
             let result = crate::apply::apply_ftl(
-                &data_dir,
+                data_dir,
                 command
                     .mods
                     .into_iter()
@@ -386,7 +386,7 @@ pub fn main(command: Command) -> Result<()> {
                 eprintln!("{}", renderer.render(message))
             }
 
-            println!("{:#?}", script);
+            println!("{script:#?}");
 
             result.map_err(|err| match err {
                 crate::append::ParseError::Xml(error) => anyhow::Error::from(error),
@@ -463,7 +463,7 @@ pub fn main(command: Command) -> Result<()> {
             let crc = crc32_from_reader(&mut std::fs::File::open(&command.file).context("Failed to open input file")?)
                 .context("An error occurred while reading input file")?;
 
-            println!("{}", crc);
+            println!("{crc}");
 
             Ok(())
         }

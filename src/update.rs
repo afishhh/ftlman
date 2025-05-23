@@ -159,7 +159,7 @@ fn is_busy(err: &std::io::Error) -> bool {
         return true;
     }
 
-    return false;
+    false
 }
 
 fn retry_on_busy<R>(op: impl Fn() -> std::io::Result<R>, what: impl std::fmt::Display, times: usize) -> Result<R> {
@@ -218,7 +218,7 @@ pub fn install_update(update: InternalInstallUpdateCommand) -> Result<Infallible
     std::mem::forget(_guard);
 
     exec_or_spawn_and_exit(
-        &mut std::process::Command::new(update.install_path.join(copied_files[0]))
+        std::process::Command::new(update.install_path.join(copied_files[0]))
             .env(POST_UPDATE_RMDIR_ENV_VAR, update.tmp_path),
     )
     .context("Failed to run updated executable")

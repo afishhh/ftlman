@@ -140,8 +140,7 @@ fn check_node_insertion<'gc>(
 ) -> LuaResult<()> {
     if Gc::ptr_eq(parent, inserted) {
         return Err(LuaError::runtime(format!(
-            "Node passed as argument #{} to {function} is the parent",
-            arg_number
+            "Node passed as argument #{arg_number} to {function} is the parent"
         )));
     }
 
@@ -153,16 +152,14 @@ fn check_node_insertion<'gc>(
 
         if Gc::ptr_eq(parent, inserted) {
             return Err(LuaError::runtime(format!(
-                "Node passed as argument #{} to {function} is an ancestor of the parent",
-                arg_number
+                "Node passed as argument #{arg_number} to {function} is an ancestor of the parent"
             )));
         }
     }
 
     if inserted.borrow().parent().is_some() {
         return Err(LuaError::runtime(format!(
-            "Node passed as argument #{} to {function} already has a parent",
-            arg_number
+            "Node passed as argument #{arg_number} to {function} already has a parent"
         )));
     }
 

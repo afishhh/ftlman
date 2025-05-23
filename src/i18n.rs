@@ -188,7 +188,7 @@ pub fn resolve(id: &str, args: Option<&FluentArgs>) -> Cow<'static, str> {
     let mut errors = vec![];
     let result = bundle.format_pattern(message.value().unwrap(), args, &mut errors);
     for error in errors {
-        error!("{}", error)
+        error!("{error}")
     }
     result
 }

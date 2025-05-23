@@ -107,7 +107,7 @@ fn main() -> ExitCode {
                 write!(f, "{}", record.level())?;
 
                 if let Some(module) = module {
-                    write!(f, " {}", module)?;
+                    write!(f, " {module}")?;
                 }
 
                 write!(f, "\x1b[90m]\x1b[0m")?;
@@ -135,7 +135,7 @@ fn main() -> ExitCode {
         if let Err(error) = cli::main(command) {
             error!("{error}");
             for (i, error) in error.chain().enumerate().skip(1) {
-                error!("  #{}: {error}", i);
+                error!("  #{i}: {error}");
             }
             return ExitCode::FAILURE;
         }
@@ -458,7 +458,7 @@ impl ErrorPopup {
         }
 
         if let Some(backtrace) = self.backtrace.as_ref() {
-            error!("{}", backtrace);
+            error!("{backtrace}");
         }
     }
 }
@@ -1225,7 +1225,7 @@ impl App {
 
                 open &= egui::Window::new(title)
                     .resizable(true)
-                    .frame(egui::Frame::popup(&*ctx.style()))
+                    .frame(egui::Frame::popup(&ctx.style()))
                     .id(popup.id())
                     .open(&mut open)
                     .show(ctx, |ui| popup.show(ui))

@@ -200,7 +200,7 @@ impl Installer {
 
         let version = Version::from_executable_size(size);
         if let Some(version) = version {
-            info!("Detected FTL version {}", version);
+            info!("Detected FTL version {version}");
         } else {
             warn!("Failed to determine FTL version (size={size})");
         }

@@ -25,7 +25,7 @@ pub fn download_body_with_progress(
             out.resize(out.len() - BUFFER_SIZE, 0);
             break;
         } else {
-            out.extend(std::iter::repeat(0).take(nread));
+            out.extend(std::iter::repeat_n(0, nread));
             on_progress((out.len() - BUFFER_SIZE) as u64, content_length);
         }
     }

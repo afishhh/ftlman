@@ -661,7 +661,7 @@ pub fn apply_ftl(
 
     for m in mods.into_iter().filter(|x| x.enabled) {
         let mod_name = m.title_or_filename()?.to_string();
-        info!("Applying mod {}", mod_name);
+        info!("Applying mod {mod_name}");
 
         let mut handle = m
             .source

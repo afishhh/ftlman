@@ -113,7 +113,7 @@ fn parse_rec(
     macro_rules! unexpect {
         ($got: expr, $expected: expr) => {
             bail!(
-                concat!("Unexpected token: expected {} but got {}"),
+                "Unexpected token: expected {} but got {}",
                 $expected,
                 match $got {
                     Token::String(_) => Cow::Borrowed("a string"),
