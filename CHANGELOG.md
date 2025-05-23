@@ -7,6 +7,7 @@
 ### Changed
 
 - Improved error message on invalid mod zip archive.
+- Removed `ftlman_gui.exe` wrapper since it triggers AVs and causes unnecessary confusion.
 
 ### Fixed
 
