@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.6.4]
+
 ### Added
 
 - Dragging and dropping a mod file onto ftlman will now move/copy the file into your mod directory automatically.
@@ -165,7 +167,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.3...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.4...HEAD
+[v0.6.4]: https://github.com/afishhh/ftlman/compare/v0.6.3...v0.6.4
 [v0.6.3]: https://github.com/afishhh/ftlman/compare/v0.6.2...v0.6.3
 [v0.6.2]: https://github.com/afishhh/ftlman/compare/v0.6.1...v0.6.2
 [v0.6.1]: https://github.com/afishhh/ftlman/compare/v0.6.0...v0.6.1
