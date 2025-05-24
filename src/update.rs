@@ -146,7 +146,9 @@ pub struct InternalInstallUpdateCommand {
 fn is_busy(err: &std::io::Error) -> bool {
     if matches!(
         err.kind(),
-        std::io::ErrorKind::ExecutableFileBusy | std::io::ErrorKind::ResourceBusy
+        std::io::ErrorKind::ExecutableFileBusy
+            | std::io::ErrorKind::ResourceBusy
+            | std::io::ErrorKind::PermissionDenied
     ) {
         return true;
     }
