@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Dragging and dropping a mod file onto ftlman will now move/copy the file into your mod directory automatically.
+
 ### Changed
 
 - Improved error message on invalid mod zip archive.

@@ -4,6 +4,7 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     convert::Infallible,
+    ffi::OsStr,
     fmt::Debug,
     fs::File,
     io::{BufReader, Cursor, Read, Seek, Write},
@@ -16,7 +17,7 @@ use std::{
 use anyhow::{Context, Result};
 use clap::Parser;
 use eframe::{
-    egui::{self, RichText, Sense, Ui, Visuals},
+    egui::{self, DroppedFile, RichText, Sense, Ui, Visuals},
     epaint::{
         text::{LayoutJob, TextWrapping},
         FontId, Pos2, Rgba, Vec2,
@@ -156,7 +157,8 @@ fn main() -> ExitCode {
                 .with_inner_size(Vec2::new(620., 480.))
                 .with_min_inner_size(Vec2::new(620., 480.))
                 .with_transparent(true)
-                .with_resizable(true),
+                .with_resizable(true)
+                .with_drag_and_drop(true),
             persistence_path: Some(dirs::data_local_dir().unwrap().join(EFRAME_PERSISTENCE_LOCATION)),
 
             ..Default::default()
@@ -663,7 +665,7 @@ impl App {
         };
 
         let settings = app.settings.clone();
-        app.current_task = CurrentTask::Scan(Promise::spawn_thread("task", move || {
+        app.current_task = CurrentTask::Scan(Promise::spawn_thread("scan", move || {
             scan::scan(settings, shared, true)
         }));
 
@@ -775,7 +777,7 @@ impl App {
                             self.last_hovered_mod = None;
                             let settings = self.settings.clone();
                             let shared = self.shared.clone();
-                            self.current_task = CurrentTask::Scan(Promise::spawn_thread("task", move || {
+                            self.current_task = CurrentTask::Scan(Promise::spawn_thread("scan", move || {
                                 scan::scan(settings, shared, false)
                             }));
                         }
@@ -1279,7 +1281,7 @@ impl App {
                         let settings = self.settings.clone();
                         let shared = self.shared.clone();
                         self.current_task =
-                            CurrentTask::Scan(Promise::spawn_thread("task", || scan::scan(settings, shared, false)));
+                            CurrentTask::Scan(Promise::spawn_thread("scan", || scan::scan(settings, shared, false)));
                     }
 
                     ui.horizontal(|ui| {
@@ -1576,6 +1578,53 @@ impl App {
             });
         }
     }
+
+    fn handle_dropped_file(&mut self, file: &DroppedFile) -> std::io::Result<()> {
+        if let Some(path) = &file.path {
+            if !path
+                .extension()
+                .and_then(OsStr::to_str)
+                .is_some_and(|ext| ["zip", "ftl"].contains(&ext))
+            {
+                return Ok(());
+            }
+
+            let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+                error!("Dropped path {} has no filename or a non UTF-8 one", path.display());
+                return Ok(());
+            };
+
+            let mod_directory = self.settings.effective_mod_directory();
+            let mut target_path = mod_directory.join(name);
+            for i in 1.. {
+                if target_path.try_exists()? {
+                    if i >= 20 {
+                        error!("Tried renaming {name} 20 times but a conflict still exists?");
+                        return Ok(());
+                    }
+
+                    let mut name = name.to_owned();
+                    let idx = name.find('.').unwrap_or(name.len());
+                    let suffix = format!(" ({})", i);
+                    name.insert_str(idx, &suffix);
+
+                    target_path.set_file_name(name);
+                } else {
+                    break;
+                }
+            }
+
+            match std::fs::rename(path, &target_path) {
+                Ok(_) => Ok(()),
+                Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
+                    std::fs::copy(path, target_path).map(|_| ())
+                }
+                Err(err) => return Err(err),
+            }
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -1593,6 +1642,27 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.set_visuals(self.visuals.clone());
+
+        ctx.input(|input| {
+            if !input.raw.dropped_files.is_empty() {
+                for file in &input.raw.dropped_files {
+                    if let Err(error) = self.handle_dropped_file(&file) {
+                        error!("An error occurred while handling dropped file: {error}")
+                    }
+                }
+
+                if self.current_task.is_idle() {
+                    // TODO: This should be a function but can't cleanly be one because
+                    //       borrow rules
+                    self.last_hovered_mod = None;
+                    let settings = self.settings.clone();
+                    let shared = self.shared.clone();
+                    self.current_task = CurrentTask::Scan(Promise::spawn_thread("scan", move || {
+                        scan::scan(settings, shared, false)
+                    }));
+                }
+            }
+        });
 
         self.update_main_ui(ctx);
         self.update_dynamic_popups(ctx);
