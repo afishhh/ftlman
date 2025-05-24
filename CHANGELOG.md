@@ -11,6 +11,7 @@
 ### Fixed
 
 - Fixed a potential crash when changing mod list filter related settings (like "Treat zips as mods").
+- Scanning now adheres to the current in-memory mod order instead of unconditionally preferring the modorder.json file. (https://github.com/afishhh/ftlman/issues/3)
 
 ## [v0.6.3]
 
