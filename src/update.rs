@@ -148,6 +148,9 @@ fn is_busy(err: &std::io::Error) -> bool {
         err.kind(),
         std::io::ErrorKind::ExecutableFileBusy
             | std::io::ErrorKind::ResourceBusy
+            // On Windows a file in use by another process does not always cause
+            // ERROR_SHARING_VIOLATION, sometimes it instead causes
+            // a permission denied error instead. Why? Why not.
             | std::io::ErrorKind::PermissionDenied
     ) {
         return true;
