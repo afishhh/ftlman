@@ -1587,12 +1587,13 @@ impl App {
         }
     }
 
-    fn handle_dropped_file(&mut self, file: &DroppedFile) -> std::io::Result<()> {
+    fn handle_dropped_file(&mut self, mod_directory: &Path, file: &DroppedFile) -> std::io::Result<()> {
         if let Some(path) = &file.path {
             if !path
                 .extension()
                 .and_then(OsStr::to_str)
                 .is_some_and(|ext| ["zip", "ftl"].contains(&ext))
+                || path.starts_with(mod_directory)
             {
                 return Ok(());
             }
@@ -1602,7 +1603,6 @@ impl App {
                 return Ok(());
             };
 
-            let mod_directory = self.settings.effective_mod_directory();
             let mut target_path = mod_directory.join(name);
             for i in 1.. {
                 if target_path.try_exists()? {
@@ -1653,8 +1653,10 @@ impl eframe::App for App {
 
         ctx.input(|input| {
             if !input.raw.dropped_files.is_empty() {
+                let mod_directory = self.settings.effective_mod_directory();
+
                 for file in &input.raw.dropped_files {
-                    if let Err(error) = self.handle_dropped_file(&file) {
+                    if let Err(error) = self.handle_dropped_file(&mod_directory, &file) {
                         error!("An error occurred while handling dropped file: {error}")
                     }
                 }
