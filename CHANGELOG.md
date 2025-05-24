@@ -8,6 +8,10 @@
 
 - Improved error message on invalid mod zip archive.
 
+### Fixed
+
+- Fixed a potential crash when changing mod list filter related settings (like "Treat zips as mods").
+
 ## [v0.6.3]
 
 ### Added

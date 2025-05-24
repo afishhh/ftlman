@@ -1278,6 +1278,7 @@ impl App {
                         .changed();
 
                     if filters_changed {
+                        self.last_hovered_mod = None;
                         let settings = self.settings.clone();
                         let shared = self.shared.clone();
                         self.current_task =
