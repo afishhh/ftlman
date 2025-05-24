@@ -1253,6 +1253,7 @@ impl App {
                 .auto_sized()
                 .open(&mut self.settings_open)
                 .show(ctx, |ui| {
+                    let mut mod_dir_changed = false;
                     let mut mod_dir_buf: String = self.settings.mod_directory.to_str().unwrap().to_string();
                     ui.label(l!("settings-mod-dir"));
                     if PathEdit::new(&mut mod_dir_buf)
@@ -1264,25 +1265,31 @@ impl App {
                         .changed()
                     {
                         self.settings.mod_directory = PathBuf::from(&mod_dir_buf);
+                        mod_dir_changed = true;
                     }
 
-                    let mut filters_changed = false;
-                    filters_changed |= ui
+                    let mut rescan_mods = false;
+                    rescan_mods |= ui
                         .checkbox(&mut self.settings.dirs_are_mods, l!("settings-dirs-are-mods"))
                         .changed();
-                    filters_changed |= ui
+                    rescan_mods |= ui
                         .checkbox(&mut self.settings.zips_are_mods, l!("settings-zips-are-mods"))
                         .changed();
-                    filters_changed |= ui
+                    rescan_mods |= ui
                         .checkbox(&mut self.settings.ftl_is_zip, l!("settings-ftl-is-zip"))
                         .changed();
 
-                    if filters_changed {
+                    if mod_dir_changed && self.settings.effective_mod_directory().is_dir() {
+                        rescan_mods = true;
+                    }
+
+                    if rescan_mods {
                         self.last_hovered_mod = None;
                         let settings = self.settings.clone();
                         let shared = self.shared.clone();
-                        self.current_task =
-                            CurrentTask::Scan(Promise::spawn_thread("scan", || scan::scan(settings, shared, false)));
+                        self.current_task = CurrentTask::Scan(Promise::spawn_thread("scan", move || {
+                            scan::scan(settings, shared, mod_dir_changed)
+                        }));
                     }
 
                     ui.horizontal(|ui| {
