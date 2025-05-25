@@ -33,8 +33,9 @@ Pre-built binaries for Linux, MacOS and Windows are available in the [Releases](
 ##### Setup
 
 1. Extract the `ftlman` directory from the archive into your FTL directory (or wherever you want, it doesn't matter).
-2. (optional) Before you first run the executable you can move over everything inside your Slipstream `mods` directory into the `ftlman/mods` directory and your mod order will be automatically migrated.
-3. If you use Steam your FTL installation directory should be automatically detected, if not you need to click on "Settings" and then copy the path to your FTL installation directory into the text box labelled "FTL data directory".
+2. If your FTL installation is currently in a modded state, revert it to vanilla before patching with ftlman. If you used Slipstream before, this can be accomplished by opening Slipstream, unchecking all mods, and patching with Slipstream.
+3. (optional) Before you first run the executable you can move over everything inside your Slipstream `mods` directory into the `ftlman/mods` directory and your mod order will be automatically migrated.
+4. If you use Steam your FTL installation directory should be automatically detected, if not you need to click on "Settings" and then copy the path to your FTL installation directory into the text box labelled "FTL data directory".
 
 #### Compiling from source
 
