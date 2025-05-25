@@ -1576,6 +1576,7 @@ dependencies = [
  "flate2",
  "fluent",
  "gc-arena",
+ "hashbrown",
  "itoa",
  "jiff",
  "log",

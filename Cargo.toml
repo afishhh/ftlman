@@ -68,7 +68,9 @@ egui_extras = { version = "0.31", features = ["syntect"] }
 
 mlua = { version = "0.10", features = ["lua54", "macros", "vendored", "error-send", "serialize"] }
 gc-arena = "0.5.3"
+
 crossbeam-queue = "0.3.12"
+hashbrown = "0.15.3"
 
 # For decompressing updates, also used in silpkg and other dependencies
 flate2 = "1"

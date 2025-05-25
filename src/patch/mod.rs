@@ -10,8 +10,9 @@ use std::{
     },
 };
 
-use eframe::egui::{self, Pos2, Rect, StrokeKind, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use parking_lot::{RwLock, RwLockReadGuard};
+use paths::{PathIdx, PathInterner};
 use silpkg::sync::Pkg;
 
 use crate::{
@@ -20,17 +21,23 @@ use crate::{
     xmltree, OpenModHandle,
 };
 
+mod paths;
+
 #[derive(Debug, Clone)]
 enum Value {
-    SimpleXml {
-        content: Box<[xmltree::Node]>,
-        had_ftl_root: bool,
-    },
+    SimpleXml(SimpleXmlDocument),
     AppendScript(Arc<append::Script>),
     Text(Box<str>),
     Bytes(Box<[u8]>),
-    // Emitted if a file doesn't exist
-    Empty,
+    // Emitted if a file doesn't exist.
+    // Will propagate to all nodes whose primary dependency is this node.
+    Dead,
+}
+
+#[derive(Debug, Clone)]
+pub struct SimpleXmlDocument {
+    content: Box<[xmltree::Node]>,
+    had_ftl_root: bool,
 }
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
@@ -57,27 +64,22 @@ impl ModIndex {
 struct NodeIndex(u32);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Location {
+enum PathScope {
     Dat(Generation),
     Mod(ModIndex),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum ReadSource {
-    Dat,
-    Mod(ModIndex),
-}
-
-#[derive(Debug)]
-struct ReadJob {
-    source: ReadSource,
-    path: String,
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ReadJob {
+    Dat(PathIdx),
+    Mod(ModIndex, Box<str>),
 }
 
 #[derive(Debug)]
 enum Task {
     AppendXML,
     ParseXML { wrap_in_root: bool },
+    Decode,
     ParseAppendScript,
     StringifyXML,
 }
@@ -88,7 +90,7 @@ enum NodeAction {
     Read(ReadJob),
     Execute(Task),
     // Commit Value to dat generation
-    Commit(String, Generation),
+    Commit(PathIdx, Generation),
 }
 
 #[derive(Debug)]
@@ -195,14 +197,16 @@ impl Node {
 
 #[derive(Debug)]
 pub struct PatchGraph {
+    paths: PathInterner,
     nodes: Vec<Node>,
-    nodemap: BTreeMap<(String, Location), (NodeIndex, ValueKind)>,
+    nodemap: BTreeMap<(PathIdx, PathScope), (NodeIndex, ValueKind)>,
     transcoders: HashMap<(NodeIndex, ValueKind), NodeIndex>,
 }
 
 impl PatchGraph {
     pub fn new() -> Self {
         Self {
+            paths: PathInterner::new(),
             nodes: Vec::new(),
             nodemap: BTreeMap::new(),
             transcoders: HashMap::new(),
@@ -222,39 +226,31 @@ impl PatchGraph {
         Self::parts_emit_node(&mut self.nodes, node)
     }
 
-    fn get_or_create_dat_input(&mut self, path: &str, generation: Generation) -> (NodeIndex, ValueKind) {
+    fn get_or_create_dat_input(&mut self, path: PathIdx, generation: Generation) -> (NodeIndex, ValueKind) {
         let range = self
             .nodemap
-            // FIXME: :sob: to_owned required...
-            .range((path.to_owned(), Location::Dat(Generation(0)))..=(path.to_owned(), Location::Dat(generation)));
-        if let Some(((_, Location::Dat(gen)), &(node, kind))) = range.last() {
+            .range((path, PathScope::Dat(Generation(0)))..=(path.to_owned(), PathScope::Dat(generation)));
+        if let Some(((_, PathScope::Dat(gen)), &(node, kind))) = range.last() {
             if *gen == generation {
                 panic!("Cyclic reference!")
             }
 
             (node, kind)
         } else {
-            let idx = self.emit_node(Node::new(
-                Vec::new(),
-                NodeAction::Read(ReadJob {
-                    source: ReadSource::Dat,
-                    path: path.to_owned(),
-                }),
-            ));
+            let idx = self.emit_node(Node::new(Vec::new(), NodeAction::Read(ReadJob::Dat(path))));
 
-            self.nodemap
-                .insert((path.to_owned(), Location::Dat(Generation(0))), (idx, ValueKind::Bytes));
+            self.nodemap.insert(
+                (path.to_owned(), PathScope::Dat(Generation(0))),
+                (idx, ValueKind::Bytes),
+            );
             (idx, ValueKind::Bytes)
         }
     }
 
-    fn create_mod_input(&mut self, path: &str, index: ModIndex) -> NodeIndex {
+    fn create_mod_input(&mut self, path: impl Into<Box<str>>, index: ModIndex) -> NodeIndex {
         self.emit_node(Node::new(
             std::iter::empty(),
-            NodeAction::Read(ReadJob {
-                source: ReadSource::Mod(index),
-                path: path.to_owned(),
-            }),
+            NodeAction::Read(ReadJob::Mod(index, path.into())),
         ))
     }
 
@@ -277,12 +273,32 @@ impl PatchGraph {
         }
     }
 
+    fn transcode_to_text_if_needed(&mut self, node: NodeIndex, got: ValueKind) -> NodeIndex {
+        if got == ValueKind::Text {
+            node
+        } else {
+            *self.transcoders.entry((node, ValueKind::Text)).or_insert_with(|| {
+                Self::parts_emit_node(
+                    &mut self.nodes,
+                    Node::new(
+                        std::iter::once(node),
+                        match got {
+                            ValueKind::Bytes => NodeAction::Execute(Task::Decode),
+                            kind => unimplemented!("cannot convert {kind:?} to text"),
+                        },
+                    ),
+                )
+            })
+        }
+    }
+
     pub fn add_mod(&mut self, index: ModIndex, paths: impl Iterator<Item = impl AsRef<str>>) {
         for path in paths {
             if let Some((stem, kind)) = AppendType::from_filename(path.as_ref()) {
                 let lower_path = format!("{stem}.xml");
+                let lower_path_idx = self.paths.insert(lower_path);
 
-                let lower = self.get_or_create_dat_input(&lower_path, index.generation());
+                let lower = self.get_or_create_dat_input(lower_path_idx, index.generation());
                 let lower_simple_xml = self.transcode_to_xml_if_needed(lower.0, lower.1, ValueKind::SimpleXml);
 
                 let node = Node::new(
@@ -309,7 +325,7 @@ impl PatchGraph {
 
                 let idx = self.emit_node(node);
                 self.nodemap.insert(
-                    (lower_path, Location::Dat(index.generation())),
+                    (lower_path_idx, PathScope::Dat(index.generation())),
                     (idx, ValueKind::SimpleXml),
                 );
             }
@@ -341,21 +357,21 @@ impl PatchGraph {
     }
 
     fn add_commit_nodes(&mut self) {
-        let mut last_path = String::new();
-        for ((path, location), &(node, kind)) in self.nodemap.iter().rev() {
-            if *path == last_path {
+        let mut last_path = PathIdx::INVALID;
+        for (&(path, location), &(node, kind)) in self.nodemap.iter().rev() {
+            if path == last_path {
                 continue;
             } else {
-                last_path = path.clone();
+                last_path = path;
             }
 
-            if let &Location::Dat(generation) = location {
+            if let PathScope::Dat(generation) = location {
                 let input =
                     Self::transcode_to_bytes_or_text_if_needed(&mut self.transcoders, &mut self.nodes, node, kind);
 
                 Self::parts_emit_node(
                     &mut self.nodes,
-                    Node::new(std::iter::once(input), NodeAction::Commit(path.clone(), generation)),
+                    Node::new(std::iter::once(input), NodeAction::Commit(path, generation)),
                 );
             }
         }
@@ -368,6 +384,7 @@ struct LayoutNode {
     index: NodeIndex,
 }
 
+// Graph drawing code
 impl PatchGraph {
     const DRAW_NODE_SIZE: Vec2 = Vec2::new(200.0, 140.0);
 
@@ -398,25 +415,20 @@ impl PatchGraph {
 
                 ui.vertical(|ui| {
                     let kind_string = match &node.action {
-                        NodeAction::Read(ReadJob {
-                            source: ReadSource::Dat,
-                            ..
-                        }) => "PKG_READ",
-                        NodeAction::Read(ReadJob {
-                            source: ReadSource::Mod(_),
-                            ..
-                        }) => "MOD_READ",
+                        NodeAction::Read(ReadJob::Dat(..)) => "PKG_READ",
+                        NodeAction::Read(ReadJob::Mod(..)) => "MOD_READ",
                         NodeAction::Execute(Task::ParseXML { .. }) => "EXEC_PARSE_XML",
                         NodeAction::Execute(Task::ParseAppendScript) => "EXEC_PARSE_APPEND",
                         NodeAction::Execute(Task::AppendXML) => "EXEC_RUN_APPEND",
-                        NodeAction::Execute(Task::StringifyXML) => "XML2STRING",
+                        NodeAction::Execute(Task::StringifyXML) => "XML_TO_TEXT",
+                        NodeAction::Execute(Task::Decode) => "EXEC_DECODE_TEXT",
                         NodeAction::Commit(..) => "COMMIT",
                     };
 
                     ui.vertical_centered_justified(|ui| {
                         ui.monospace(egui::RichText::new(kind_string).strong().size(16.));
                         ui.monospace(
-                            egui::RichText::new(format!("{:?}", status))
+                            egui::RichText::new(format!("{status:?}"))
                                 .strong()
                                 .color(accent)
                                 .size(16.),
@@ -427,11 +439,9 @@ impl PatchGraph {
                         };
 
                         match &node.action {
-                            NodeAction::Read(ReadJob { source, path }) => {
-                                truncated_monospace(ui, &format!("{source:?}"));
-                                truncated_monospace(ui, path)
-                            }
-                            NodeAction::Commit(path, _) => truncated_monospace(ui, path),
+                            &NodeAction::Read(ReadJob::Dat(path)) => truncated_monospace(ui, &self.paths[path]),
+                            NodeAction::Read(ReadJob::Mod(_, path)) => truncated_monospace(ui, path),
+                            &NodeAction::Commit(path, _) => truncated_monospace(ui, &self.paths[path]),
                             _ => (),
                         };
                     });
@@ -546,8 +556,154 @@ impl PatchGraph {
     }
 }
 
+fn run_task(graph: &PatchGraph, task: &Task, node: &Node, io_buf: &mut Vec<u8>) -> Value {
+    match task {
+        Task::AppendXML => {
+            let (i0, i1) = (node.inputs[0].0 as usize, node.inputs[1].0 as usize);
+            let (n0, n1) = (&graph.nodes[i0], &graph.nodes[i1]);
+
+            let value = {
+                let (
+                    Some(Value::SimpleXml(SimpleXmlDocument {
+                        content: mut lower,
+                        had_ftl_root,
+                    })),
+                    Some(Value::AppendScript(script)),
+                ) = (n0.take_or_clone_output(), &*n1.get_output_ref())
+                else {
+                    unreachable!("AppendXML invoked while with invalid input nodes")
+                };
+
+                crate::append::patch(lower[0].as_mut_element().unwrap(), script).unwrap();
+
+                Value::SimpleXml(SimpleXmlDocument {
+                    content: lower,
+                    had_ftl_root,
+                })
+            };
+
+            n0.collect_output();
+            n1.collect_output();
+
+            value
+        }
+
+        &Task::ParseXML { wrap_in_root } => {
+            let i0 = node.inputs[0].0 as usize;
+            let n0 = &graph.nodes[i0];
+
+            let value = {
+                let Some(Value::Bytes(ref input)) = &*n0.get_output_ref() else {
+                    unreachable!("ParseXML invoked while with invalid input node")
+                };
+
+                let text = std::str::from_utf8(input).unwrap();
+                let unrooted = unwrap_xml_text(text);
+                let content = xmltree::builder::parse_all_with_options(
+                    &mut xmltree::SimpleTreeBuilder,
+                    &unrooted,
+                    speedy_xml::reader::Options::default().allow_top_level_text(true),
+                )
+                .unwrap();
+
+                let had_ftl_root = text.contains("<FTL>");
+                Value::SimpleXml(SimpleXmlDocument {
+                    content: if wrap_in_root {
+                        let mut root = xmltree::Element::new(None, "FTL".into());
+                        root.children = content;
+                        Box::new([xmltree::Node::Element(root)])
+                    } else {
+                        content.into_boxed_slice()
+                    },
+                    had_ftl_root,
+                })
+            };
+
+            n0.collect_output();
+
+            value
+        }
+
+        Task::StringifyXML => {
+            let i0 = node.inputs[0].0 as usize;
+            let n0 = &graph.nodes[i0];
+
+            {
+                let Some(Value::SimpleXml(SimpleXmlDocument {
+                    ref content,
+                    had_ftl_root,
+                })) = *n0.get_output_ref()
+                else {
+                    unreachable!("StringifyXML invoked while with invalid input node")
+                };
+
+                io_buf.clear();
+                let mut writer = speedy_xml::Writer::new(std::io::Cursor::new(&mut *io_buf));
+
+                if had_ftl_root {
+                    writer.write_start(None, "FTL").unwrap();
+                }
+
+                for node in content {
+                    xmltree::emitter::write_node(&mut writer, &xmltree::SimpleTreeEmitter, node).unwrap();
+                }
+
+                if had_ftl_root {
+                    writer.write_end(None, "FTL").unwrap();
+                }
+            }
+
+            n0.collect_output();
+
+            Value::Bytes(io_buf.as_slice().into())
+        }
+
+        Task::Decode => {
+            let i0 = node.inputs[0].0 as usize;
+            let n0 = &graph.nodes[i0];
+
+            {
+                let Some(Value::Bytes(ref bytes)) = *n0.peek_output_ref() else {
+                    unreachable!("StringifyXML invoked while with invalid input node")
+                };
+            }
+
+            todo!();
+
+            n0.collect_output();
+
+            Value::Bytes(io_buf.as_slice().into())
+        }
+
+        Task::ParseAppendScript => {
+            let i0 = node.inputs[0].0 as usize;
+            let n0 = &graph.nodes[i0];
+
+            let script = {
+                let Some(Value::Bytes(ref data)) = *n0.get_output_ref() else {
+                    unreachable!("StringifyXML invoked while with invalid input node")
+                };
+
+                let mut script = append::Script::new();
+                append::parse(&mut script, std::str::from_utf8(data).unwrap(), None).unwrap();
+                script
+            };
+
+            n0.collect_output();
+
+            Value::AppendScript(script.into())
+        }
+    }
+}
+
 pub fn patch(dat: &mut Pkg<File>, mut handles: Vec<OpenModHandle>, share_graph: impl FnOnce(Arc<PatchGraph>)) {
     let mut graph = PatchGraph::new();
+
+    // Intern all dat paths first to make sure canonical paths use names from the dat
+    for path in dat.paths() {
+        graph.paths.insert(path);
+    }
+
     for (i, h) in handles.iter_mut().enumerate() {
         graph.add_mod(
             ModIndex(NonZero::<u32>::new((i + 1) as u32).unwrap()),
@@ -580,165 +736,43 @@ pub fn patch(dat: &mut Pkg<File>, mut handles: Vec<OpenModHandle>, share_graph: 
         let mut warn = false;
 
         let value = match &node.action {
-            NodeAction::Read(read) => match read.source {
-                ReadSource::Dat => {
+            NodeAction::Read(read) => match read {
+                &ReadJob::Dat(path) => {
                     io_buf.clear();
-                    match dat.open(&read.path) {
+                    match dat.open(&graph.paths[path]) {
                         Ok(mut reader) => {
                             reader.read_to_end(&mut io_buf).unwrap();
                             Value::Bytes(io_buf.as_slice().into())
                         }
-                        Err(silpkg::errors::OpenError::NotFound) => Value::Empty,
+                        Err(silpkg::errors::OpenError::NotFound) => Value::Dead,
                         Err(error) => {
                             _ = error;
                             todo!()
                         }
                     }
                 }
-                ReadSource::Mod(mod_index) => {
-                    let mut reader = handles[(mod_index.0.get() - 1) as usize].open(&read.path).unwrap();
+                ReadJob::Mod(mod_index, path) => {
+                    let mut reader = handles[(mod_index.0.get() - 1) as usize].open(path).unwrap();
                     io_buf.clear();
                     reader.read_to_end(&mut io_buf).unwrap();
                     Value::Bytes(io_buf.as_slice().into())
                 }
             },
-            NodeAction::Execute(task) => match task {
-                Task::AppendXML => 't: {
-                    let (i0, i1) = (node.inputs[0].0 as usize, node.inputs[1].0 as usize);
-                    let (n0, n1) = (&graph.nodes[i0], &graph.nodes[i1]);
-
-                    let value = {
-                        if matches!(&*n0.peek_output_ref(), Some(Value::Empty)) {
-                            n0.collect_output();
-                            n1.collect_output();
-                            warn = true;
-                            break 't Value::Empty;
-                        }
-
-                        let (
-                            Some(Value::SimpleXml {
-                                content: mut lower,
-                                had_ftl_root,
-                            }),
-                            Some(Value::AppendScript(script)),
-                        ) = (n0.take_or_clone_output(), &*n1.get_output_ref())
-                        else {
-                            unreachable!("AppendXML invoked while with invalid input nodes")
-                        };
-
-                        crate::append::patch(lower[0].as_mut_element().unwrap(), script).unwrap();
-
-                        Value::SimpleXml {
-                            content: lower,
-                            had_ftl_root,
-                        }
-                    };
-
-                    n0.collect_output();
-                    n1.collect_output();
-
-                    value
-                }
-
-                &Task::ParseXML { wrap_in_root } => 't: {
-                    let i0 = node.inputs[0].0 as usize;
-                    let n0 = &graph.nodes[i0];
-
-                    let value = {
-                        let Some(Value::Bytes(ref input)) = &*n0.get_output_ref() else {
-                            if matches!(&*n0.peek_output_ref(), Some(Value::Empty)) {
-                                n0.collect_output();
-                                warn = true;
-                                break 't Value::Empty;
-                            }
-                            unreachable!("ParseXML invoked while with invalid input node")
-                        };
-
-                        let text = std::str::from_utf8(input).unwrap();
-                        let unrooted = unwrap_xml_text(text);
-                        let content = xmltree::builder::parse_all_with_options(
-                            &mut xmltree::SimpleTreeBuilder,
-                            &unrooted,
-                            speedy_xml::reader::Options::default().allow_top_level_text(true),
-                        )
-                        .unwrap();
-
-                        let had_ftl_root = text.contains("<FTL>");
-                        Value::SimpleXml {
-                            content: if wrap_in_root {
-                                let mut root = xmltree::Element::new(None, "FTL".into());
-                                root.children = content;
-                                Box::new([xmltree::Node::Element(root)])
-                            } else {
-                                content.into_boxed_slice()
-                            },
-                            had_ftl_root,
-                        }
-                    };
-
-                    n0.collect_output();
-
-                    value
-                }
-
-                Task::StringifyXML => 't: {
-                    let i0 = node.inputs[0].0 as usize;
-                    let n0 = &graph.nodes[i0];
-
-                    {
-                        let Some(Value::SimpleXml {
-                            ref content,
-                            had_ftl_root,
-                        }) = *n0.get_output_ref()
-                        else {
-                            if matches!(&*n0.peek_output_ref(), Some(Value::Empty)) {
-                                n0.collect_output();
-                                warn = true;
-                                break 't Value::Empty;
-                            }
-
-                            unreachable!("StringifyXML invoked while with invalid input node")
-                        };
-
-                        io_buf.clear();
-                        let mut writer = speedy_xml::Writer::new(std::io::Cursor::new(&mut io_buf));
-
-                        if had_ftl_root {
-                            writer.write_start(None, "FTL").unwrap();
-                        }
-
-                        for node in content {
-                            xmltree::emitter::write_node(&mut writer, &xmltree::SimpleTreeEmitter, node).unwrap();
-                        }
-
-                        if had_ftl_root {
-                            writer.write_end(None, "FTL").unwrap();
-                        }
+            NodeAction::Execute(task) => {
+                let n0 = &graph.nodes[node.inputs[0].0 as usize];
+                if matches!(&*n0.peek_output_ref(), Some(Value::Dead)) {
+                    for &input in &node.inputs {
+                        let n = &graph.nodes[input.0 as usize];
+                        _ = n.get_output_ref();
+                        n.collect_output();
                     }
 
-                    n0.collect_output();
-
-                    Value::Bytes(io_buf.as_slice().into())
+                    warn = true;
+                    Value::Dead
+                } else {
+                    run_task(&graph, task, node, &mut io_buf)
                 }
-                Task::ParseAppendScript => {
-                    let i0 = node.inputs[0].0 as usize;
-                    let n0 = &graph.nodes[i0];
-
-                    let script = {
-                        let Some(Value::Bytes(ref data)) = *n0.get_output_ref() else {
-                            unreachable!("StringifyXML invoked while with invalid input node")
-                        };
-
-                        let mut script = append::Script::new();
-                        append::parse(&mut script, std::str::from_utf8(data).unwrap(), None).unwrap();
-                        script
-                    };
-
-                    n0.collect_output();
-
-                    Value::AppendScript(script.into())
-                }
-            },
+            }
             NodeAction::Commit(_, _) => graph.nodes[node.inputs[0].0 as usize].take_or_clone_output().unwrap(),
         };
 

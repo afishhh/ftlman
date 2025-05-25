@@ -10,6 +10,7 @@ pub use parse::*;
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
 
+#[derive(Debug)]
 pub enum PatchError<'s> {
     Panic(&'s FindPanic),
     AlreadyReported,
