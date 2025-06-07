@@ -4,6 +4,14 @@
 
 - `allow_top_level_text` option to Lua `mod.xml.parse` (defaults to `false` as that is the current behaviour).
 
+### Changed
+
+- The executable directory itself is now also considered an FTL directory candidate, although such installation layout is discouraged.
+
+### Fixed
+
+- Humble/GOG 1.6.12 Linux installations are now correctly recognized as not needing a downgrade.
+
 ## [v0.6.4]
 
 ### Added
