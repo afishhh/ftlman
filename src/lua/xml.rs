@@ -771,8 +771,30 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
 
     table.raw_set(
         "parse",
-        lua.create_function(|lua, xml: LuaString| {
+        lua.create_function(|lua, (xml, options): (LuaString, Option<LuaTable>)| {
             lua.gc().mutate(|mc, roots| {
+                let mut allow_top_level_text = false;
+
+                if let Some(options) = options {
+                    let mut it = options.pairs::<LuaString, LuaValue>();
+                    while let Some((name, value)) = it.next().transpose()? {
+                        match &name.as_bytes()[..] {
+                            b"allow_top_level_text" => {
+                                allow_top_level_text = value.as_boolean().ok_or_else(|| {
+                                    LuaError::runtime("`allow_top_level_text` option value must be a boolean")
+                                })?;
+                            }
+                            name => {
+                                return Err(LuaError::runtime(format!(
+                                    "`{}` is not a valid parse option name",
+                                    // TODO: ByteStr instead once stable
+                                    String::from_utf8_lossy(name)
+                                )));
+                            }
+                        }
+                    }
+                }
+
                 let xml_bytes = xml.as_bytes();
                 let xml_text = std::str::from_utf8(&xml_bytes)
                     .into_lua_err()
@@ -780,7 +802,12 @@ pub fn create_xml_lib(lua: &Lua) -> LuaResult<LuaTable> {
                 let unwrapped = crate::apply::unwrap_xml_text(xml_text);
 
                 let mut result = LuaMultiValue::new();
-                let nodes = dom::Element::parse_all(mc, &unwrapped).into_lua_err()?;
+                let nodes = dom::Element::parse_all_with_options(
+                    mc,
+                    &unwrapped,
+                    speedy_xml::reader::Options::default().allow_top_level_text(allow_top_level_text),
+                )
+                .into_lua_err()?;
                 for node in nodes {
                     if let Some(value) = gc_into_lua(mc, roots, lua, node).transpose()? {
                         result.push_back(value);

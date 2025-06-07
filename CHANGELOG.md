@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- `allow_top_level_text` option to Lua `mod.xml.parse` (defaults to `false` as that is the current behaviour).
+
 ## [v0.6.4]
 
 ### Added

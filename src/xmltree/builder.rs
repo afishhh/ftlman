@@ -93,10 +93,6 @@ fn build_into<B: TreeBuilder>(reader: &mut Reader, builder: &mut B, out: &mut Ve
     }
 }
 
-pub fn parse_all<B: TreeBuilder>(builder: &mut B, text: &str) -> Result<Vec<B::Node>, ParseError> {
-    parse_all_with_options(builder, text, reader::Options::default())
-}
-
 pub fn parse_all_with_options<B: TreeBuilder>(
     builder: &mut B,
     text: &str,

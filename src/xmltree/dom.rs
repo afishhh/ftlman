@@ -549,8 +549,12 @@ impl<'gc> Element<'gc> {
         builder::parse(&mut DomTreeBuilder(mc), text)
     }
 
-    pub fn parse_all(mc: &Mutation<'gc>, text: &str) -> Result<Vec<GcNode<'gc>>, speedy_xml::reader::Error> {
-        builder::parse_all(&mut DomTreeBuilder(mc), text)
+    pub fn parse_all_with_options(
+        mc: &Mutation<'gc>,
+        text: &str,
+        options: speedy_xml::reader::Options,
+    ) -> Result<Vec<GcNode<'gc>>, speedy_xml::reader::Error> {
+        builder::parse_all_with_options(&mut DomTreeBuilder(mc), text, options)
     }
 }
 
