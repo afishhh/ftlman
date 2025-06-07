@@ -604,6 +604,7 @@ impl App {
         if settings.ftl_directory.is_none() {
             let mut candidates = vec![];
 
+            candidates.push(EXE_DIRECTORY.clone());
             if let Some(parent) = EXE_DIRECTORY.parent() {
                 candidates.push(parent.to_path_buf());
             }
