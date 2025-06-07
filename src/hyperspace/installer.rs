@@ -207,7 +207,7 @@ impl Installer {
 
         let (platform, patch) = match version {
             Some(Version::Downgraded1_6_9Win) => (Platform::Windows, None),
-            Some(Version::Steam1_6_13Linux) => (Platform::Linux, None),
+            Some(Version::Steam1_6_13Linux | Version::Humble1_6_12Linux) => (Platform::Linux, None),
             Some(Version::Gog1_6_9) => (Platform::Windows, None),
             Some(version) => {
                 if let Some(patch) = find_patch(version) {
