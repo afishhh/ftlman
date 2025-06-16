@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.6.5]
+
 ### Added
 
 - `allow_top_level_text` option to Lua `mod.xml.parse` (defaults to `false` as that is the current behaviour).
@@ -179,7 +181,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.4...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.5...HEAD
+[v0.6.5]: https://github.com/afishhh/ftlman/compare/v0.6.4...v0.6.5
 [v0.6.4]: https://github.com/afishhh/ftlman/compare/v0.6.3...v0.6.4
 [v0.6.3]: https://github.com/afishhh/ftlman/compare/v0.6.2...v0.6.3
 [v0.6.2]: https://github.com/afishhh/ftlman/compare/v0.6.1...v0.6.2
