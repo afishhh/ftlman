@@ -53,7 +53,7 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                     None => {
                         let end_span = end.position_in(&reader);
                         builder.message(
-                            Level::ERROR.title("unmatched end tag"),
+                            Level::WARNING.title("unmatched end tag"),
                             [AnnotationKind::Primary
                                 .span(end_span)
                                 .label("end tag doesn't have a corresponding opening tag")],

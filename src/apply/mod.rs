@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::{AnnotationKind, Level};
+use annotate_snippets::{AnnotationKind, Group, Level};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
@@ -282,18 +282,22 @@ pub fn apply_one_xml(
             } else {
                 None
             };
+
+            file_diag.with_mut(|builder| {
+                crate::validate::xml::validate_xml(
+                    upper,
+                    speedy_xml::reader::Options::default()
+                        .allow_top_level_text(true)
+                        .allow_unmatched_closing_tags(true)
+                        .allow_unclosed_tags(true),
+                    builder,
+                );
+            });
+
             match crate::append::parse(&mut script, upper, file_diag.as_mut()) {
                 Ok(()) => (),
                 Err(crate::append::ParseError::Xml(error)) => {
-                    // FIXME: this is copied from the xml validator (for consistency), should it not be?
-                    file_diag.with_mut(|builder| {
-                        let snippet = builder
-                            .make_snippet()
-                            .annotation(Level::Error.span(error.span()).label(error.kind().message()));
-
-                        builder.message(Level::Error.title("parse error").snippet(snippet));
-                    });
-
+                    // This should've already been reported by `validate_xml`.
                     return Err(error).context("Could not parse XML append document");
                 }
                 Err(crate::append::ParseError::AlreadyReported) => {
@@ -617,12 +621,20 @@ fn make_lua_filesystems<'a, 'b>(
     ))
 }
 
+fn log_diagnostic_messages(messages: &[Group<'_>]) {
+    let renderer = annotate_snippets::Renderer::styled();
+    for message in messages {
+        eprintln!("{}", renderer.render(std::slice::from_ref(message)));
+    }
+}
+
 pub fn apply_ftl(
     ftl_path: &Path,
     mods: Vec<Mod>,
     mut on_progress: impl FnMut(ApplyStage),
     repack: bool,
     mut diagnostics: Option<&mut Diagnostics<'_>>,
+    print_diagnostics: bool,
 ) -> Result<()> {
     on_progress(ApplyStage::Preparing);
 
@@ -750,6 +762,11 @@ pub fn apply_ftl(
 
                 let append_text = read_from_mod_as_text()?;
 
+                let prev_diagnostic_count = match diagnostics.as_deref() {
+                    Some(diag) => diag.messages().len(),
+                    None => 0,
+                };
+
                 let new_text = match operation {
                     AppendType::Xml(xml_append_type) => apply_one_xml(
                         &original_text,
@@ -783,6 +800,13 @@ pub fn apply_ftl(
                     }
                 }
                 .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
+
+                if print_diagnostics {
+                    if let Some(diag) = diagnostics.as_deref() {
+                        let new_messages = &diag.messages()[prev_diagnostic_count..];
+                        log_diagnostic_messages(new_messages);
+                    }
+                }
 
                 match pkg.remove(real_name) {
                     Ok(()) => {}
@@ -1026,6 +1050,7 @@ pub fn apply(
         },
         settings.repack_ftl_data,
         diagnostics,
+        true,
     )?;
 
     let apply_duration = Instant::now() - apply_start;

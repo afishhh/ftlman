@@ -245,6 +245,7 @@ pub fn main(command: Command) -> Result<()> {
                 },
                 true,
                 Some(&mut diagnostics),
+                true,
             );
 
             let renderer = Renderer::styled();
