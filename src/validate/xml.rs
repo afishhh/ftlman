@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use annotate_snippets::Level;
+use annotate_snippets::{AnnotationKind, Level};
 use speedy_xml::{reader::Options, Reader};
 
 use super::FileDiagnosticBuilder;
@@ -24,16 +24,13 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                         let current = attribute.name_position_in(&reader);
                         if let Some(previous) = seen.insert(attribute.name(), current.clone()) {
                             builder.message(
-                                Level::Warning.title("duplicate attribute").snippet(
-                                    builder
-                                        .make_snippet()
-                                        .annotation(Level::Info.span(previous).label("previous occurrence here"))
-                                        .annotation(
-                                            Level::Warning
-                                                .span(current)
-                                                .label("attribute with the same name redeclared here"),
-                                        ),
-                                ),
+                                Level::WARNING.title("duplicate attribute"),
+                                [
+                                    AnnotationKind::Context.span(previous).label("previous occurrence here"),
+                                    AnnotationKind::Primary
+                                        .span(current)
+                                        .label("attribute with the same name redeclared here"),
+                                ],
                             );
                         }
                     }
@@ -43,29 +40,23 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                         let start_span = start.position_in(&reader);
                         let end_span = end.position_in(&reader);
                         builder.message(
-                            Level::Warning
-                                .title("element closing tag doesn't match opening tag")
-                                .snippet(
-                                    builder
-                                        .make_snippet()
-                                        .annotation(Level::Info.span(start_span).label("opening tag here"))
-                                        .annotation(
-                                            Level::Warning.span(end_span).label("doesn't match this closing tag"),
-                                        ),
-                                ),
+                            Level::WARNING.title("element closing tag doesn't match opening tag"),
+                            [
+                                AnnotationKind::Primary
+                                    .span(end_span)
+                                    .label("doesn't match this closing tag"),
+                                AnnotationKind::Context.span(start_span).label("opening tag here"),
+                            ],
                         );
                     }
                     Some(_) => (),
                     None => {
                         let end_span = end.position_in(&reader);
                         builder.message(
-                            Level::Error.title("unmatched end tag").snippet(
-                                builder.make_snippet().annotation(
-                                    Level::Error
-                                        .span(end_span)
-                                        .label("end tag doesn't have a corresponding opening tag"),
-                                ),
-                            ),
+                            Level::ERROR.title("unmatched end tag"),
+                            [AnnotationKind::Primary
+                                .span(end_span)
+                                .label("end tag doesn't have a corresponding opening tag")],
                         );
                         parsing_would_succeed = false;
                     }
@@ -79,26 +70,22 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
             Some(Err(e)) => {
                 parsing_would_succeed = false;
 
-                let snippet = builder
-                    .make_snippet()
-                    .annotation(Level::Error.span(e.span()).label(e.kind().message()));
-
-                builder.message(Level::Error.title("parse error").snippet(snippet));
+                builder.message(
+                    Level::ERROR.title("parse error"),
+                    [AnnotationKind::Primary.span(e.span()).label(e.kind().message())],
+                );
             }
             None => {
                 for unclosed in element_stack {
                     let span = unclosed.position_in(&reader);
                     builder.message(
-                        Level::Warning.title("unclosed element").snippet(
-                            builder
-                                .make_snippet()
-                                .annotation(Level::Info.span(span).label("opened here"))
-                                .annotation(
-                                    Level::Warning
-                                        .span(source.len()..source.len())
-                                        .label("encountered end of file before closing tag"),
-                                ),
-                        ),
+                        Level::WARNING.title("unclosed element"),
+                        [
+                            AnnotationKind::Context.span(span).label("opened here"),
+                            AnnotationKind::Primary
+                                .span(source.len()..source.len())
+                                .label("encountered end of file before closing tag"),
+                        ],
                     );
                 }
 

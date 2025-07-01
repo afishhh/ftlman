@@ -861,7 +861,7 @@ impl App {
                                     error_chain: popup.error_chain,
                                     diagnostic_output: {
                                         let mut job = LayoutJob::default();
-                                        layout_diagnostic_messages(&mut job, diagnostics.take_messages());
+                                        layout_diagnostic_messages(&mut job, &diagnostics.take_messages());
                                         job
                                     }
                                 }));

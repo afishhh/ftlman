@@ -10,7 +10,7 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::{Level, Snippet};
+use annotate_snippets::Level;
 use anyhow::{anyhow, Context, Error, Result};
 use eframe::egui::{
     self, scroll_area,
@@ -134,10 +134,10 @@ fn extract_lua_error_diagnostic<'a>(
         current_line += 1;
     }
 
-    builder.message_interned(
-        Level::Error,
-        error_string,
-        Snippet::source(&source[line_start..line_end]).line_start(snippet_start_line),
+    builder.message_explicitly_spanned(
+        Level::ERROR.title(error_string),
+        line_start..line_end,
+        snippet_start_line,
     );
 
     Some(())
@@ -243,7 +243,7 @@ impl PatchWorker {
                     debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
 
                     let mut message_output = LayoutJob::default();
-                    layout_diagnostic_messages(&mut message_output, diagnostics.take_messages());
+                    layout_diagnostic_messages(&mut message_output, &diagnostics.take_messages());
 
                     let mut output = self.shared.output.lock();
 

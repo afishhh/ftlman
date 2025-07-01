@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::Level;
+use annotate_snippets::{AnnotationKind, Level};
 use anyhow::{anyhow, bail, Context, Result};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
@@ -303,32 +303,34 @@ pub fn apply_one_xml(
                     // get to.
                 }
             }
+
             match crate::append::patch(lower, &script) {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     match error {
                         crate::append::PatchError::Panic(panic) => {
                             file_diag.with_mut(|builder| {
-                                let snippet = if let Some((message, message_span)) = &panic.message {
-                                    builder
-                                        .make_snippet()
-                                        .annotation(unsafe {
-                                            builder.annotation_interned(Level::Error, message_span.clone(), &**message)
-                                        })
-                                        .annotation(
-                                            Level::Note.span(panic.start_tag_span.clone()).label(
+                                let title = Level::ERROR.title("find tag panicked");
+                                if let Some((message, message_span)) = &panic.message {
+                                    builder.message(
+                                        title,
+                                        [
+                                            AnnotationKind::Primary
+                                                .span(message_span.clone())
+                                                .label(message.to_string()),
+                                            AnnotationKind::Context.span(panic.start_tag_span.clone()).label(
                                                 "panic triggered because this find tag didn't match any elements",
                                             ),
-                                        )
+                                        ],
+                                    )
                                 } else {
-                                    builder.make_snippet().annotation(
-                                        Level::Error
+                                    builder.message(
+                                        title,
+                                        [AnnotationKind::Primary
                                             .span(panic.start_tag_span.clone())
-                                            .label("this find tag didn't match any elements"),
+                                            .label("this find tag didn't match any elements")],
                                     )
                                 };
-
-                                builder.message(Level::Error.title("find tag panicked").snippet(snippet));
                             });
                         }
                         crate::append::PatchError::AlreadyReported => (),

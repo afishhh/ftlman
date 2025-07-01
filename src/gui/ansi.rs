@@ -1,4 +1,4 @@
-use annotate_snippets::{Message, Renderer};
+use annotate_snippets::{Group, Renderer};
 use eframe::egui::{
     self,
     text::{LayoutJob, LayoutSection},
@@ -80,7 +80,7 @@ pub fn layout_ansi(output: &mut LayoutJob, text: &str, font_id: FontId) {
     }
 }
 
-pub fn layout_diagnostic_messages<'a>(job: &mut LayoutJob, messages: impl IntoIterator<Item = Message<'a>>) {
+pub fn layout_diagnostic_messages<'a: 'b, 'b>(job: &mut LayoutJob, messages: impl IntoIterator<Item = &'b Group<'a>>) {
     let renderer = Renderer::styled();
 
     for message in messages {
@@ -91,7 +91,7 @@ pub fn layout_diagnostic_messages<'a>(job: &mut LayoutJob, messages: impl IntoIt
 
         layout_ansi(
             job,
-            &renderer.render(message).to_string(),
+            &renderer.render(std::slice::from_ref(message)).to_string(),
             egui::FontId {
                 family: egui::FontFamily::Monospace,
                 ..Default::default()

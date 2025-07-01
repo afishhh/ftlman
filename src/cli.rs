@@ -249,7 +249,7 @@ pub fn main(command: Command) -> Result<()> {
 
             let renderer = Renderer::styled();
             for message in diagnostics.take_messages() {
-                eprintln!("{}", renderer.render(message))
+                eprintln!("{}", renderer.render(std::slice::from_ref(&message)))
             }
 
             result
@@ -356,7 +356,7 @@ pub fn main(command: Command) -> Result<()> {
 
             let renderer = Renderer::styled();
             for message in diagnostics.take_messages() {
-                eprintln!("{}", renderer.render(message))
+                eprintln!("{}", renderer.render(std::slice::from_ref(&message)))
             }
 
             std::io::stdout().write_all(patched?.as_bytes())?;
@@ -383,7 +383,7 @@ pub fn main(command: Command) -> Result<()> {
 
             let renderer = Renderer::styled();
             for message in diagnostics.take_messages() {
-                eprintln!("{}", renderer.render(message))
+                eprintln!("{}", renderer.render(std::slice::from_ref(&message)))
             }
 
             println!("{script:#?}");

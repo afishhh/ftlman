@@ -51,7 +51,7 @@ itoa = "1"
 memchr = "2"
 
 # For nice error diagnostics
-annotate-snippets = "0.11.5"
+annotate-snippets = { git = "https://github.com/rust-lang/annotate-snippets-rs", rev = "74c251759278867b945c84f0292d49d41d806497" }
 
 # Localisation
 fluent = "0.16"
