@@ -1,7 +1,7 @@
 [package]
 name = "ftlman"
 version = "0.6.5"
-edition = "2021"
+edition = "2024"
 
 [features]
 portable-release = []

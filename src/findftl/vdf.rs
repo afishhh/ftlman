@@ -26,7 +26,7 @@ enum Token<'a> {
     ClosingBrace,
 }
 
-fn tokenize(content: &str) -> Vec<Token> {
+fn tokenize(content: &str) -> Vec<Token<'_>> {
     let mut result = vec![];
 
     let mut it = content.char_indices();

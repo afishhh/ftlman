@@ -121,7 +121,7 @@ pub trait OptionExt<T> {
 
 impl<T> OptionExt<T> for Option<T> {
     fn with_mut(&mut self, fun: impl FnOnce(&mut T)) {
-        if let Some(ref mut value) = self {
+        if let Some(value) = self {
             fun(value)
         }
     }

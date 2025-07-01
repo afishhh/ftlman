@@ -737,7 +737,9 @@ pub fn apply_ftl(
                 let real_name = if !pkg.contains(&real_name) {
                     let lower = real_name.to_lowercase();
                     if let Some(corrected) = lower_paths_map.get(&lower) {
-                        warn!("Path {real_name} wasn't found in the archive, using case-insensitive match {corrected} instead");
+                        warn!(
+                            "Path {real_name} wasn't found in the archive, using case-insensitive match {corrected} instead"
+                        );
                         corrected
                     } else {
                         &real_name
@@ -801,11 +803,9 @@ pub fn apply_ftl(
                 }
                 .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
 
-                if print_diagnostics {
-                    if let Some(diag) = diagnostics.as_deref() {
-                        let new_messages = &diag.messages()[prev_diagnostic_count..];
-                        log_diagnostic_messages(new_messages);
-                    }
+                if print_diagnostics && let Some(diag) = diagnostics.as_deref() {
+                    let new_messages = &diag.messages()[prev_diagnostic_count..];
+                    log_diagnostic_messages(new_messages);
                 }
 
                 match pkg.remove(real_name) {

@@ -14,8 +14,8 @@ mod xml;
 type LuaArena = gc_arena::Arena<Rootable![DynamicRootSet<'_>]>;
 
 trait LuaExt {
-    fn gc(&self) -> mlua::AppDataRef<LuaArena>;
-    fn execution_context(&self) -> mlua::AppDataRefMut<LuaExecutionContext>;
+    fn gc(&self) -> mlua::AppDataRef<'_, LuaArena>;
+    fn execution_context(&self) -> mlua::AppDataRefMut<'_, LuaExecutionContext>;
     fn create_empty_environment(&self) -> LuaResult<LuaTable>;
     fn protect_table(&self, table: &LuaTable) -> LuaResult<()>;
     fn create_protected_table(&self) -> LuaResult<LuaTable>;
@@ -23,12 +23,12 @@ trait LuaExt {
 }
 
 impl LuaExt for Lua {
-    fn gc(&self) -> mlua::AppDataRef<LuaArena> {
+    fn gc(&self) -> mlua::AppDataRef<'_, LuaArena> {
         self.app_data_ref::<LuaArena>()
             .expect("lua object should contain a dynamic gc arena")
     }
 
-    fn execution_context(&self) -> mlua::AppDataRefMut<LuaExecutionContext> {
+    fn execution_context(&self) -> mlua::AppDataRefMut<'_, LuaExecutionContext> {
         self.app_data_mut::<LuaExecutionContext>()
             .expect("lua object should contain an execution context")
     }

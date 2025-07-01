@@ -33,7 +33,7 @@ pub unsafe trait NodeTraits<'gc>: Node<'gc> + Sized {
     const KIND: NodeKind;
 
     unsafe fn downcast_gc_unchecked(node: GcNode<'gc>) -> GcRefLock<'gc, Self> {
-        Gc::from_ptr(Gc::as_ptr(node) as *const _ as *const RefLock<Self>)
+        unsafe { Gc::from_ptr(Gc::as_ptr(node) as *const _ as *const RefLock<Self>) }
     }
 
     fn check(node: &dyn Node<'gc>) -> bool {
@@ -45,7 +45,7 @@ pub unsafe trait NodeTraits<'gc>: Node<'gc> + Sized {
     }
 
     unsafe fn downcast_ref_unchecked<'a>(node: &'a dyn Node<'gc>) -> &'a Self {
-        &*(node as *const dyn Node as *const Self)
+        unsafe { &*(node as *const dyn Node as *const Self) }
     }
 
     fn downcast_ref<'a>(node: &'a dyn Node<'gc>) -> Option<&'a Self> {
@@ -115,10 +115,11 @@ impl<'gc, T: Node<'gc> + ?Sized> NodeExt<'gc> for T {
                 next.borrow_header_mut(mc).previous = header.previous;
             }
 
-            if let (Some(first), Some(last)) = (parent.first_child, parent.last_child) {
-                if Gc::ptr_eq(first, last) {
-                    parent.last_child = None;
-                }
+            if let Some(first) = parent.first_child
+                && let Some(last) = parent.last_child
+                && Gc::ptr_eq(first, last)
+            {
+                parent.last_child = None;
             }
         }
         header.parent = None;
@@ -191,16 +192,16 @@ pub fn clone_any<'gc>(mc: &Mutation<'gc>, node: GcNode<'gc>, mode: CloneMode) ->
 }
 
 trait RefCellNodeExt<'gc> {
-    fn borrow_header(&self) -> Ref<NodeHeader<'gc>>;
-    fn borrow_header_mut(&self, mc: &Mutation<'gc>) -> RefMut<NodeHeader<'gc>>;
+    fn borrow_header(&self) -> Ref<'_, NodeHeader<'gc>>;
+    fn borrow_header_mut(&self, mc: &Mutation<'gc>) -> RefMut<'_, NodeHeader<'gc>>;
 }
 
 impl<'gc> RefCellNodeExt<'gc> for GcRefLock<'gc, dyn Node<'gc>> {
-    fn borrow_header(&self) -> Ref<NodeHeader<'gc>> {
+    fn borrow_header(&self) -> Ref<'_, NodeHeader<'gc>> {
         Ref::map(self.borrow(), |x| NodeHeader::get(x))
     }
 
-    fn borrow_header_mut(&self, mc: &Mutation<'gc>) -> RefMut<NodeHeader<'gc>> {
+    fn borrow_header_mut(&self, mc: &Mutation<'gc>) -> RefMut<'_, NodeHeader<'gc>> {
         RefMut::map(self.borrow_mut(mc), |x| NodeHeader::get_mut(x))
     }
 }
@@ -304,7 +305,7 @@ unsafe fn node_to_reflock<'a, T>(node: *const T) -> &'a RefLock<T> {
 }
 
 unsafe fn node_to_gc<'gc, T>(node: *const T) -> GcRefLock<'gc, T> {
-    Gc::from_ptr(node_to_reflock(node))
+    unsafe { Gc::from_ptr(node_to_reflock(node)) }
 }
 
 impl NodeHeader<'_> {

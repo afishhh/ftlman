@@ -413,7 +413,7 @@ impl UserData for LuaElement {
         fields.add_field_method_set("name", |_, this, value: Box<str>| {
             // SAFETY: No write barrier has to be triggered as no Gc pointers are modified.
             validate_xml_name(&value)?;
-            unsafe { this.get().as_ref_cell() }.borrow_mut().name = value;
+            unsafe { this.get().as_ref_cell().borrow_mut().name = value };
             Ok(())
         });
         fields.add_field_method_get("prefix", |_, this| {
@@ -424,7 +424,7 @@ impl UserData for LuaElement {
             if let Some(pfx) = value.as_ref() {
                 validate_xml_name(pfx)?;
             }
-            unsafe { this.get().as_ref_cell() }.borrow_mut().prefix = value;
+            unsafe { this.get().as_ref_cell().borrow_mut().prefix = value };
             Ok(())
         });
 
@@ -558,7 +558,7 @@ impl UserData for LuaElement {
 
         methods.add_meta_method("__tostring", |_, this, _: ()| {
             let mut output = String::new();
-            element_tostring(unsafe { &this.get().borrow() }, &mut output);
+            unsafe { element_tostring(&this.get().borrow(), &mut output) };
             Ok(output)
         });
 
