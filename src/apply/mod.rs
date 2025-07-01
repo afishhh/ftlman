@@ -764,11 +764,6 @@ pub fn apply_ftl(
 
                 let append_text = read_from_mod_as_text()?;
 
-                let prev_diagnostic_count = match diagnostics.as_deref() {
-                    Some(diag) => diag.messages().len(),
-                    None => 0,
-                };
-
                 let new_text = match operation {
                     AppendType::Xml(xml_append_type) => apply_one_xml(
                         &original_text,
@@ -803,9 +798,8 @@ pub fn apply_ftl(
                 }
                 .with_context(|| format!("Could not patch XML file {real_name} according to {name}"))?;
 
-                if print_diagnostics && let Some(diag) = diagnostics.as_deref() {
-                    let new_messages = &diag.messages()[prev_diagnostic_count..];
-                    log_diagnostic_messages(new_messages);
+                if print_diagnostics && let Some(diag) = diagnostics.as_deref_mut() {
+                    log_diagnostic_messages(&diag.take_messages());
                 }
 
                 match pkg.remove(real_name) {

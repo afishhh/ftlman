@@ -40,10 +40,6 @@ impl<'a> Diagnostics<'a> {
         }
     }
 
-    pub fn messages(&self) -> &[Group<'_>] {
-        &self.messages
-    }
-
     pub fn take_messages(&mut self) -> Vec<Group<'_>> {
         std::mem::take(&mut self.messages)
     }
