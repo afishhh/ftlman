@@ -1,6 +1,7 @@
 #![feature(offset_of_enum)] // :)
 
 use std::{
+    borrow::Cow,
     cmp::Ordering,
     collections::HashMap,
     convert::Infallible,
@@ -267,6 +268,8 @@ pub struct Settings {
     disable_hs_installer: bool,
     #[serde(default = "value_true")]
     autoupdate: bool,
+    #[serde(default = "value_true")]
+    warn_about_missing_hyperspace: bool,
     #[serde(default)]
     theme: ThemeSetting,
 }
@@ -329,6 +332,7 @@ impl Settings {
             repack_ftl_data: true,
             disable_hs_installer: false,
             autoupdate: true,
+            warn_about_missing_hyperspace: true,
             theme: ThemeSetting {
                 style: ThemeStyle::Dark,
                 opacity: 1.,
@@ -516,6 +520,60 @@ impl Popup for PatchFailedPopup {
     }
 }
 
+struct MissingHyperspacePopup {
+    mod_filename: Box<str>,
+    kind: MissingHyperspaceKind,
+}
+
+enum MissingHyperspaceKind {
+    NoReqNoHs,
+    ReqUnsatisfied(semver::VersionReq, Option<semver::Version>),
+}
+
+impl Popup for MissingHyperspacePopup {
+    fn window_title(&self) -> &str {
+        "Unsatisfied Hyperspace requirements"
+    }
+
+    fn is_modal(&self) -> bool {
+        true
+    }
+
+    fn id(&self) -> egui::Id {
+        egui::Id::new("missing hyperspace popup")
+    }
+
+    fn show(&self, app: &mut App, ui: &mut Ui) -> bool {
+        let (req, ver) = match &self.kind {
+            MissingHyperspaceKind::NoReqNoHs => (None, None),
+            MissingHyperspaceKind::ReqUnsatisfied(version_req, version) => (Some(version_req), version.as_ref()),
+        };
+
+        ui.label(i18n::style(
+            ui.style(),
+            &l!(paragraph, "missing-hyperspace-top",
+                "mod" => &*self.mod_filename,
+                "req" => req.map_or(Cow::Borrowed("none"), |r| r.to_string().into()),
+                "ver" => ver.map_or(Cow::Borrowed("none"), |v| v.to_string().into()),
+            ),
+        ));
+
+        ui.label(i18n::style(ui.style(), &l!(paragraph, "missing-hyperspace-middle")));
+        ui.label(i18n::style(ui.style(), &l!(paragraph, "missing-hyperspace-bottom")));
+
+        if ui
+            .vertical_centered(|ui| ui.button(l!("missing-hyperspace-patch-anyway")))
+            .inner
+            .clicked()
+        {
+            app.start_apply(ui.ctx());
+            return false;
+        }
+
+        true
+    }
+}
+
 // On some platforms the files we're actually interested in are deeper in the ftl
 // installation's directory structure, this function attempts to find the actually
 // important directory
@@ -686,6 +744,78 @@ impl App {
         }
     }
 
+    fn should_check_hyperspace_requirements(&self) -> bool {
+        !self.settings.disable_hs_installer && self.settings.warn_about_missing_hyperspace
+    }
+
+    fn check_hyperspace_requirements_fulfilled(&self, shared: &SharedState) -> Option<MissingHyperspacePopup> {
+        let hs_version = match &shared.hyperspace {
+            Some(state) => match state.release.version() {
+                Some(version) => Some(version),
+                None => {
+                    warn!("Hyperspace release {:?} has no version", state.release.name());
+                    return None;
+                }
+            },
+            None => None,
+        };
+
+        for m in &shared.mods {
+            let mk_popup = |kind: MissingHyperspaceKind| MissingHyperspacePopup {
+                mod_filename: Box::from(m.filename()),
+                kind,
+            };
+
+            if !m.enabled {
+                continue;
+            }
+
+            if let Ok(Some(meta)) = m.hs_metadata() {
+                match (&meta.required_hyperspace, hs_version) {
+                    // There is a hyperspace.xml-affecting file without a version req
+                    // but hyperspace is not enabled.
+                    (None, None) => return Some(mk_popup(MissingHyperspaceKind::NoReqNoHs)),
+                    // There is a hyperspace.xml-affecting file without a version req
+                    // and hyperspace is enabled. Assume this is fine, since we can't
+                    // know what version the mod requires.
+                    (None, Some(_)) => (),
+                    // There is a hyperspace requirement but hyperspace is not selected.
+                    (Some(req), None) => {
+                        return Some(mk_popup(MissingHyperspaceKind::ReqUnsatisfied(req.clone(), None)));
+                    }
+                    // There is a hyperspace and *some* version of hyperspace is enabled.
+                    (Some(req), Some(ver)) => {
+                        if !req.matches(ver) {
+                            return Some(mk_popup(MissingHyperspaceKind::ReqUnsatisfied(
+                                req.clone(),
+                                Some(ver.clone()),
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn start_apply(&mut self, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        let ftl_path = self.settings.ftl_directory.clone().unwrap();
+        let shared = self.shared.clone();
+        let settings = self.settings.clone();
+        let hs = match self.hyperspace_installer {
+            Some(Ok(Ok(ref installer))) => Some(installer.clone()),
+            _ => None,
+        };
+        self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
+            let mut diagnostics = Diagnostics::new();
+            let result = apply::apply(ftl_path, shared, hs, settings, Some(&mut diagnostics));
+            ctx.request_repaint();
+            (result, diagnostics)
+        }));
+    }
+
     fn update_main_ui(&mut self, ctx: &egui::Context) {
         let is_sandbox_open = self.sandbox.state().is_open();
 
@@ -730,7 +860,7 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(l!("mods-title"));
 
-                    let mut lock = self.shared.lock();
+                    let mut lock = self.shared.lock_arc();
                     let modifiable = !lock.locked && self.current_task.is_idle();
 
                     ui.add_enabled_ui(modifiable, |ui| {
@@ -750,20 +880,12 @@ impl App {
                             )
                             .on_hover_text_at_pointer(l!("mods-apply-tooltip"));
                         if apply.clicked() {
-                            let ctx = ctx.clone();
-                            let ftl_path = self.settings.ftl_directory.clone().unwrap();
-                            let shared = self.shared.clone();
-                            let settings = self.settings.clone();
-                            let hs = match self.hyperspace_installer {
-                                Some(Ok(Ok(ref installer))) => Some(installer.clone()),
-                                _ => None,
-                            };
-                            self.current_task = CurrentTask::Apply(Promise::spawn_thread("task", move || {
-                                let mut diagnostics = Diagnostics::new();
-                                let result = apply::apply(ftl_path, shared, hs, settings, Some(&mut diagnostics));
-                                ctx.request_repaint();
-                                (result, diagnostics)
-                            }));
+                            if self.should_check_hyperspace_requirements() &&
+                                let Some(popup) = self.check_hyperspace_requirements_fulfilled(&lock) {
+                                self.popups.push(Box::new(popup));
+                            } else {
+                                self.start_apply(ctx);
+                            }
                         }
 
                         let scan = ui
@@ -1400,6 +1522,12 @@ impl App {
 
                         ui.checkbox(&mut self.settings.autoupdate, l!("settings-autoupdate"))
                             .changed();
+
+                        ui.checkbox(
+                            &mut self.settings.warn_about_missing_hyperspace,
+                            l!("settings-warn-missing-hs"),
+                        )
+                        .changed();
                     });
                 });
         }

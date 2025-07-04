@@ -66,6 +66,7 @@ settings-background-opacity = Background opacity
 settings-advanced-header = Advanced settings
 settings-disable-hs-installer = Disable Hyperspace installer
 settings-autoupdate = Automatically check for updates on startup
+settings-warn-missing-hs = Warn about unsatisfied Hyperspace requirements
 settings-repack-archive = Repack FTL data archive
 settings-repack-archive-tooltip = 
     Turning this off will slightly speed up patching but
@@ -79,3 +80,21 @@ update-modal-dismiss = Dismiss
 update-modal-open-in-browser = Open in browser
 update-modal-run-update = Update
 update-modal-progress = Downloading update... {$current}/{$max}
+
+missing-hyperspace-top =
+    Mod [s]{$mod}[/s] {$req ->
+        [none] modifies hyperspace.xml but no Hyperspace version is selected.
+       *[other] requires Hyperspace [s]{$req}[/s] but
+    } {$ver ->
+        [none] no Hyperspace version is currently selected.
+       *[other] Hyperspace [s]{$ver}[/s] is currently selected.
+    }
+missing-hyperspace-middle =
+    Make sure you have the correct Hyperspace version selected in the top-left
+    corner of the mods list.
+missing-hyperspace-bottom =
+    If you are certain the enabled mods work with the selected Hyperspace version
+    you can press the [i]Patch anyway[/i] button below or
+    turn off this warning in the [i]Advanced settings[/i] section of
+    the [i]Settings[/i] menu.
+missing-hyperspace-patch-anyway = Patch anyway
