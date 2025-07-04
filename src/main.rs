@@ -414,8 +414,12 @@ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Ite
 }
 
 trait Popup {
-    // or None for modal
-    fn window_title(&self) -> Option<&str>;
+    fn window_title(&self) -> &str;
+    fn is_modal(&self) -> bool;
+    fn is_closeable(&self) -> bool {
+        true
+    }
+
     fn id(&self) -> egui::Id;
     fn show(&self, app: &mut App, ui: &mut Ui) -> bool;
 }
@@ -466,8 +470,12 @@ impl ErrorPopup {
 }
 
 impl Popup for ErrorPopup {
-    fn window_title(&self) -> Option<&str> {
-        Some(&self.title)
+    fn window_title(&self) -> &str {
+        &self.title
+    }
+
+    fn is_modal(&self) -> bool {
+        false
     }
 
     fn id(&self) -> egui::Id {
@@ -486,8 +494,12 @@ struct PatchFailedPopup {
 }
 
 impl Popup for PatchFailedPopup {
-    fn window_title(&self) -> Option<&str> {
-        None
+    fn window_title(&self) -> &str {
+        "Failed to patch mods"
+    }
+
+    fn is_modal(&self) -> bool {
+        true
     }
 
     fn id(&self) -> egui::Id {
@@ -495,28 +507,12 @@ impl Popup for PatchFailedPopup {
     }
 
     fn show(&self, _app: &mut App, ui: &mut Ui) -> bool {
-        let mut open = true;
-
-        ui.set_max_height(ui.ctx().screen_rect().height() * 0.75);
-
-        ui.horizontal(|ui| {
-            ui.heading("Failed to patch mods");
-            ui.set_max_height(ui.min_rect().height());
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let x_text = egui::RichText::new("🗙")
-                    .text_style(egui::TextStyle::Heading)
-                    .size(egui::TextStyle::Heading.resolve(ui.style()).size * 0.8);
-                open &= !ui.add(egui::Button::new(x_text).frame(false)).clicked();
-            });
-        });
-        ui.add_space(5.0);
-
         egui::ScrollArea::vertical().show(ui, |ui| {
             render_error_chain(ui, self.error_chain.iter());
             ui.label(self.diagnostic_output.clone());
         });
 
-        open
+        true
     }
 }
 
@@ -1223,16 +1219,21 @@ impl App {
         // If `Popup::show` adds anything to `self.popups` we'll just merge it back into this
         // `Vec` afterwards, although this doesn't actually happen anywhere for now.
         let mut tmp = std::mem::take(&mut self.popups);
-        
+
         tmp.retain(|popup| {
-            if let Some(title) = popup.window_title() {
+            if !popup.is_modal() {
                 let mut open = true;
 
-                open &= egui::Window::new(title)
+                let mut window = egui::Window::new(popup.window_title())
                     .resizable(true)
                     .frame(egui::Frame::popup(&ctx.style()))
-                    .id(popup.id())
-                    .open(&mut open)
+                    .id(popup.id());
+
+                if popup.is_closeable() {
+                    window = window.open(&mut open);
+                }
+
+                open &= window
                     .show(ctx, |ui| popup.show(self, ui))
                     .is_some_and(|i| i.inner.unwrap_or(true));
 
@@ -1241,7 +1242,25 @@ impl App {
                 let mut open = true;
 
                 open &= !egui::Modal::new(popup.id())
-                    .show(ctx, |ui| open &= popup.show(self, ui))
+                    .show(ctx, |ui| {
+                        ui.set_max_height(ui.ctx().screen_rect().height() * 0.75);
+
+                        ui.horizontal(|ui| {
+                            ui.heading(popup.window_title());
+                            ui.set_max_height(ui.min_rect().height());
+                            if popup.is_closeable() {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let x_text = egui::RichText::new("🗙")
+                                        .text_style(egui::TextStyle::Heading)
+                                        .size(egui::TextStyle::Heading.resolve(ui.style()).size * 0.8);
+                                    open &= !ui.add(egui::Button::new(x_text).frame(false)).clicked();
+                                });
+                            }
+                        });
+                        ui.add_space(5.0);
+
+                        open &= popup.show(self, ui)
+                    })
                     .should_close();
 
                 open
