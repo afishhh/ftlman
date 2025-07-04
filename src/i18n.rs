@@ -193,6 +193,24 @@ pub fn resolve(id: &str, args: Option<&FluentArgs>) -> Cow<'static, str> {
     result
 }
 
+pub fn normalize_paragraph(value: Cow<'static, str>) -> Cow<'static, str> {
+    let mut result = String::new();
+
+    let mut current = &value[..];
+    while let Some(idx) = current.find('\n') {
+        result.push_str(&current[..idx]);
+        result.push(' ');
+        current = &current[idx + 1..];
+    }
+
+    if result.is_empty() {
+        value
+    } else {
+        result.push_str(current);
+        Cow::Owned(result)
+    }
+}
+
 pub fn style(style: &egui::Style, message: &str) -> egui::text::LayoutJob {
     static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[/?([a-z_-]+)\]").unwrap());
 
@@ -222,6 +240,12 @@ pub fn style(style: &egui::Style, message: &str) -> egui::text::LayoutJob {
 
 #[macro_export]
 macro_rules! l {
+    // TODO: This should probably be inverted.
+    //       Newline sensitivity is usually the special case when dealing with text,
+    //       not the reverse.
+    (paragraph, $($tt: tt)*) => {
+        $crate::i18n::normalize_paragraph(l!($($tt)*))
+    };
     ($id: expr) => {
         $crate::i18n::resolve($id, None)
     };
