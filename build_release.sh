@@ -28,9 +28,8 @@ if [[  -z $wanted_target || "x86_64-pc-windows-gnu" == $wanted_target ]]; then
   cross +nightly build --target-dir ../target-x86_64-pc-windows-gnu --features portable-release --target x86_64-pc-windows-gnu --release
   llvm-strip --strip-all ../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/*.exe
 
-  mkdir ftlman
+  mkdir -p ftlman/mods
   cd ftlman
-  mkdir mods
   ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
   cd ..
   7z a ftlman-x86_64-pc-windows-gnu.zip ftlman
