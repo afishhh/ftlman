@@ -1,8 +1,7 @@
 use annotate_snippets::{Group, Renderer};
 use eframe::egui::{
-    self,
+    self, Color32, FontId, TextFormat,
     text::{LayoutJob, LayoutSection},
-    Color32, FontId, TextFormat,
 };
 use log::warn;
 

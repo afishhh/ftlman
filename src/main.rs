@@ -10,7 +10,7 @@ use std::{
     io::{BufReader, Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::{atomic::AtomicU64, Arc, LazyLock},
+    sync::{Arc, LazyLock, atomic::AtomicU64},
     task::Poll,
 };
 
@@ -19,8 +19,8 @@ use clap::Parser;
 use eframe::{
     egui::{self, DroppedFile, RichText, Sense, Ui, Visuals},
     epaint::{
-        text::{LayoutJob, TextWrapping},
         FontId, Pos2, Rgba, Vec2,
+        text::{LayoutJob, TextWrapping},
     },
 };
 use egui_dnd::DragDropItem;
@@ -53,11 +53,11 @@ mod validate;
 mod xmltree;
 
 use apply::ApplyStage;
-use gui::{ansi::layout_diagnostic_messages, pathedit::PathEdit, DeferredWindow, WindowState};
+use gui::{DeferredWindow, WindowState, ansi::layout_diagnostic_messages, pathedit::PathEdit};
 use hyperspace::HyperspaceRelease;
 use lazy::ResettableLazy;
-use update::{get_latest_release_or_none, UpdaterProgress};
-use util::{to_human_size_units, touch_create, SloppyVersion};
+use update::{UpdaterProgress, get_latest_release_or_none};
+use util::{SloppyVersion, to_human_size_units, touch_create};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";

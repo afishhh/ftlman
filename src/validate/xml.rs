@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use annotate_snippets::{AnnotationKind, Level};
-use speedy_xml::{reader::Options, Reader};
+use speedy_xml::{Reader, reader::Options};
 
 use super::FileDiagnosticBuilder;
 

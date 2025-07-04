@@ -262,11 +262,7 @@ impl Comparer {
     #[expect(clippy::only_used_in_recursion)]
     pub fn compare(&mut self, a: LuaValue, b: LuaValue) -> LuaResult<Result<(), String>> {
         fn compare_simple<T: PartialEq>(a: T, b: T, err: &str) -> LuaResult<Result<(), String>> {
-            if a == b {
-                Ok(Ok(()))
-            } else {
-                Ok(Err(err.to_owned()))
-            }
+            if a == b { Ok(Ok(())) } else { Ok(Err(err.to_owned())) }
         }
 
         match (&a, &b) {

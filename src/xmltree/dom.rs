@@ -7,8 +7,8 @@ use std::{
 };
 
 use gc_arena::{
-    lock::{GcRefLock, RefLock},
     Collect, Gc, Mutation,
+    lock::{GcRefLock, RefLock},
 };
 
 use crate::xmltree;

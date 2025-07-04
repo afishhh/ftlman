@@ -1,6 +1,6 @@
 use std::{borrow::Cow, collections::BTreeMap, fmt::Debug};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 
 pub type Map = BTreeMap<String, Value>;
 

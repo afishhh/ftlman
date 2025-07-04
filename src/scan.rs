@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use log::info;
 use parking_lot::Mutex;
 
-use crate::{Mod, ModConfigurationState, ModSource, Settings, SharedState, MOD_ORDER_FILENAME};
+use crate::{MOD_ORDER_FILENAME, Mod, ModConfigurationState, ModSource, Settings, SharedState};
 
 pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> Result<()> {
     let mut lock = state.lock();

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use log::{info, warn};
 
 mod vdf;
@@ -55,7 +55,7 @@ pub fn find_steam_ftl() -> Result<Option<PathBuf>> {
         }
         Err(e) => {
             return Err(e)
-                .with_context(|| format!("Failed to read steam library folders file from {}", folders.display()))?
+                .with_context(|| format!("Failed to read steam library folders file from {}", folders.display()))?;
         }
     })
     .with_context(|| format!("Failed to parse steam library folders file at {}", folders.display()))?;

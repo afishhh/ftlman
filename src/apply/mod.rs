@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{btree_map::Entry, BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet, btree_map::Entry},
     fs::File,
     io::{Cursor, Read, Seek, Write},
     path::{Path, PathBuf},
@@ -9,7 +9,7 @@ use std::{
 };
 
 use annotate_snippets::{AnnotationKind, Group, Level};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
 use regex::Regex;
@@ -17,16 +17,16 @@ use silpkg::sync::Pkg;
 use zip::ZipArchive;
 
 use crate::{
+    HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
     cache::CACHE,
     hyperspace,
     lua::{
-        io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
         LuaContext, ModLuaRuntime,
+        io::{LuaDirEnt, LuaDirectoryFS, LuaFS, LuaFileStats, LuaFileType},
     },
     util::{concat_into_box, convert_lf_to_crlf},
     validate::{Diagnostics, OptionExt},
-    xmltree::{self, dom::DomTreeEmitter, emitter::TreeEmitter, SimpleTreeBuilder, SimpleTreeEmitter},
-    HyperspaceState, Mod, ModSource, OpenModHandle, Settings, SharedState,
+    xmltree::{self, SimpleTreeBuilder, SimpleTreeEmitter, dom::DomTreeEmitter, emitter::TreeEmitter},
 };
 
 // from: https://github.com/Vhati/Slipstream-Mod-Manager/blob/85cad4ffbef8583d908b189204d7d22a26be43f8/src/main/java/net/vhati/modmanager/core/ModUtilities.java#L267

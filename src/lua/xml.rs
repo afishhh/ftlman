@@ -1,23 +1,23 @@
 use std::{collections::BTreeMap, fmt::Write as _, ops::Deref};
 
 use gc_arena::{
-    lock::{GcRefLock, RefLock},
     DynamicRoot, DynamicRootSet, Gc, Mutation, Rootable,
+    lock::{GcRefLock, RefLock},
 };
-use mlua::{prelude::*, FromLua, UserData, UserDataFields};
+use mlua::{FromLua, UserData, UserDataFields, prelude::*};
 
 use crate::{
     apply::XmlAppendType,
     xmltree::{
         self,
         dom::{
-            self, node_insert_after, node_insert_before, CloneMode, ElementChildren, GcElement, GcNode, GcText,
-            NodeExt, NodeTraits,
+            self, CloneMode, ElementChildren, GcElement, GcNode, GcText, NodeExt, NodeTraits, node_insert_after,
+            node_insert_before,
         },
     },
 };
 
-use super::{unsize_node, LuaExt};
+use super::{LuaExt, unsize_node};
 
 pub type DynamicElement = DynamicRoot<Rootable![GcElement<'_>]>;
 
@@ -246,7 +246,7 @@ fn add_node_methods<T: LuaNode, M: LuaUserDataMethods<T>>(methods: &mut M) {
                 return Err(LuaError::runtime(format!(
                     "`{}` is not a valid clone mode",
                     String::from_utf8_lossy(other)
-                )))
+                )));
             }
         };
 
@@ -724,7 +724,7 @@ impl UserData for LuaElementChildren {
     fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
         methods.add_meta_method_mut("__call", |lua, this, _: ()| {
             Ok(lua.gc().mutate(|mc, roots| {
-                let mut iter = roots.fetch(&this.0 .0).borrow_mut(mc);
+                let mut iter = roots.fetch(&this.0.0).borrow_mut(mc);
                 iter.find_map(|node| {
                     dom::Element::downcast_gc(node).map(|element| LuaElement(roots.stash(mc, element)))
                 })

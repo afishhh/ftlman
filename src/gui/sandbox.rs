@@ -4,19 +4,20 @@ use std::{
     ops::Range,
     path::Path,
     sync::{
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, LazyLock,
+        mpsc,
     },
     time::Instant,
 };
 
 use annotate_snippets::Level;
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{Context, Error, Result, anyhow};
 use eframe::egui::{
-    self, scroll_area,
+    self, Color32, Id, Layout, Margin, TextBuffer, Ui, Vec2, scroll_area,
     text::{CCursor, LayoutJob},
     text_selection::visuals::paint_text_selection,
-    vec2, Color32, Id, Layout, Margin, TextBuffer, Ui, Vec2,
+    vec2,
 };
 use egui_extras::syntax_highlighting;
 use log::debug;
@@ -31,14 +32,14 @@ use crate::{
     gui::ansi::layout_diagnostic_messages,
     l,
     lua::{
-        io::{LuaFS, LuaFileStats, LuaFileType},
         ModLuaRuntime,
+        io::{LuaFS, LuaFileStats, LuaFileType},
     },
     render_error_chain,
-    validate::{xml::validate_xml, Diagnostics, FileDiagnosticBuilder},
+    validate::{Diagnostics, FileDiagnosticBuilder, xml::validate_xml},
 };
 
-use super::{regexedit::RegexEdit, WindowState};
+use super::{WindowState, regexedit::RegexEdit};
 
 struct PkgOverlayFS<'a> {
     pkg: LuaPkgFS<'a>,
@@ -603,11 +604,7 @@ impl WindowState for Sandbox {
                                         } else if button_lr.clicked() {
                                             -1
                                         } else if text_r.has_focus() && ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                            if ctx.input(|i| i.modifiers.shift) {
-                                                -1
-                                            } else {
-                                                1
-                                            }
+                                            if ctx.input(|i| i.modifiers.shift) { -1 } else { 1 }
                                         } else {
                                             0
                                         };

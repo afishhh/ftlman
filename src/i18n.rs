@@ -1,13 +1,13 @@
 use std::{
     borrow::Cow,
     sync::{
-        atomic::{AtomicPtr, Ordering},
         LazyLock, OnceLock,
+        atomic::{AtomicPtr, Ordering},
     },
 };
 
 use eframe::egui;
-use fluent::{concurrent::FluentBundle, FluentArgs, FluentMessage, FluentResource};
+use fluent::{FluentArgs, FluentMessage, FluentResource, concurrent::FluentBundle};
 use log::{error, warn};
 use parking_lot::Mutex;
 use regex::Regex;

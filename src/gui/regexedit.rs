@@ -1,8 +1,8 @@
 use std::{borrow::Cow, hash::Hash};
 
 use eframe::egui::{
-    text_edit::TextEditOutput, FontSelection, Id, KeyboardShortcut, Response, TextBuffer, TextEdit, TextStyle, Ui,
-    Widget,
+    FontSelection, Id, KeyboardShortcut, Response, TextBuffer, TextEdit, TextStyle, Ui, Widget,
+    text_edit::TextEditOutput,
 };
 use egui_extras::syntax_highlighting;
 

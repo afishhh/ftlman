@@ -4,12 +4,12 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use eframe::egui;
 use log::{debug, error, info};
 use parking_lot::Mutex;
 
-use crate::{github, util, AGENT, EXE_DIRECTORY, PARSED_VERSION};
+use crate::{AGENT, EXE_DIRECTORY, PARSED_VERSION, github, util};
 
 fn get_latest_release() -> Result<github::Release> {
     github::Repository::new("afishhh", "ftlman")

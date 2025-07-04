@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{cache::CACHE, AGENT};
+use crate::{AGENT, cache::CACHE};
 
 const API_ROOT: &str = "https://api.github.com";
 

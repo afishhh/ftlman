@@ -1,6 +1,6 @@
 use std::sync::LazyLock;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use regex::Regex;
 
 static UUID_REGEX: LazyLock<Regex> =

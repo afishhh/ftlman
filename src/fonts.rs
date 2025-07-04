@@ -5,7 +5,7 @@ use log::warn;
 
 #[cfg(target_os = "linux")]
 mod backend {
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
     use eframe::egui::FontData;
     use fontconfig_sys::constants::*;
     use fontconfig_sys::*;
@@ -117,23 +117,23 @@ mod backend {
 #[cfg(target_os = "windows")]
 mod backend {
     use std::fmt::Debug;
-    use std::mem::offset_of;
     use std::mem::MaybeUninit;
+    use std::mem::offset_of;
     use std::ops::Deref;
 
-    use anyhow::{anyhow, bail, Result};
+    use anyhow::{Result, anyhow, bail};
     use eframe::egui::FontData;
     use log::info;
+    use winapi::Interface;
     use winapi::shared::ntdef::*;
     use winapi::shared::winerror::*;
     use winapi::um::dwrite::*;
     use winapi::um::errhandlingapi::GetLastError;
     use winapi::um::unknwnbase::IUnknown;
     use winapi::um::winbase::*;
-    use winapi::um::winuser::SystemParametersInfoW;
     use winapi::um::winuser::NONCLIENTMETRICSW;
     use winapi::um::winuser::SPI_GETNONCLIENTMETRICS;
-    use winapi::Interface;
+    use winapi::um::winuser::SystemParametersInfoW;
 
     fn format_system_message(code: u32) -> String {
         unsafe {
@@ -334,7 +334,7 @@ mod backend {
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod backend {
-    use anyhow::{bail, Result};
+    use anyhow::{Result, bail};
     use eframe::egui::FontData;
 
     pub fn find_system_sans_serif(_language: &str) -> Result<FontData> {

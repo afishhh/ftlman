@@ -1,20 +1,19 @@
 use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf, str::FromStr};
 
 use annotate_snippets::Renderer;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use log::{error, info, warn};
 
 use crate::{
-    hyperspace,
+    Mod, ModSource, Settings, hyperspace,
     lua::{
-        io::{LuaDirectoryFS, LuaFS},
         LuaContext, ModLuaRuntime,
+        io::{LuaDirectoryFS, LuaFS},
     },
     update,
     util::{crc32_from_reader, to_human_size_units},
     validate::Diagnostics,
-    Mod, ModSource, Settings,
 };
 
 #[derive(Subcommand)]

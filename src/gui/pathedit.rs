@@ -4,8 +4,8 @@ use std::{hash::Hash, path::Path};
 
 use eframe::{
     egui::{
-        self, text_edit::TextEditState, Align, Area, FontSelection, Frame, Id, Layout, Modifiers, Response, RichText,
-        TextBuffer, TextEdit, Ui, Widget,
+        self, Align, Area, FontSelection, Frame, Id, Layout, Modifiers, Response, RichText, TextBuffer, TextEdit, Ui,
+        Widget, text_edit::TextEditState,
     },
     epaint::FontId,
 };

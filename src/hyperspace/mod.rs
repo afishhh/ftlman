@@ -3,13 +3,13 @@ use std::{
     sync::LazyLock,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::{
-    github::{self, Release},
     AGENT,
+    github::{self, Release},
 };
 
 static HYPERSPACE_REPOSITORY: LazyLock<github::Repository> =

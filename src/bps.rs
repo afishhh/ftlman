@@ -3,7 +3,7 @@
 //! [here]: https://github.com/blakesmith/rombp/blob/master/docs/bps_spec.md
 use std::hash::Hasher;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 fn take_one(patch: &mut &[u8]) -> Option<u8> {
     if let Some((first, tail)) = patch.split_first() {

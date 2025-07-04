@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use log::{info, warn};
 use zip::ZipArchive;
 
@@ -222,7 +222,7 @@ impl Installer {
                 return Ok(Err(format!(
                     "FTL installation not recognized: {:?} size={size}",
                     exe_path.file_name().unwrap()
-                )))
+                )));
             }
         };
 
