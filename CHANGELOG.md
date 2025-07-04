@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- XML syntax warnings in append files are now printed in the console while patching. This allows mod authors to discover issues with their mods which may on occasion make them fail on Slipstream.
+
 ## [v0.6.5]
 
 ### Added
