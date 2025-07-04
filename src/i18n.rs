@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use eframe::egui;
+use eframe::egui::{self, Color32};
 use fluent::{FluentArgs, FluentMessage, FluentResource, concurrent::FluentBundle};
 use log::{error, warn};
 use parking_lot::Mutex;
@@ -226,9 +226,22 @@ pub fn style(style: &egui::Style, message: &str) -> egui::text::LayoutJob {
 
         let (whole, [tag]) = captures.extract::<1>();
         let closing = whole.as_bytes()[1] == b'/';
+
+        let highlight_color = match style.visuals.dark_mode {
+            // lightskyblue
+            true => Color32::from_rgb(135, 206, 250),
+            // dodgerblue
+            false => Color32::from_rgb(30, 144, 255),
+        };
+
         match (closing, tag) {
             (true, "s") => current_format.color = style.visuals.text_color(),
             (false, "s") => current_format.color = style.visuals.strong_text_color(),
+            // FIXME: This should be italics not colored text. Why did I use colored text?
+            //        Because egui apparently does not have the slightest clue about
+            //        how text rendering works as of `773232b` and it looks terrible.
+            (true, "i") => current_format.color = style.visuals.text_color(),
+            (false, "i") => current_format.color = highlight_color,
             _ => warn!("Invalid formatting tag"),
         }
     }
