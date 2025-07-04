@@ -62,7 +62,7 @@ pub fn scan(settings: Settings, state: Arc<Mutex<SharedState>>, first: bool) -> 
 
         if let Some(mut m) = ModSource::new(&settings, entry.path()).map(Mod::new) {
             let filename = m.filename();
-            m.enabled = mod_order_map.get(filename).map_or(false, |x| x.1);
+            m.enabled = mod_order_map.get(filename).is_some_and(|x| x.1);
 
             let mut lock = state.lock();
             lock.mods.push(m);

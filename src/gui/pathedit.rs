@@ -144,8 +144,9 @@ impl Widget for PathEdit<'_> {
         let state = TextEditState::load(ui.ctx(), text_edit_id);
         let mut changed = false;
 
-        if let Some((state, cursor)) = state
-            .and_then(|x| {
+        if ui.memory(|x| x.has_focus(text_edit_id))
+            && enter
+            && let Some((state, cursor)) = state.and_then(|x| {
                 x.cursor
                     .char_range()
                     .and_then(|x| {
@@ -157,40 +158,37 @@ impl Widget for PathEdit<'_> {
                     })
                     .map(|r| (x, r))
             })
-            .filter(|_| ui.memory(|x| x.has_focus(text_edit_id)))
         {
-            if enter {
-                let pref = self.buffer.as_str().chars().take(cursor.index).collect::<String>();
+            let pref = self.buffer.as_str().chars().take(cursor.index).collect::<String>();
 
-                let mut suggestions = self.suggestions_for(&pref);
-                if !suggestions.is_empty() {
-                    if let Some(suggestion) = {
-                        let idx = ui.memory(|x| x.data.get_temp::<usize>(memid));
-                        idx.and_then(|idx| suggestions.get_mut(idx).map(std::mem::take))
-                    } {
-                        let replaced_len = if ends_with_separator(&pref) {
-                            0
-                        } else {
-                            Path::new(&pref).file_name().map(|a| a.len()).unwrap_or(0)
-                        };
-                        let insert_start = pref.len() - replaced_len;
-                        self.buffer
-                            .delete_char_range(insert_start..(insert_start + replaced_len));
-                        self.buffer.insert_text(&suggestion, insert_start);
-                        let new_pos = eframe::egui::text::CCursor {
-                            index: insert_start + suggestion.len(),
-                            ..cursor
-                        };
-                        let mut state = state;
-                        state.cursor.set_char_range(Some(eframe::egui::text::CCursorRange {
-                            primary: new_pos,
-                            secondary: new_pos,
-                            h_pos: None,
-                        }));
-                        state.store(ui.ctx(), text_edit_id);
-                        changed = true;
-                    }
+            let mut suggestions = self.suggestions_for(&pref);
+            if !suggestions.is_empty()
+                && let Some(suggestion) = {
+                    let idx = ui.memory(|x| x.data.get_temp::<usize>(memid));
+                    idx.and_then(|idx| suggestions.get_mut(idx).map(std::mem::take))
                 }
+            {
+                let replaced_len = if ends_with_separator(&pref) {
+                    0
+                } else {
+                    Path::new(&pref).file_name().map(|a| a.len()).unwrap_or(0)
+                };
+                let insert_start = pref.len() - replaced_len;
+                self.buffer
+                    .delete_char_range(insert_start..(insert_start + replaced_len));
+                self.buffer.insert_text(&suggestion, insert_start);
+                let new_pos = eframe::egui::text::CCursor {
+                    index: insert_start + suggestion.len(),
+                    ..cursor
+                };
+                let mut state = state;
+                state.cursor.set_char_range(Some(eframe::egui::text::CCursorRange {
+                    primary: new_pos,
+                    secondary: new_pos,
+                    h_pos: None,
+                }));
+                state.store(ui.ctx(), text_edit_id);
+                changed = true;
             }
         }
 
@@ -218,10 +216,10 @@ impl Widget for PathEdit<'_> {
 
                 if self.open_directory_button && ui.small_button("🗁").clicked() {
                     let path = Path::new(self.buffer.as_str());
-                    if path.is_dir() {
-                        if let Err(e) = open::that_detached(path) {
-                            log::error!("Failed to open {path:?}: {e}");
-                        }
+                    if path.is_dir()
+                        && let Err(e) = open::that_detached(path)
+                    {
+                        log::error!("Failed to open {path:?}: {e}");
                     }
                 }
 

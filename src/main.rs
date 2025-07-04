@@ -1150,13 +1150,10 @@ impl App {
                     let response = ui.separator();
                     if ui
                         .interact(response.rect, ui.auto_id_with("drag"), Sense::drag())
-                        .dragged()
-                    {
-                        if let Some(cursor_pos) = ctx.pointer_interact_pos() {
+                        .dragged() && let Some(cursor_pos) = ctx.pointer_interact_pos() {
                             let x = cursor_pos.x - response.rect.width() / 2.0;
                             self.vertical_divider_pos = (x / viewport_width).clamp(0.1, 0.9);
                         }
-                    }
 
                     if let Some(idx) = self.last_hovered_mod {
                         if let Some(metadata) = shared.mods[idx].metadata().ok().flatten() {
@@ -1614,7 +1611,7 @@ impl App {
 
                     let mut name = name.to_owned();
                     let idx = name.find('.').unwrap_or(name.len());
-                    let suffix = format!(" ({})", i);
+                    let suffix = format!(" ({i})");
                     name.insert_str(idx, &suffix);
 
                     target_path.set_file_name(name);
@@ -1628,7 +1625,7 @@ impl App {
                 Err(err) if err.kind() == std::io::ErrorKind::CrossesDevices => {
                     std::fs::copy(path, target_path).map(|_| ())
                 }
-                Err(err) => return Err(err),
+                Err(err) => Err(err),
             }
         } else {
             Ok(())
@@ -1657,7 +1654,7 @@ impl eframe::App for App {
                 let mod_directory = self.settings.effective_mod_directory();
 
                 for file in &input.raw.dropped_files {
-                    if let Err(error) = self.handle_dropped_file(&mod_directory, &file) {
+                    if let Err(error) = self.handle_dropped_file(&mod_directory, file) {
                         error!("An error occurred while handling dropped file: {error}")
                     }
                 }
