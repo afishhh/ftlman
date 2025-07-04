@@ -417,7 +417,7 @@ trait Popup {
     // or None for modal
     fn window_title(&self) -> Option<&str>;
     fn id(&self) -> egui::Id;
-    fn show(&self, ui: &mut Ui) -> bool;
+    fn show(&self, app: &mut App, ui: &mut Ui) -> bool;
 }
 
 struct ErrorPopup {
@@ -474,7 +474,7 @@ impl Popup for ErrorPopup {
         self.id
     }
 
-    fn show(&self, ui: &mut Ui) -> bool {
+    fn show(&self, _app: &mut App, ui: &mut Ui) -> bool {
         render_error_chain(ui, self.error_chain.iter());
         true
     }
@@ -494,7 +494,7 @@ impl Popup for PatchFailedPopup {
         egui::Id::new("patch failed popup")
     }
 
-    fn show(&self, ui: &mut Ui) -> bool {
+    fn show(&self, _app: &mut App, ui: &mut Ui) -> bool {
         let mut open = true;
 
         ui.set_max_height(ui.ctx().screen_rect().height() * 0.75);
@@ -1219,7 +1219,12 @@ impl App {
     }
 
     fn update_dynamic_popups(&mut self, ctx: &egui::Context) {
-        self.popups.retain(|popup| {
+        // Temporarily take out popups from `self` so we can give a `&mut Self` to `Popup::show`.
+        // If `Popup::show` adds anything to `self.popups` we'll just merge it back into this
+        // `Vec` afterwards, although this doesn't actually happen anywhere for now.
+        let mut tmp = std::mem::take(&mut self.popups);
+        
+        tmp.retain(|popup| {
             if let Some(title) = popup.window_title() {
                 let mut open = true;
 
@@ -1228,7 +1233,7 @@ impl App {
                     .frame(egui::Frame::popup(&ctx.style()))
                     .id(popup.id())
                     .open(&mut open)
-                    .show(ctx, |ui| popup.show(ui))
+                    .show(ctx, |ui| popup.show(self, ui))
                     .is_some_and(|i| i.inner.unwrap_or(true));
 
                 open
@@ -1236,12 +1241,15 @@ impl App {
                 let mut open = true;
 
                 open &= !egui::Modal::new(popup.id())
-                    .show(ctx, |ui| open &= popup.show(ui))
+                    .show(ctx, |ui| open &= popup.show(self, ui))
                     .should_close();
 
                 open
             }
         });
+
+        tmp.append(&mut self.popups);
+        self.popups = tmp;
     }
 
     fn update_settings_window(&mut self, ctx: &egui::Context) {
