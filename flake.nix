@@ -56,7 +56,6 @@
                 lockFile = ./Cargo.lock;
                 outputHashes = {
                   "annotate-snippets-0.11.5" = "sha256-cKsjn6oOVBX8jRiKfTsNjUzsJYpNx7TC1fXTYH3cRNo=";
-                  "ecolor-0.31.1" = "sha256-k+ItmGLRCfMW3Xv0yW6aR+LFr4l1i/nB+fkxEZ7Vpm4=";
                   "zip-2.6.1" = "sha256-mZ6Pm9W32AF9w4kQuhhfnB+i2PH9nLtc91TQro9ggy8=";
                 };
               };
