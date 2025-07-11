@@ -296,7 +296,8 @@ impl Settings {
 
     pub fn load(path: &Path) -> Option<Settings> {
         if path.exists() {
-            serde_json::de::from_reader(File::open(path).unwrap()).unwrap()
+            serde_json::de::from_reader(File::open(path).expect("failed to open settings file"))
+                .expect("failed to deserialize settings file")
         } else {
             None
         }
