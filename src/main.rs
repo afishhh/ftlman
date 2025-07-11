@@ -60,6 +60,8 @@ use lazy::ResettableLazy;
 use update::{UpdaterProgress, get_latest_release_or_none};
 use util::{SloppyVersion, to_human_size_units, touch_create};
 
+use crate::util::fs_write_atomic;
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
 const STATE_MIGRATION_FLAG_FILE: &str = "ftlman/did-prompt-to-migrate-state.flag";
@@ -305,7 +307,7 @@ impl Settings {
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         std::fs::create_dir_all(path.parent().unwrap())?;
-        serde_json::ser::to_writer(File::create(path)?, self)?;
+        fs_write_atomic(path, &serde_json::to_vec(self)?)?;
         Ok(())
     }
 
@@ -735,13 +737,17 @@ impl App {
             .unwrap_or_else(|e| error!("Failed to save settings: {e}"));
         debug!("Saving mod order");
         let order = self.shared.lock().mod_configuration();
-        match std::fs::File::create(self.settings.effective_mod_directory().join(MOD_ORDER_FILENAME)) {
-            Ok(f) => {
-                if let Err(e) = serde_json::to_writer(f, &order) {
-                    error!("Failed to write mod order: {e}")
-                }
-            }
-            Err(e) => error!("Failed to open mod order file: {e}"),
+        let result = serde_json::to_vec(&order)
+            .map_err(anyhow::Error::from)
+            .and_then(|bytes| {
+                fs_write_atomic(
+                    &self.settings.effective_mod_directory().join(MOD_ORDER_FILENAME),
+                    &bytes,
+                )
+                .map_err(anyhow::Error::from)
+            });
+        if let Err(e) = result {
+            error!("Failed to write mod order: {e}")
         }
     }
 

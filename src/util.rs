@@ -105,6 +105,20 @@ pub fn crc32_from_reader(reader: &mut impl Read) -> std::io::Result<u32> {
     Ok(writer.crc.finalize())
 }
 
+pub fn fs_write_atomic(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let tmp_path = path.with_file_name({
+        let mut tmp_file_name = path
+            .file_name()
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::IsADirectory, "path ends in .."))?
+            .to_owned();
+        tmp_file_name.push(".tmp");
+        tmp_file_name
+    });
+
+    std::fs::write(&tmp_path, content)?;
+    std::fs::rename(tmp_path, path)
+}
+
 #[derive(Debug, Clone)]
 pub enum SloppyVersion {
     Semver(semver::Version),

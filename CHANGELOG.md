@@ -5,6 +5,10 @@
 - XML syntax warnings in append files are now printed in the console while patching. This allows mod authors to discover issues with their mods which may on occasion make them fail on Slipstream.
 - Trying to patch mods that require Hyperspace without an appropriate Hyperspace version selected will now result in a warning.
 
+### Changed
+
+- Saving settings and mod order has now been made atomic to prevent rare corruption.
+
 ## [v0.6.5]
 
 ### Added
