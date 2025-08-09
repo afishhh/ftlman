@@ -1547,7 +1547,8 @@ impl App {
                     let mut close = false;
                     let mut run_update = false;
 
-                    let is_updater_runnable = self
+                    let build_is_portable = cfg!(feature = "portable-release");
+                    let is_updater_runnable = build_is_portable && self
                         .updater_state
                         .as_ref()
                         .is_none_or(|state| matches!(state.promise.poll(), Poll::Ready(Err(..))))
@@ -1622,6 +1623,11 @@ impl App {
                                 run_update = true;
                             }
                         });
+
+                        if !build_is_portable {
+                            ui.set_max_width(ui.min_rect().width());
+                            ui.colored_label(egui::Color32::ORANGE, l!("update-modal-updater-unsupported"));
+                        }
 
                         if let Some(state) = self.updater_state.as_ref() {
                             ui.add_space(5.0);

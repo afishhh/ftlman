@@ -80,6 +80,9 @@ update-modal-dismiss = Dismiss
 update-modal-open-in-browser = Open in browser
 update-modal-run-update = Update
 update-modal-progress = Downloading update... {$current}/{$max}
+update-modal-updater-unsupported =
+    This build does not support automatic updates.
+    Only portable builds downloaded from the releases tab can be automatically updated.
 
 missing-hyperspace-top =
     Mod [s]{$mod}[/s] {$req ->
