@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.6.6]
+
 ### Added
 
 - XML syntax warnings in append files are now printed in the console while patching. This allows mod authors to discover issues with their mods which may on occasion make them fail in Slipstream.
@@ -191,7 +193,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.5...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.6...HEAD
+[v0.6.6]: https://github.com/afishhh/ftlman/compare/v0.6.5...v0.6.6
 [v0.6.5]: https://github.com/afishhh/ftlman/compare/v0.6.4...v0.6.5
 [v0.6.4]: https://github.com/afishhh/ftlman/compare/v0.6.3...v0.6.4
 [v0.6.3]: https://github.com/afishhh/ftlman/compare/v0.6.2...v0.6.3
