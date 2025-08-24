@@ -659,6 +659,12 @@ fn fixup_ftl_directory(path: &mut PathBuf) -> bool {
     if path.join("data/ftl.dat").exists() {
         path.push("data");
         true
+    } else if path.join("FTL.app").exists() {
+        path.push("FTL.app/Contents/Resources");
+        true
+    } else if path.join("FTL Advanced Edition.app").exists() {
+        path.push("FTL Advanced Edition.app/Contents/Resources");
+        true
     } else {
         false
     }
