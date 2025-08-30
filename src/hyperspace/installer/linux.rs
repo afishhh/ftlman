@@ -31,7 +31,7 @@ pub fn available(hs_version: &semver::Version) -> bool {
     *hs_version >= semver::Version::new(1, 0, 1)
 }
 
-pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+pub fn install(ftl: &Path, version: &super::versions::Version, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     let shared_objects = zip
         .file_names()
         .filter(|name| ZIP_SO_REGEX.is_match(name))
@@ -69,8 +69,7 @@ pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> 
             script.insert_str(range.start, s);
         }
 
-        // Hopefully the two FTL version have different sizes...
-        let obj = if std::fs::metadata(ftl.join("FTL.amd64"))?.len() == 72443660 {
+        let obj = if version.exe_size == 72443660 {
             "Hyperspace.1.6.13.amd64.so"
         } else {
             "Hyperspace.1.6.12.amd64.so"

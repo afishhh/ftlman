@@ -110,7 +110,7 @@ impl Patch {
 
 #[derive(Deserialize)]
 pub struct Version {
-    exe_size: u64,
+    pub(super) exe_size: u64,
     platform: super::Platform,
     #[serde(default)]
     natively_supported: bool,

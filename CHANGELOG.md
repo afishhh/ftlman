@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Support for installing Hyperspace on MacOS.
+
 ## [v0.7.1]
 
 ### Added

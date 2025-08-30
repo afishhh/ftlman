@@ -11,6 +11,7 @@ use serde::{Deserialize, Deserializer};
 use zip::ZipArchive;
 
 mod linux;
+mod macos;
 mod versions;
 mod windows;
 
@@ -21,12 +22,15 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
     let win_original = ftl.join("FTLGame_orig.exe");
     let win = ftl.join("FTLGame.exe");
     let unix = ftl.join("FTL.amd64");
+    let macos = ftl.join("../MacOS/FTL");
     Ok(if win_original.try_exists()? {
         Some(win_original)
     } else if win.try_exists()? {
         Some(win)
     } else if unix.try_exists()? {
         Some(unix)
+    } else if macos.try_exists()? {
+        Some(macos)
     } else {
         None
     })
@@ -86,9 +90,6 @@ impl Installer {
         info!("Detected FTL version {}", version.name());
 
         let (platform, patches) = if version.natively_supported() {
-            if version.platform() == Platform::MacOS {
-                return Ok(Err("MacOS is not supported yet".to_owned()));
-            }
             (version.platform(), None)
         } else {
             let patches = version.patches();
@@ -147,9 +148,12 @@ impl Installer {
             Platform::Windows => windows::install(ftl, zip, patch_data),
             Platform::Linux => {
                 assert!(self.patches.is_none());
-                linux::install(ftl, zip)
+                linux::install(ftl, &self.version, zip)
             }
-            Platform::MacOS => bail!("unreachable: MacOS not supported yet"),
+            Platform::MacOS => {
+                assert!(self.patches.is_none());
+                macos::install(ftl, &self.version, zip)
+            }
         }
     }
 
@@ -157,7 +161,7 @@ impl Installer {
         match self.platform {
             Platform::Windows => windows::disable(ftl),
             Platform::Linux => linux::disable(ftl),
-            Platform::MacOS => bail!("unreachable: MacOS not supported yet"),
+            Platform::MacOS => macos::disable(ftl),
         }
     }
 }
