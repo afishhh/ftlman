@@ -11,6 +11,7 @@ use zip::ZipArchive;
 use crate::cache::CACHE;
 
 mod linux;
+mod macos;
 mod windows;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +19,7 @@ enum Version {
     Steam1_6_14Win = 0,
     Steam1_6_13Win = 9,
     Steam1_6_13Linux = 1,
-    Steam1_6_13Mac = 10,
+    Steam1_6_13MacOS = 10,
     Gog1_6_13B = 2,
     Gog1_6_12 = 13,
     Gog1_6_9 = 3,
@@ -45,7 +46,7 @@ impl Version {
             128019802 => Version::Gog1_6_13B,
             125159498 => Version::Gog1_6_12,
             125087845 => Version::Gog1_6_9,
-            4952160 => Version::Steam1_6_13Mac,
+            4952160 => Version::Steam1_6_13MacOS,
             4898736 => Version::Humble1_6_12MacOS,
             _ => return None,
         })
@@ -55,7 +56,7 @@ impl Version {
         match self {
             Version::Steam1_6_14Win => "Steam 1.6.14 Windows",
             Version::Steam1_6_13Win => "Steam 1.6.13 Windows",
-            Version::Steam1_6_13Mac => "Steam 1.6.13 MacOS",
+            Version::Steam1_6_13MacOS => "Steam 1.6.13 MacOS",
             Version::Steam1_6_13Linux => "Steam 1.6.13 Linux",
             Version::Gog1_6_13B => "GOG 1.6.13B",
             Version::Gog1_6_12 => "GOG 1.6.12",
@@ -163,12 +164,15 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
     let win_original = ftl.join("FTLGame_orig.exe");
     let win = ftl.join("FTLGame.exe");
     let unix = ftl.join("FTL.amd64");
+    let macos = ftl.join("../MacOS/FTL");
     Ok(if win_original.try_exists()? {
         Some(win_original)
     } else if win.try_exists()? {
         Some(win)
     } else if unix.try_exists()? {
         Some(unix)
+    } else if macos.try_exists()? {
+        Some(macos)
     } else {
         None
     })
@@ -178,11 +182,13 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
 enum Platform {
     Windows,
     Linux,
+    MacOS,
 }
 
 #[derive(Clone)]
 pub struct Installer {
     platform: Platform,
+    version: Version,
     required_patch: Option<&'static Patch>,
 }
 
@@ -205,11 +211,19 @@ impl Installer {
             warn!("Failed to determine FTL version (size={size})");
         }
 
+        let Some(version) = version else {
+            return Ok(Err(format!(
+                "FTL installation not recognized: {:?} size={size}",
+                exe_path.file_name().unwrap()
+            )));
+        };
+
         let (platform, patch) = match version {
-            Some(Version::Downgraded1_6_9Win) => (Platform::Windows, None),
-            Some(Version::Steam1_6_13Linux | Version::Humble1_6_12Linux) => (Platform::Linux, None),
-            Some(Version::Gog1_6_9) => (Platform::Windows, None),
-            Some(version) => {
+            Version::Downgraded1_6_9Win => (Platform::Windows, None),
+            Version::Steam1_6_13Linux | Version::Humble1_6_12Linux => (Platform::Linux, None),
+            Version::Gog1_6_9 => (Platform::Windows, None),
+            Version::Steam1_6_13MacOS | Version::Humble1_6_12MacOS => (Platform::MacOS, None),
+            version => {
                 if let Some(patch) = find_patch(version) {
                     (Platform::Windows, Some(patch))
                 } else {
@@ -218,16 +232,11 @@ impl Installer {
                     )));
                 }
             }
-            None => {
-                return Ok(Err(format!(
-                    "FTL installation not recognized: {:?} size={size}",
-                    exe_path.file_name().unwrap()
-                )));
-            }
         };
 
         Ok(Ok(Self {
             platform,
+            version,
             required_patch: patch,
         }))
     }
@@ -250,7 +259,11 @@ impl Installer {
             Platform::Windows => windows::install(ftl, zip, patcher),
             Platform::Linux => {
                 assert!(self.required_patch.is_none());
-                linux::install(ftl, zip)
+                linux::install(ftl, self.version, zip)
+            }
+            Platform::MacOS => {
+                assert!(self.required_patch.is_none());
+                macos::install(ftl, self.version, zip)
             }
         }
     }
@@ -259,6 +272,7 @@ impl Installer {
         match self.platform {
             Platform::Windows => windows::disable(ftl),
             Platform::Linux => linux::disable(ftl),
+            Platform::MacOS => macos::disable(ftl),
         }
     }
 }

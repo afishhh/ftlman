@@ -13,7 +13,7 @@ use crate::{
 };
 
 static HYPERSPACE_REPOSITORY: LazyLock<github::Repository> =
-    LazyLock::new(|| github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace"));
+    LazyLock::new(|| github::Repository::new("The-Dumb-Dino", "FTL-Hyperspace-Dino"));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HyperspaceRelease {
