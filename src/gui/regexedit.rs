@@ -51,7 +51,7 @@ impl<'a> RegexEdit<'a> {
         let mut layouter = move |ui: &Ui, text: &dyn TextBuffer, width: f32| {
             let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text.as_str(), "re");
             layout_job.wrap.max_width = width;
-            ui.fonts(|f| f.layout_job(layout_job))
+            ui.fonts_mut(|f| f.layout_job(layout_job))
         };
 
         let mut text_edit = TextEdit::singleline(self.buffer)

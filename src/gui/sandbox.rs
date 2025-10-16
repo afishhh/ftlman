@@ -330,8 +330,8 @@ enum PatchOutput {
 }
 
 struct PatchedContent {
-    text: String,
-    layout_job: LayoutJob,
+    text: Arc<str>,
+    layout_job: Arc<LayoutJob>,
     cached_galley: Arc<egui::Galley>,
     find_invalidated: bool,
 }
@@ -339,11 +339,17 @@ struct PatchedContent {
 impl PatchedContent {
     fn new(text: String, ctx: &egui::Context) -> Self {
         let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
-        let layout_job = syntax_highlighting::highlight(ctx, &ctx.style(), &theme, text.as_str(), "xml");
+        let layout_job = Arc::new(syntax_highlighting::highlight(
+            ctx,
+            &ctx.style(),
+            &theme,
+            text.as_str(),
+            "xml",
+        ));
 
         Self {
-            text,
-            cached_galley: ctx.fonts(|f| f.layout_job(layout_job.clone())),
+            text: text.into(),
+            cached_galley: ctx.fonts_mut(|f| f.layout_job(layout_job.clone())),
             layout_job,
             find_invalidated: true,
         }
@@ -353,7 +359,7 @@ impl PatchedContent {
         if self.cached_galley.pixels_per_point == ctx.pixels_per_point() {
             self.cached_galley.clone()
         } else {
-            self.cached_galley = ctx.fonts(|f| f.layout_job(self.layout_job.clone()));
+            self.cached_galley = ctx.fonts_mut(|f| f.layout_job(self.layout_job.clone()));
             self.cached_galley.clone()
         }
     }
@@ -506,7 +512,7 @@ impl WindowState for Sandbox {
         let layouter = move |ui: &Ui, text: &dyn TextBuffer, width: f32, language: &'static str| {
             let mut layout_job = syntax_highlighting::highlight(ui.ctx(), ui.style(), &theme, text.as_str(), language);
             layout_job.wrap.max_width = width;
-            ui.fonts(|f| f.layout_job(layout_job))
+            ui.fonts_mut(|f| f.layout_job(layout_job))
         };
 
         if let Some(output) =
@@ -698,7 +704,7 @@ impl WindowState for Sandbox {
                                                 .show(ui, |ui| {
                                                     ui.set_min_width(ui.available_width());
 
-                                                    egui::TextEdit::multiline(&mut patched.text.as_str())
+                                                    egui::TextEdit::multiline(&mut patched.text)
                                                         .layouter(&mut layouter2)
                                                         .code_editor()
                                                         .show(ui)

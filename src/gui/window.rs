@@ -53,7 +53,7 @@ impl<S: WindowState> DeferredWindow<S> {
                     let mut state = state.lock();
                     state.render(context);
 
-                    let screen_rect = context.input(|i| i.screen_rect);
+                    let screen_rect = context.input(|i| i.content_rect());
                     context.memory_mut(|m| m.data.insert_persisted(id, screen_rect.size()));
 
                     if context.input(|r| r.viewport().close_requested()) {

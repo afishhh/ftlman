@@ -416,7 +416,7 @@ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Ite
         );
     }
 
-    let galley = ui.fonts(|x| x.layout_job(job));
+    let galley = ui.fonts_mut(|x| x.layout_job(job));
     ui.label(galley);
 }
 
@@ -1003,7 +1003,7 @@ impl App {
                 ui.separator();
 
                 ui.horizontal_top(|ui| {
-                    let viewport_width = ctx.screen_rect().width();
+                    let viewport_width = ctx.content_rect().width();
                     let horizontal_item_spacing = ui.spacing().item_spacing.x;
                     let mut shared = self.shared.lock();
 
@@ -1204,7 +1204,7 @@ impl App {
                                                 handle.ui(ui, |ui| {
                                                     let label = ui.selectable_label(
                                                         item.enabled,
-                                                        ui.fonts(|f| {
+                                                        ui.fonts_mut(|f| {
                                                             f.layout_job(LayoutJob {
                                                                 wrap: TextWrapping::truncate_at_width(
                                                                     ui.available_width(),
@@ -1232,7 +1232,7 @@ impl App {
                                                     egui::Layout::right_to_left(eframe::emath::Align::Center),
                                                     |ui| {
                                                         if let Some(title) = item.title().unwrap_or(None) {
-                                                            ui.label(ui.fonts(|f| {
+                                                            ui.label(ui.fonts_mut(|f| {
                                                                 f.layout_job(LayoutJob {
                                                                     wrap: TextWrapping::truncate_at_width(
                                                                         ui.available_width(),
@@ -1372,7 +1372,7 @@ impl App {
 
                 open &= !egui::Modal::new(popup.id())
                     .show(ctx, |ui| {
-                        ui.set_max_height(ui.ctx().screen_rect().height() * 0.75);
+                        ui.set_max_height(ui.ctx().content_rect().height() * 0.75);
 
                         ui.horizontal(|ui| {
                             ui.heading(popup.window_title());
@@ -1574,7 +1574,7 @@ impl App {
                         let button_padding = ui.spacing().button_padding;
 
                         let mk_button_text = |key| {
-                            let galley = ui.fonts(|f| {
+                            let galley = ui.fonts_mut(|f| {
                                 f.layout_delayed_color(l!(key).into_owned(), font_id.clone(), f32::INFINITY)
                             });
                             let size = (button_padding * 2. + galley.size()).ceil();

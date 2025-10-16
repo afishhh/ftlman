@@ -11,10 +11,10 @@ env_logger = "0.11"
 log = "0.4"
 
 clap = { version = "4", features = ["derive"] }
-eframe = { version = "0.32", features = ["persistence"] }
+eframe = { version = "0.33", features = ["persistence"] }
 ureq = "2"
-egui_dnd = "0.13"
-egui_extras = { version = "0.32", features = ["syntect"] }
+egui_dnd = "0.14"
+egui_extras = { version = "0.33", features = ["syntect"] }
 dirs = "5"
 anyhow = "1.0"
 regex = "1"
@@ -95,6 +95,11 @@ lto = "thin"
 inherits = "release"
 strip = false
 debug = true
+
+[patch.crates-io]
+egui = { git = "https://github.com/afishhh/egui", rev = "f5d9f00117b3f8ff0af59924151fa2b9b584ce7d" }
+eframe = { git = "https://github.com/afishhh/egui", rev = "f5d9f00117b3f8ff0af59924151fa2b9b584ce7d" }
+epaint = { git = "https://github.com/afishhh/egui", rev = "f5d9f00117b3f8ff0af59924151fa2b9b584ce7d" }
 
 [workspace]
 members = ["compare_with_slipstream/normalize_xml"]
