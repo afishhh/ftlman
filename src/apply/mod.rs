@@ -8,7 +8,7 @@ use std::{
     time::Instant,
 };
 
-use annotate_snippets::{AnnotationKind, Group, Level};
+use annotate_snippets::{AnnotationKind, Group, Level, renderer::DecorStyle};
 use anyhow::{Context, Result, anyhow, bail};
 use log::{info, trace, warn};
 use parking_lot::Mutex;
@@ -314,7 +314,7 @@ pub fn apply_one_xml(
                     match error {
                         crate::append::PatchError::Panic(panic) => {
                             file_diag.with_mut(|builder| {
-                                let title = Level::ERROR.title("find tag panicked");
+                                let title = Level::ERROR.primary_title("find tag panicked");
                                 if let Some((message, message_span)) = &panic.message {
                                     builder.message(
                                         title,
@@ -622,7 +622,7 @@ fn make_lua_filesystems<'a, 'b>(
 }
 
 fn log_diagnostic_messages(messages: &[Group<'_>]) {
-    let renderer = annotate_snippets::Renderer::styled();
+    let renderer = annotate_snippets::Renderer::styled().decor_style(DecorStyle::Unicode);
     for message in messages {
         eprintln!("{}", renderer.render(std::slice::from_ref(message)));
     }

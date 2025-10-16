@@ -136,7 +136,7 @@ fn extract_lua_error_diagnostic<'a>(
     }
 
     builder.message_explicitly_spanned(
-        Level::ERROR.title(error_string),
+        Level::ERROR.primary_title(error_string),
         line_start..line_end,
         snippet_start_line,
     );

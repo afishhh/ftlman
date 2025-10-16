@@ -1,4 +1,4 @@
-use annotate_snippets::{Group, Renderer};
+use annotate_snippets::{Group, Renderer, renderer::DecorStyle};
 use eframe::egui::{
     self, Color32, FontId, TextFormat,
     text::{LayoutJob, LayoutSection},
@@ -80,7 +80,7 @@ pub fn layout_ansi(output: &mut LayoutJob, text: &str, font_id: FontId) {
 }
 
 pub fn layout_diagnostic_messages<'a: 'b, 'b>(job: &mut LayoutJob, messages: impl IntoIterator<Item = &'b Group<'a>>) {
-    let renderer = Renderer::styled();
+    let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
 
     for message in messages {
         if let Some(last) = job.sections.last_mut() {

@@ -55,7 +55,6 @@
               cargoLock = {
                 lockFile = ./Cargo.lock;
                 outputHashes = {
-                  "annotate-snippets-0.11.5" = "sha256-cKsjn6oOVBX8jRiKfTsNjUzsJYpNx7TC1fXTYH3cRNo=";
                   "zip-2.6.1" = "sha256-mZ6Pm9W32AF9w4kQuhhfnB+i2PH9nLtc91TQro9ggy8=";
                 };
               };

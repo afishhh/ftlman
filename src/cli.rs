@@ -1,6 +1,6 @@
 use std::{ffi::OsStr, fs::File, io::Write, path::PathBuf, str::FromStr};
 
-use annotate_snippets::Renderer;
+use annotate_snippets::{Renderer, renderer::DecorStyle};
 use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use log::{error, info, warn};
@@ -247,7 +247,7 @@ pub fn main(command: Command) -> Result<()> {
                 true,
             );
 
-            let renderer = Renderer::styled();
+            let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
             for message in diagnostics.take_messages() {
                 eprintln!("{}", renderer.render(std::slice::from_ref(&message)))
             }
@@ -354,7 +354,7 @@ pub fn main(command: Command) -> Result<()> {
                 }
             };
 
-            let renderer = Renderer::styled();
+            let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
             for message in diagnostics.take_messages() {
                 eprintln!("{}", renderer.render(std::slice::from_ref(&message)))
             }
@@ -381,7 +381,7 @@ pub fn main(command: Command) -> Result<()> {
                 Some(&mut diagnostics.file(&source, Some(patch_name))),
             );
 
-            let renderer = Renderer::styled();
+            let renderer = Renderer::styled().decor_style(DecorStyle::Unicode);
             for message in diagnostics.take_messages() {
                 eprintln!("{}", renderer.render(std::slice::from_ref(&message)))
             }

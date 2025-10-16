@@ -71,7 +71,7 @@ impl<'a> FileDiagnosticBuilder<'a, '_> {
     }
 
     fn snippet(&self) -> Snippet<'a, Annotation<'a>> {
-        let snippet = Snippet::source(self.use_source()).fold(true);
+        let snippet = Snippet::source(self.use_source());
 
         self.add_origin(snippet)
     }
@@ -85,24 +85,21 @@ impl<'a> FileDiagnosticBuilder<'a, '_> {
     }
 
     pub fn message(&mut self, title: Title<'a>, annotations: impl IntoIterator<Item = Annotation<'a>>) {
-        self.parent.messages.push(
-            Group::new()
-                .element(title)
-                .element(self.snippet().annotations(annotations)),
-        )
+        self.parent
+            .messages
+            .push(Group::with_title(title).element(self.snippet().annotations(annotations)))
     }
 
     pub fn message_explicitly_spanned(&mut self, title: Title<'a>, range: Range<usize>, line_start: usize) {
-        self.parent
-            .messages
-            .push(
-                Group::new().element(title).element(
-                    self.add_origin(
-                        Snippet::<'a, Annotation<'a>>::source(&self.use_source()[range.start..range.end])
-                            .line_start(line_start),
-                    ),
+        self.parent.messages.push(
+            Group::with_title(title).element(
+                self.add_origin(
+                    Snippet::<'a, Annotation<'a>>::source(&self.use_source()[range.start..range.end])
+                        .fold(false)
+                        .line_start(line_start),
                 ),
-            )
+            ),
+        )
     }
 }
 

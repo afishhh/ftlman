@@ -122,7 +122,7 @@ macro_rules! parser_get_attr {
                     $self.diag.with_mut(|builder| {
                         let span = attr.value_position_in(&$self.reader);
                         builder.message(
-                            Level::ERROR.title(format!(
+                            Level::ERROR.primary_title(format!(
                                 concat!("mod:{}", " ", $name, " attribute has invalid value"),
                                 $event.name()
                             )),
@@ -142,7 +142,7 @@ macro_rules! parser_get_attr {
                     $self.diag.with_mut(|builder| {
                         let span = attr.value_position_in(&$self.reader);
                         builder.message(
-                            Level::ERROR.title(format!(
+                            Level::ERROR.primary_title(format!(
                                 concat!("mod:{}", " ", $name, " attribute has invalid value"),
                                 $event.name()
                             )),
@@ -164,7 +164,7 @@ macro_rules! parser_get_attr {
                 $self.diag.with_mut(|builder| {
                     let tag_span = $event.position_in(&$self.reader);
                     builder.message(
-                        Level::ERROR.title(format!(
+                        Level::ERROR.primary_title(format!(
                             concat!("mod:{}", " is missing ", $what, " attribute"),
                             $event.name()
                         )),
@@ -308,7 +308,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         let name_span = start.prefixed_name_position_in(&self.reader);
                         let parent_span = event.position_in(&self.reader);
                         builder.message(
-                            Level::ERROR.title("mod:insertByFind contains unexpected tag"),
+                            Level::ERROR.primary_title("mod:insertByFind contains unexpected tag"),
                             [
                                 AnnotationKind::Primary
                                     .span(name_span.clone())
@@ -333,7 +333,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         let Some(find) = found_find else {
             self.diag.with_mut(|builder| {
                 let span = event.position_in(&self.reader);
-                let title = Level::ERROR.title("mod:insertByFind without find");
+                let title = Level::ERROR.primary_title("mod:insertByFind without find");
                 let primary = AnnotationKind::Primary
                     .span(span)
                     .label("this mod:insertByFind is missing a find tag");
@@ -359,7 +359,8 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         if before.is_empty() && after.is_empty() {
             self.diag.with_mut(|builder| {
                 let span = event.position_in(&self.reader);
-                let title = Level::ERROR.title("mod:insertByFind requires at least one mod-before or mod-after tag");
+                let title =
+                    Level::ERROR.primary_title("mod:insertByFind requires at least one mod-before or mod-after tag");
                 let primary = AnnotationKind::Primary
                     .span(span)
                     .label("this mod:insertByFind is missing a mod-before or mod-after tag");
@@ -466,7 +467,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         let span = attr.value_position_in(&self.reader);
                         let annotations = Self::make_regex_error_annotations(span.start, &attr.value(), error);
                         builder.message(
-                            Level::ERROR.title("mod:selector attribute filter has invalid value"),
+                            Level::ERROR.primary_title("mod:selector attribute filter has invalid value"),
                             annotations,
                         );
                     });
@@ -491,7 +492,10 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                                     .span(start.position_in(&self.reader))
                                     .label("in this selector element"),
                             );
-                            builder.message(Level::ERROR.title("mod:selector value filter is invalid"), annotations);
+                            builder.message(
+                                Level::ERROR.primary_title("mod:selector value filter is invalid"),
+                                annotations,
+                            );
                         });
                         return Ok(SelectorFilterOrError::Error);
                     }
@@ -589,7 +593,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 this.diag.with_mut(|builder| {
                     let name_span = start.prefixed_name_position_in(&this.reader);
                     builder.message(
-                        Level::ERROR.title("invalid mod command"),
+                        Level::ERROR.primary_title("invalid mod command"),
                         [AnnotationKind::Primary
                             .span(name_span)
                             .label("unrecognized mod command")],
@@ -746,7 +750,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                             .unwrap()
                             .value_position_in(&self.reader);
                         builder.message(
-                            Level::ERROR.title(format!("invalid {} limit attribute value", event.name())),
+                            Level::ERROR.primary_title(format!("invalid {} limit attribute value", event.name())),
                             [AnnotationKind::Primary.span(value_span).label("limit must be >= -1")],
                         )
                     });
@@ -867,7 +871,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                             None => {
                                 self.diag.with_mut(|builder| {
                                     let span = event.position_in(&self.reader);
-                                    let title = Level::ERROR.title("mod:findComposite without par");
+                                    let title = Level::ERROR.primary_title("mod:findComposite without par");
                                     let primary = AnnotationKind::Primary
                                         .span(span)
                                         .label("this mod:findComposite is missing a mod:par tag");
@@ -915,7 +919,7 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                 self.diag.with_mut(|builder| {
                     let name_range = event.name_position_in(&self.reader);
                     builder.message(
-                        Level::ERROR.title("unrecognized mod find tag"),
+                        Level::ERROR.primary_title("unrecognized mod find tag"),
                         [AnnotationKind::Primary.span(name_range).label("unrecognized tag name")],
                     );
                 });

@@ -24,7 +24,7 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                         let current = attribute.name_position_in(&reader);
                         if let Some(previous) = seen.insert(attribute.name(), current.clone()) {
                             builder.message(
-                                Level::WARNING.title("duplicate attribute"),
+                                Level::WARNING.primary_title("duplicate attribute"),
                                 [
                                     AnnotationKind::Context.span(previous).label("previous occurrence here"),
                                     AnnotationKind::Primary
@@ -40,7 +40,7 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                         let start_span = start.position_in(&reader);
                         let end_span = end.position_in(&reader);
                         builder.message(
-                            Level::WARNING.title("element closing tag doesn't match opening tag"),
+                            Level::WARNING.primary_title("element closing tag doesn't match opening tag"),
                             [
                                 AnnotationKind::Primary
                                     .span(end_span)
@@ -53,7 +53,7 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                     None => {
                         let end_span = end.position_in(&reader);
                         builder.message(
-                            Level::WARNING.title("unmatched end tag"),
+                            Level::WARNING.primary_title("unmatched end tag"),
                             [AnnotationKind::Primary
                                 .span(end_span)
                                 .label("end tag doesn't have a corresponding opening tag")],
@@ -71,7 +71,7 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                 parsing_would_succeed = false;
 
                 builder.message(
-                    Level::ERROR.title("parse error"),
+                    Level::ERROR.primary_title("parse error"),
                     [AnnotationKind::Primary.span(e.span()).label(e.kind().message())],
                 );
             }
@@ -79,7 +79,7 @@ pub fn validate_xml(source: &str, options: Options, builder: &mut FileDiagnostic
                 for unclosed in element_stack {
                     let span = unclosed.position_in(&reader);
                     builder.message(
-                        Level::WARNING.title("unclosed element"),
+                        Level::WARNING.primary_title("unclosed element"),
                         [
                             AnnotationKind::Context.span(span).label("opened here"),
                             AnnotationKind::Primary
