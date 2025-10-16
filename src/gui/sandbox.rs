@@ -89,7 +89,7 @@ enum PatchWorkerCommand {
         mode: PatchMode,
         patch: String,
         source_path: String,
-        waker: egui::Context,
+        ctx: egui::Context,
     },
 }
 
@@ -170,7 +170,7 @@ impl PatchWorker {
                     mode,
                     patch,
                     source_path,
-                    waker,
+                    ctx,
                 } => {
                     let start = Instant::now();
                     let source_text = match self
@@ -243,30 +243,25 @@ impl PatchWorker {
                     let end = Instant::now();
                     debug!("Sandbox patching took {:.1}ms", (end - start).as_secs_f64() * 1000.);
 
-                    let mut message_output = LayoutJob::default();
-                    layout_diagnostic_messages(&mut message_output, &diagnostics.take_messages());
+                    let message_output = {
+                        let mut message_output = LayoutJob::default();
+                        layout_diagnostic_messages(&mut message_output, &diagnostics.take_messages());
+                        Arc::new(message_output)
+                    };
+
+                    let patch_output = match result {
+                        Ok(patched) => Some(PatchOutput::Xml(PatchedContent::new(patched, &ctx))),
+                        Err(None) => None,
+                        Err(Some(error)) => Some(PatchOutput::Error(error)),
+                    };
 
                     let mut output = self.shared.output.lock();
 
-                    match result {
-                        Ok(patched) => {
-                            output.patch = Some(PatchOutput::Xml {
-                                content: patched,
-                                find_invalidated: true,
-                            })
-                        }
-                        Err(None) => {
-                            output.patch = None;
-                        }
-                        Err(Some(error)) => {
-                            output.patch = Some(PatchOutput::Error(error));
-                        }
-                    };
-
-                    output.diagnostics = Some(Arc::new(message_output));
+                    output.patch = patch_output;
+                    output.diagnostics = Some(message_output);
 
                     self.shared.running.store(false, Ordering::Release);
-                    waker.request_repaint();
+                    ctx.request_repaint();
                 }
             }
         }
@@ -330,8 +325,38 @@ struct Output {
 }
 
 enum PatchOutput {
-    Xml { content: String, find_invalidated: bool },
+    Xml(PatchedContent),
     Error(Error),
+}
+
+struct PatchedContent {
+    text: String,
+    layout_job: LayoutJob,
+    cached_galley: Arc<egui::Galley>,
+    find_invalidated: bool,
+}
+
+impl PatchedContent {
+    fn new(text: String, ctx: &egui::Context) -> Self {
+        let theme = syntax_highlighting::CodeTheme::from_style(&ctx.style());
+        let layout_job = syntax_highlighting::highlight(ctx, &ctx.style(), &theme, text.as_str(), "xml");
+
+        Self {
+            text,
+            cached_galley: ctx.fonts(|f| f.layout_job(layout_job.clone())),
+            layout_job,
+            find_invalidated: true,
+        }
+    }
+
+    fn get_galley_or_relayout(&mut self, ctx: &egui::Context) -> Arc<egui::Galley> {
+        if self.cached_galley.pixels_per_point == ctx.pixels_per_point() {
+            self.cached_galley.clone()
+        } else {
+            self.cached_galley = ctx.fonts(|f| f.layout_job(self.layout_job.clone()));
+            self.cached_galley.clone()
+        }
+    }
 }
 
 // HACK?: kind of hard to refactor into a function
@@ -526,10 +551,7 @@ impl WindowState for Sandbox {
                     ui.add_space(ui.spacing().window_margin.top.into());
 
                     match &mut output.patch {
-                        Some(PatchOutput::Xml {
-                            content: xml,
-                            find_invalidated,
-                        }) => {
+                        Some(PatchOutput::Xml(patched)) => {
                             let top = ui.next_widget_position();
 
                             ui.with_layout(Layout::bottom_up(egui::Align::Min), |ui| {
@@ -569,7 +591,7 @@ impl WindowState for Sandbox {
                                             .inner
                                             .response;
 
-                                        if text_r.changed() || *find_invalidated {
+                                        if text_r.changed() || patched.find_invalidated {
                                             // FIXME: this is a silent error
                                             *regex = Regex::new(needle).ok().filter(|_| !needle.is_empty());
                                             do_scroll = regex.is_some() && text_r.changed();
@@ -579,7 +601,7 @@ impl WindowState for Sandbox {
 
                                             self.output_find_matches.clear();
                                             if let Some(re) = regex {
-                                                for m in re.find_iter(xml) {
+                                                for m in re.find_iter(&patched.text) {
                                                     let range = m.range();
 
                                                     if new_idx.is_none()
@@ -595,7 +617,7 @@ impl WindowState for Sandbox {
                                             }
 
                                             *idx = new_idx.unwrap_or(0);
-                                            *find_invalidated = false;
+                                            patched.find_invalidated = false;
                                             ui.ctx().request_repaint();
                                         }
 
@@ -627,8 +649,8 @@ impl WindowState for Sandbox {
 
                                 if let Some(range) = self.output_find_matches.get(*idx).cloned() {
                                     // why does it work this way??
-                                    let start_cc = xml[..range.start].chars().count();
-                                    let end_cc = start_cc + xml[range.start..range.end].chars().count();
+                                    let start_cc = patched.text[..range.start].chars().count();
+                                    let end_cc = start_cc + patched.text[range.start..range.end].chars().count();
                                     let ccrange = egui::text::CCursorRange {
                                         primary: CCursor::new(start_cc),
                                         secondary: CCursor::new(end_cc),
@@ -637,7 +659,7 @@ impl WindowState for Sandbox {
                                     selection_cursor = Some(ccrange);
                                 }
 
-                                let mut galley = layouter(ui, xml, ui.available_width(), "xml");
+                                let mut galley = patched.get_galley_or_relayout(ctx);
 
                                 if let (Some(crange), Some((id, Some(mut state)))) = (
                                     selection_cursor.filter(|_| do_scroll),
@@ -671,11 +693,12 @@ impl WindowState for Sandbox {
                                         ui.set_max_size(output_size);
 
                                         self.output_scroll_id = Some(
-                                            egui::ScrollArea::vertical()
+                                            egui::ScrollArea::both()
+                                                .max_width(ui.available_width())
                                                 .show(ui, |ui| {
                                                     ui.set_min_width(ui.available_width());
 
-                                                    egui::TextEdit::multiline(&mut xml.as_str())
+                                                    egui::TextEdit::multiline(&mut patched.text.as_str())
                                                         .layouter(&mut layouter2)
                                                         .code_editor()
                                                         .show(ui)
@@ -727,7 +750,7 @@ impl WindowState for Sandbox {
                         .send(PatchWorkerCommand::Patch {
                             mode: self.patch_mode,
                             patch: self.patch_text.clone(),
-                            waker: ctx.clone(),
+                            ctx: ctx.clone(),
                             source_path: self.pkg_names[current_index].clone(),
                         })
                         .is_err()
