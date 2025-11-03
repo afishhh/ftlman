@@ -2,6 +2,7 @@
 
 ### Added
 - Fatal errors on Windows will now result in an error box popping up with the details.
+- Hyperspace releases with split per-OS release archives are now supported.
 
 ### Changed
 

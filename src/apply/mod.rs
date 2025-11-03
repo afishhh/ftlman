@@ -966,13 +966,14 @@ pub fn apply_hyperspace(
     release: hyperspace::HyperspaceRelease,
     mut on_progress: impl FnMut(HyperspaceProgress),
 ) -> Result<Vec<u8>> {
-    let zip_data = CACHE.read_or_create_key("hyperspace", release.name(), || {
+    let asset = release.find_asset_for(installer.platform())?;
+    let zip_data = CACHE.read_or_create_key("hyperspace", asset.cache_key(), || {
         on_progress(HyperspaceProgress::DownloadStarted {
             is_patch: false,
             version: release.name().into(),
         });
 
-        release.fetch_zip(|current, max| on_progress(HyperspaceProgress::ProgressMade { current, max }))
+        asset.fetch(|current, max| on_progress(HyperspaceProgress::ProgressMade { current, max }))
     })?;
     let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
