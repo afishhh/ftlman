@@ -8,7 +8,7 @@ This project is an alternative to the [Slipstream Mod Manager](https://github.co
 - [x] Supports mod tags from [Blizz's Slipstream fork](https://github.com/blizzarchon/Slipstream-Mod-Manager)
 - [x] Supports an ftlman-specific Lua patching API (documentation available [here](https://fishhh.dev/ftlman/lua.html))
 - [x] Automatic [Hyperspace](https://github.com/FTL-Hyperspace/FTL-Hyperspace) installer
-- [x] Functional² XML and Lua Sandbox (syntax highlighting, WIP diagnostics)
+- [x] Functional XML and Lua Sandbox (with syntax highlighting and fancy diagnostics)
 
 Currently automatic hyperspace installation is supported for the following FTL versions:
 - Steam (Linux and Windows)
@@ -20,7 +20,6 @@ Patching the Microsoft version is technically supported but you may encounter pe
 If you find a mod that fails to patch with ftlman but works with slipstream or one that works different under ftlman [open an issue](https://github.com/afishhh/ftlman/issues/new).
 
 ¹ ftlman's XML parser is modeled closely after FTL's (RapidXML). This means it is very lenient but behaviour may be slightly different than Slipstream, due to Slipstream's messy handling of sloppy parsing.<br>
-² Struggles with files hundreds of kilobytes in size.
 
 ### Installation
 
