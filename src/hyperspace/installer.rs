@@ -20,11 +20,15 @@ enum Version {
     Steam1_6_13Win = 9,
     Steam1_6_13Linux = 1,
     Steam1_6_13MacOS = 10,
+
+    // MacOS 1.6.12 Steam, GoG, and Humble all have the same size
+    Many1_6_12MacOS = 12,
+
     Gog1_6_13B = 2,
     Gog1_6_12 = 13,
     Gog1_6_9 = 3,
+    Gog1_6_13MacOS = 14,
     Humble1_6_12Linux = 11,
-    Humble1_6_12MacOS = 12,
     Epic1_6_12 = 5,
     Origin1_6_12 = 6,
     Microsoft1_6_12 = 7,
@@ -47,7 +51,8 @@ impl Version {
             125159498 => Version::Gog1_6_12,
             125087845 => Version::Gog1_6_9,
             4952160 => Version::Steam1_6_13MacOS,
-            4898736 => Version::Humble1_6_12MacOS,
+            4898736 => Version::Many1_6_12MacOS,
+            4899748 => Version::Gog1_6_13MacOS,
             _ => return None,
         })
     }
@@ -58,11 +63,12 @@ impl Version {
             Version::Steam1_6_13Win => "Steam 1.6.13 Windows",
             Version::Steam1_6_13MacOS => "Steam 1.6.13 MacOS",
             Version::Steam1_6_13Linux => "Steam 1.6.13 Linux",
-            Version::Gog1_6_13B => "GOG 1.6.13B",
-            Version::Gog1_6_12 => "GOG 1.6.12",
-            Version::Gog1_6_9 => "GOG 1.6.9",
+            Version::Gog1_6_13B => "GOG 1.6.13B Windows",
+            Version::Gog1_6_12 => "GOG 1.6.12 Windows",
+            Version::Gog1_6_9 => "GOG 1.6.9 Windows",
+            Version::Gog1_6_13MacOS => "GOG 1.6.13 MacOS",
             Version::Humble1_6_12Linux => "Humble Bundle 1.6.12 Linux",
-            Version::Humble1_6_12MacOS => "Humble Bundle 1.6.12 MacOS",
+            Version::Many1_6_12MacOS => "Unknown 1.6.12 MacOS",
             Version::Epic1_6_12 => "Epic 1.6.12",
             Version::Origin1_6_12 => "Origin 1.6.12",
             Version::Microsoft1_6_12 => "Microsoft 1.6.12",
@@ -222,7 +228,7 @@ impl Installer {
             Version::Downgraded1_6_9Win => (Platform::Windows, None),
             Version::Steam1_6_13Linux | Version::Humble1_6_12Linux => (Platform::Linux, None),
             Version::Gog1_6_9 => (Platform::Windows, None),
-            Version::Steam1_6_13MacOS | Version::Humble1_6_12MacOS => (Platform::MacOS, None),
+            Version::Steam1_6_13MacOS | Version::Gog1_6_13MacOS | Version::Many1_6_12MacOS => (Platform::MacOS, None),
             version => {
                 if let Some(patch) = find_patch(version) {
                     (Platform::Windows, Some(patch))
