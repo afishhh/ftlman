@@ -255,6 +255,12 @@ impl PatchWorker {
                         Err(Some(error)) => Some(PatchOutput::Error(error)),
                     };
 
+                    let layout_end = Instant::now();
+                    debug!(
+                        "Initial output processing took {:.1}ms",
+                        (layout_end - end).as_secs_f64() * 1000.
+                    );
+
                     let mut output = self.shared.output.lock();
 
                     output.patch = patch_output;
@@ -293,6 +299,8 @@ impl PatchMode {
     }
 }
 
+const PATCH_ON_CHANGE_IDLE: std::time::Duration = std::time::Duration::from_millis(750);
+
 pub struct Sandbox {
     // If None then the window is closed.
     worker: Option<mpsc::SyncSender<PatchWorkerCommand>>,
@@ -306,6 +314,7 @@ pub struct Sandbox {
 
     patch_mode: PatchMode,
     patch_on_change: bool,
+    patch_text_last_in_flux: Option<Instant>,
     always_show_diagnostics: bool,
 
     current_file: Option<usize>,
@@ -389,6 +398,7 @@ impl Sandbox {
 
             patch_mode: PatchMode::XmlAppend,
             patch_on_change: true,
+            patch_text_last_in_flux: None,
             always_show_diagnostics: true,
 
             current_file: None,
@@ -750,7 +760,16 @@ impl WindowState for Sandbox {
                 .changed();
 
             if let Some(current_index) = self.current_file {
-                self.needs_update |= changed & self.patch_on_change;
+                let now = std::time::Instant::now();
+                if changed {
+                    self.patch_text_last_in_flux = Some(now);
+                } else if let Some(start) = self.patch_text_last_in_flux
+                    && now - start > PATCH_ON_CHANGE_IDLE
+                {
+                    self.needs_update |= self.patch_on_change;
+                    self.patch_text_last_in_flux = None;
+                }
+
                 if self.needs_update && !self.shared.running.swap(true, Ordering::AcqRel) {
                     if worker
                         .send(PatchWorkerCommand::Patch {
@@ -766,6 +785,7 @@ impl WindowState for Sandbox {
                             diagnostics: None,
                         };
                     }
+                    debug!("Dispatched patch job to sandbox worker");
                     self.needs_update = false;
                 }
             }
