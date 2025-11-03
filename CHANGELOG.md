@@ -3,6 +3,7 @@
 ### Added
 
 - Support for installing Hyperspace on MacOS.
+- Support for Hyperspace releases with split per-platform assets.
 
 ## [v0.7.1]
 

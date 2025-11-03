@@ -43,6 +43,16 @@ pub enum Platform {
     MacOS,
 }
 
+impl Platform {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Platform::Windows => "windows",
+            Platform::Linux => "linux",
+            Platform::MacOS => "macos",
+        }
+    }
+}
+
 impl FromStr for Platform {
     type Err = anyhow::Error;
 
@@ -112,6 +122,10 @@ impl Installer {
 
     pub fn ftl_version(&self) -> &versions::Version {
         &self.version
+    }
+
+    pub fn platform(&self) -> Platform {
+        self.platform
     }
 
     pub fn find_patch(&self, hs_version: &semver::Version) -> Result<Option<&Patch>> {
