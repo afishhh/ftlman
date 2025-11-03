@@ -8,6 +8,7 @@ use anyhow::{Context as _, Result, bail};
 use log::{info, warn};
 use zip::ZipArchive;
 
+use super::Platform;
 use crate::cache::CACHE;
 
 mod linux;
@@ -184,13 +185,6 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
     })
 }
 
-#[derive(Debug, Clone, Copy)]
-enum Platform {
-    Windows,
-    Linux,
-    MacOS,
-}
-
 #[derive(Clone)]
 pub struct Installer {
     platform: Platform,
@@ -245,6 +239,10 @@ impl Installer {
             version,
             required_patch: patch,
         }))
+    }
+
+    pub fn platform(&self) -> Platform {
+        self.platform
     }
 
     pub fn required_patch(&self) -> Option<&Patch> {
