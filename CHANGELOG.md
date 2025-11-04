@@ -9,6 +9,8 @@
 - Output in the XML Sandbox is no longer line-wrapped, and instead is horizontally scrollable.
 - Large outputs in the XML Sandbox have significantly improved performance.
 - `annotate_snippets` has been updated and switched to the Unicode decoration style.
+- `.append.lua` files are now guaranteed to be applied after other xml modifications (`.append.xml`, `.rawappend.xml`) of the same file in the same mod.
+  Note that other append types (`.append.xml`, `.rawappend.xml`, etc.) keep their current "as it is in the zip" behavior.
 
 ## [v0.6.6]
 

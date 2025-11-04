@@ -628,6 +628,37 @@ fn log_diagnostic_messages(messages: &[Group<'_>]) {
     }
 }
 
+// Sorts paths so that for all paths that are some kind of XML modification
+// (overwrite or append):
+// 1. Relative order between rawappend, append, and overwrites of one file is unchanged
+// 2. Lua appends of a file are placed after all of the above
+//
+// Non-XML modification paths will end up at the end of the list sorted alphabetically.
+fn sort_mod_paths(paths: &mut [impl AsRef<str> + Ord]) {
+    paths.sort_by(|a, b| {
+        let (a, b) = (a.as_ref(), b.as_ref());
+        let xml_file_type = |name| {
+            AppendType::from_filename(name).map_or_else(
+                || name.strip_suffix(".xml").map(|base| (base, None)),
+                |(base, kind)| Some((base, Some(kind))),
+            )
+        };
+
+        match (xml_file_type(a), xml_file_type(b)) {
+            (Some((a_base, a_type)), Some((b_base, b_type))) => {
+                a_base.cmp(b_base).then_with(|| match (a_type, b_type) {
+                    (Some(AppendType::Xml(_)) | None, Some(AppendType::LuaAppend)) => std::cmp::Ordering::Less,
+                    (Some(AppendType::LuaAppend), Some(AppendType::Xml(_)) | None) => std::cmp::Ordering::Greater,
+                    (_, _) => std::cmp::Ordering::Equal,
+                })
+            }
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => a.cmp(b),
+        }
+    });
+}
+
 pub fn apply_ftl(
     ftl_path: &Path,
     mods: Vec<Mod>,
@@ -682,8 +713,10 @@ pub fn apply_ftl(
             .open()
             .with_context(|| format!("Failed to open mod {}", m.filename()))?;
         let mut skipped_top_level_dirs = HashSet::new();
-        let paths = handle.paths()?;
+        let mut paths = handle.paths()?;
         let path_count = paths.len();
+
+        sort_mod_paths(&mut paths);
 
         for (j, mut name) in paths.into_iter().enumerate() {
             // FIXME: handle this somewhere else... not here
@@ -1064,4 +1097,47 @@ pub fn apply(
     lock.ctx.request_repaint();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn test_mod_paths_sort() {
+        let mut paths = [
+            "base.append.lua",
+            "base.rawappend.xml",
+            "base.append.xml",
+            "base.xml.append",
+            "Unrelated.yaml",
+            "other.xml.append",
+            "other.append.lua",
+            "z_last.append.xml",
+            "z_last.xml",
+            "z_last.append.lua",
+            "other.rawappend.xml",
+            "other.append.xml",
+            "other.xml",
+            "files.png",
+        ];
+        let expected = [
+            "base.rawappend.xml",
+            "base.append.xml",
+            "base.xml.append",
+            "base.append.lua",
+            "other.xml.append",
+            "other.rawappend.xml",
+            "other.append.xml",
+            "other.xml",
+            "other.append.lua",
+            "z_last.append.xml",
+            "z_last.xml",
+            "z_last.append.lua",
+            "Unrelated.yaml",
+            "files.png",
+        ];
+
+        super::sort_mod_paths(&mut paths);
+
+        assert_eq!(paths, expected)
+    }
 }
