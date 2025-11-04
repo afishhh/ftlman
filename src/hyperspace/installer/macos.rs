@@ -57,6 +57,11 @@ fn adjust_plist(contents_dir: &Path, new_executable: &str) -> Result<()> {
     Ok(())
 }
 
+pub fn available(_hs_version: &semver::Version) -> bool {
+    // No such version exists yet!
+    false
+}
+
 #[cfg(target_os = "macos")]
 pub fn install(ftl: &Path, version: super::Version, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     let dylib_name = if matches!(

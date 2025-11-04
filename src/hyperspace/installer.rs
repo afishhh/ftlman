@@ -249,6 +249,15 @@ impl Installer {
         self.required_patch
     }
 
+    /// Returns whether this platform is supported by the provided Hyperspace version.
+    pub fn available_in(&self, hs_version: &semver::Version) -> bool {
+        match self.platform {
+            Platform::Windows => true,
+            Platform::Linux => *hs_version >= semver::Version::new(1, 0, 1),
+            Platform::MacOS => macos::available(hs_version),
+        }
+    }
+
     pub fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patcher: Option<&Patcher>) -> Result<()> {
         match (self.required_patch, patcher) {
             (None, Some(_)) => bail!("Patcher not required but one was provided"),
