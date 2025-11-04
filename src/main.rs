@@ -5,6 +5,7 @@ use std::{
     cmp::Ordering,
     collections::HashMap,
     convert::Infallible,
+    error::Error,
     ffi::OsStr,
     fmt::Debug,
     fs::File,
@@ -97,7 +98,20 @@ const CURRENT_RELEASE_KIND: ReleaseKind = ReleaseKind::Portable;
 #[cfg(not(feature = "portable-release"))]
 const CURRENT_RELEASE_KIND: ReleaseKind = ReleaseKind::Source;
 
-fn main() -> ExitCode {
+fn log_error_chain(error: &dyn Error) {
+    error!("{error}");
+    let mut i = 0;
+    let mut current = error;
+
+    while let Some(source) = current.source() {
+        current = source;
+        i += 1;
+
+        error!("  #{i}: {current}");
+    }
+}
+
+fn real_main() -> Result<ExitCode, Box<dyn Error>> {
     env_logger::builder()
         .format(|f, record| {
             let module = record
@@ -137,18 +151,16 @@ fn main() -> ExitCode {
     let args = cli::Args::parse();
     if let Some(command) = args.command {
         if let Err(error) = cli::main(command) {
-            error!("{error}");
-            for (i, error) in error.chain().enumerate().skip(1) {
-                error!("  #{i}: {error}");
-            }
-            return ExitCode::FAILURE;
+            log_error_chain(error.as_ref());
+            // CLI commands should not trigger an error popup.
+            return Ok(ExitCode::FAILURE);
         }
-        return ExitCode::SUCCESS;
+        return Ok(ExitCode::SUCCESS);
     }
 
     update::check_run_post_update();
 
-    if let Err(error) = eframe::run_native(
+    eframe::run_native(
         // Windows will display special characters like "POP DIRECTIONAL ISOLATE" in the title...
         // Remove them so it doesn't do that.
         &l!("name", "version" => VERSION)
@@ -171,11 +183,74 @@ fn main() -> ExitCode {
                 .set_fonts(fonts::create_font_definitions(i18n::current_language()));
             Ok(Box::new(App::new(cc).expect("Failed to set up application state")))
         }),
-    ) {
-        error!("{error}");
+    )
+    .map_err(|error| {
+        log_error_chain(&error);
+        error.into()
+    })
+    .map(|()| ExitCode::SUCCESS)
+}
+
+// Attempts to show a last-resort error message box to the user on Windows.
+#[cfg(target_os = "windows")]
+fn main() -> ExitCode {
+    fn encode_wstr(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain([0u16]).collect::<Vec<u16>>()
     }
 
-    ExitCode::SUCCESS
+    let error: Box<dyn Error> = match std::panic::catch_unwind(real_main) {
+        Ok(Ok(code)) => return code,
+        Ok(Err(error)) => error,
+        Err(panic) => {
+            let message = if let Some(str) = panic.downcast_ref::<&str>() {
+                str
+            } else if let Some(string) = panic.downcast_ref::<&String>() {
+                &string
+            } else {
+                "unknown"
+            };
+
+            format!("Thread panicked: {message}").into()
+        }
+    };
+
+    let title = encode_wstr("A fatal error occurred");
+    let description = encode_wstr(&{
+        use std::fmt::Write as _;
+
+        let mut result = String::new();
+
+        write!(result, "{error}").unwrap();
+        let mut i = 0;
+        let mut current = &*error;
+
+        while let Some(source) = current.source() {
+            current = source;
+            i += 1;
+
+            write!(result, "\n#{i}: {current}").unwrap();
+        }
+
+        result
+    });
+
+    use winapi::um::winuser::{MB_ICONERROR, MB_OK, MessageBoxW};
+
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            description.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+
+    ExitCode::FAILURE
+}
+
+#[cfg(not(target_os = "windows"))]
+fn main() -> ExitCode {
+    real_main().unwrap_or(ExitCode::FAILURE)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -405,7 +480,7 @@ fn render_error_chain<S: AsRef<str>>(ui: &mut Ui, it: impl ExactSizeIterator<Ite
         if i != 0 {
             job.append("\n", 0.0, egui::TextFormat::default());
         }
-        // No need for numbering chainged errors if this is just a single error
+        // No need for numbering chained errors if this is just a single error
         if !is_single_error {
             job.append(&(i + 1).to_string(), 0.0, egui::TextFormat::default());
         }

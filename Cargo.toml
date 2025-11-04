@@ -80,8 +80,9 @@ tar = { version = "0.4", default-features = false }
 yeslogic-fontconfig-sys = "6"
 
 # For loading system fonts and system language detection on Windows
+# TODO: Switch to windows-rs
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi = { version = "0.3", features = ["dwrite", "winnls", "winbase", "errhandlingapi", "std"] }
+winapi = { version = "0.3", features = ["dwrite", "winnls", "winuser", "winbase", "errhandlingapi", "std"] }
 
 # Speeds up testing considerably
 [profile.dev]
