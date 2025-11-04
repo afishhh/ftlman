@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### Changed
+
+- "Patch on change" in the XML Sandbox will now wait for a small amount of time to pass since the last edit before triggering a patch.
+- Output in the XML Sandbox is no longer line-wrapped, and instead is horizontally scrollable.
+- Large outputs in the XML Sandbox have significantly improved performance.
+- `annotate_snippets` has been updated and switched to the Unicode decoration style.
+
 ## [v0.6.6]
 
 ### Added
