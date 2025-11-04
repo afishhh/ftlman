@@ -27,6 +27,10 @@ static HYPERSPACE_SO_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^Hy
 static ZIP_SO_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap());
 
+pub fn available(hs_version: &semver::Version) -> bool {
+    *hs_version >= semver::Version::new(1, 0, 1)
+}
+
 pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     let shared_objects = zip
         .file_names()

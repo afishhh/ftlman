@@ -23,6 +23,7 @@ status-scanning-mods = Scanning mod folder
 
 invalid-ftl-directory = Invalid FTL directory specified
 hyperspace-fetch-releases-failed = Failed to fetch hyperspace releases
+incompatible-hs-release = Not available for {$ftl-version}
 
 hyperspace = Hyperspace
 hyperspace-releases-loading = Loading...

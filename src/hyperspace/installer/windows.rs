@@ -7,6 +7,14 @@ use crate::bps;
 
 use super::Patcher;
 
+pub(crate) fn available(hs_version: &semver::Version, ftl_version: super::Version) -> bool {
+    if ftl_version == super::Version::Steam1_6_22Win {
+        *hs_version >= semver::Version::new(1, 21, 0)
+    } else {
+        *hs_version < semver::Version::new(1, 21, 0)
+    }
+}
+
 pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patcher: Option<&Patcher>) -> Result<()> {
     let dlls: Vec<_> = zip
         .file_names()

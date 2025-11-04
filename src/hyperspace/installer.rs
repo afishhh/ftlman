@@ -195,6 +195,7 @@ enum Platform {
 #[derive(Clone)]
 pub struct Installer {
     platform: Platform,
+    version: Version,
     required_patch: Option<&'static Patch>,
 }
 
@@ -210,18 +211,20 @@ impl Installer {
             PATCHES.iter().find(|&patch| patch.from == from)
         }
 
-        let version = Version::from_executable_size(size);
-        if let Some(version) = version {
-            info!("Detected FTL version {version}");
-        } else {
+        let Some(version) = Version::from_executable_size(size) else {
             warn!("Failed to determine FTL version (size={size})");
-        }
+            return Ok(Err(format!(
+                "FTL installation not recognized: {:?} size={size}",
+                exe_path.file_name().unwrap()
+            )));
+        };
+        info!("Detected FTL version {version}");
 
         let (platform, patch) = match version {
-            Some(Version::Downgraded1_6_9Win) => (Platform::Windows, None),
-            Some(Version::Steam1_6_13Linux | Version::Humble1_6_12Linux) => (Platform::Linux, None),
-            Some(Version::Gog1_6_9) => (Platform::Windows, None),
-            Some(version) => {
+            Version::Downgraded1_6_9Win => (Platform::Windows, None),
+            Version::Steam1_6_13Linux | Version::Humble1_6_12Linux => (Platform::Linux, None),
+            Version::Gog1_6_9 => (Platform::Windows, None),
+            version => {
                 if let Some(patch) = find_patch(version) {
                     (Platform::Windows, Some(patch))
                 } else {
@@ -230,22 +233,29 @@ impl Installer {
                     )));
                 }
             }
-            None => {
-                return Ok(Err(format!(
-                    "FTL installation not recognized: {:?} size={size}",
-                    exe_path.file_name().unwrap()
-                )));
-            }
         };
 
         Ok(Ok(Self {
             platform,
+            version,
             required_patch: patch,
         }))
     }
 
+    pub fn ftl_version_name(&self) -> &'static str {
+        self.version.name()
+    }
+
     pub fn required_patch(&self) -> Option<&Patch> {
         self.required_patch
+    }
+
+    /// Returns whether this platform is supported by the provided Hyperspace version.
+    pub fn supports(&self, hs_version: &semver::Version) -> bool {
+        match self.platform {
+            Platform::Windows => windows::available(hs_version, self.version),
+            Platform::Linux => linux::available(hs_version),
+        }
     }
 
     pub fn install(&self, ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patcher: Option<&Patcher>) -> Result<()> {
