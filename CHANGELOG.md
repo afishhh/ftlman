@@ -1,5 +1,8 @@
 ## [Unreleased]
 
+### Added
+- Fatal errors on Windows will now result in an error box popping up with the details.
+
 ### Changed
 
 - "Patch on change" in the XML Sandbox will now wait for a small amount of time to pass since the last edit before triggering a patch.
