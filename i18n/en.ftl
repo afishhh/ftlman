@@ -86,7 +86,7 @@ update-modal-updater-unsupported =
 
 missing-hyperspace-top =
     Mod [s]{$mod}[/s] {$req ->
-        [none] modifies hyperspace.xml but no Hyperspace version is selected.
+        [none] modifies hyperspace.xml but
        *[other] requires Hyperspace [s]{$req}[/s] but
     } {$ver ->
         [none] no Hyperspace version is currently selected.
