@@ -61,7 +61,7 @@
               };
             };
             # the extra parens prevent the formatter from putting the attrset on a new line
-            default = (pkgs.runCommandNoCC "ftlman" {
+            default = (pkgs.runCommand "ftlman" {
               pname = "ftlman";
               inherit (unwrapped) version;
 
