@@ -13,7 +13,7 @@ use crate::{
 };
 
 static HYPERSPACE_REPOSITORY: LazyLock<github::Repository> =
-    LazyLock::new(|| github::Repository::new("FTL-Hyperspace", "FTL-Hyperspace"));
+    LazyLock::new(|| github::Repository::new("fr-eed", "FTL-Hyperspace-Dino"));
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HyperspaceRelease {
@@ -81,24 +81,47 @@ impl HyperspaceRelease {
         self.version.as_ref()
     }
 
-    pub fn fetch_zip(&self, mut progress_callback: impl FnMut(u64, u64)) -> Result<Vec<u8>> {
-        let download_url = match self.release.assets.len().cmp(&1) {
+    fn extract_assets(&self) -> Result<HyperspaceAssets> {
+        let assets = &self.release.assets;
+        Ok(match assets.len().cmp(&1) {
             std::cmp::Ordering::Less => {
                 bail!("Hyperspace release contains no assets")
             }
-            std::cmp::Ordering::Equal => self.release.assets[0].browser_download_url.clone(),
+            std::cmp::Ordering::Equal => HyperspaceAssets::Merged(assets[0].browser_download_url.as_str().into()),
             std::cmp::Ordering::Greater => {
-                bail!("Hyperspace release contains more than one asset")
+                let find_for_platform = |platform| {
+                    assets
+                        .iter()
+                        .find(|asset| asset.name.contains(platform))
+                        .map(|asset| asset.browser_download_url.as_str().into())
+                        .with_context(|| format!("Failed to find a split Hyperspace asset for {platform}"))
+                };
+
+                HyperspaceAssets::Split(HyperspaceSplitAssets {
+                    windows: find_for_platform("Windows")?,
+                    linux: find_for_platform("Linux")?,
+                    macos: find_for_platform("Linux")?,
+                })
+            }
+        })
+    }
+
+    pub fn find_asset_for(&self, platform: Platform) -> Result<HyperspaceZipAsset> {
+        let mut cache_key = self.name().to_owned();
+        let url = match self.extract_assets()? {
+            HyperspaceAssets::Merged(url) => url,
+            HyperspaceAssets::Split(HyperspaceSplitAssets { windows, linux, macos }) => {
+                cache_key.push('/');
+                cache_key.push_str(platform.slug());
+                match platform {
+                    Platform::Windows => windows,
+                    Platform::Linux => linux,
+                    Platform::MacOS => macos,
+                }
             }
         };
 
-        let response = AGENT.get(&download_url).call()?;
-
-        crate::util::download_body_with_progress(response, |current, total| {
-            if let Some(total) = total {
-                progress_callback(current, total);
-            }
-        })
+        Ok(HyperspaceZipAsset { cache_key, url })
     }
 
     pub fn extract_hyperspace_ftl(&self, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<Vec<u8>> {
@@ -138,6 +161,55 @@ pub fn get_cached_hyperspace_releases() -> Result<Option<Vec<HyperspaceRelease>>
         })
         .collect(),
     ))
+}
+
+enum HyperspaceAssets {
+    Merged(Box<str>),
+    Split(HyperspaceSplitAssets),
+}
+
+struct HyperspaceSplitAssets {
+    windows: Box<str>,
+    linux: Box<str>,
+    macos: Box<str>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Platform {
+    Windows,
+    Linux,
+    MacOS,
+}
+
+impl Platform {
+    pub fn slug(self) -> &'static str {
+        match self {
+            Platform::Windows => "windows",
+            Platform::Linux => "linux",
+            Platform::MacOS => "macos",
+        }
+    }
+}
+
+pub struct HyperspaceZipAsset {
+    cache_key: String,
+    url: Box<str>,
+}
+
+impl HyperspaceZipAsset {
+    pub fn cache_key(&self) -> &str {
+        &self.cache_key
+    }
+
+    pub fn fetch(&self, mut progress_callback: impl FnMut(u64, u64)) -> Result<Vec<u8>> {
+        let response = AGENT.get(&self.url).call()?;
+
+        crate::util::download_body_with_progress(response, |current, total| {
+            if let Some(total) = total {
+                progress_callback(current, total);
+            }
+        })
+    }
 }
 
 mod installer;

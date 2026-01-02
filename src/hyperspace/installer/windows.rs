@@ -19,14 +19,23 @@ pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patcher: Optio
         let mut src = zip.by_name(&dll)?;
 
         if !dest.try_exists()? || dest.metadata()?.len() != src.size() {
-            log::info!("Extracting {}", dest.file_name().unwrap().to_str().unwrap());
-            std::io::copy(&mut src, &mut File::create(dest)?)?;
+            let filename = dest.file_name().unwrap().to_str().unwrap();
+            log::info!("Extracting {filename}");
+            File::create(&dest)
+                .and_then(|mut f| std::io::copy(&mut src, &mut f))
+                .with_context(|| format!("Failed to write {filename}"))?;
         }
     }
 
     if let Some(patcher) = patcher.as_ref() {
         let patch = bps::Patch::open(&patcher.data).context("Failed to parse executable patch")?;
-        if ftl.join("FTLGame.exe").metadata()?.len() != patch.target_size as u64 {
+        let current_size = ftl
+            .join("FTLGame.exe")
+            .metadata()
+            .context("Failed to stat FTLGame.exe")?
+            .len();
+
+        if current_size != patch.target_size as u64 {
             let source = std::fs::read(ftl.join("FTLGame.exe")).context("Failed to read FTLGame.exe")?;
             let mut out = Vec::new();
 

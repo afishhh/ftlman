@@ -27,7 +27,7 @@ static HYPERSPACE_SO_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"^Hy
 static ZIP_SO_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"^Linux/[^/]+(\.[^.]+)*\.so(\.[^.]+)*$"#).unwrap());
 
-pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+pub fn install(ftl: &Path, version: super::Version, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     let shared_objects = zip
         .file_names()
         .filter(|name| ZIP_SO_REGEX.is_match(name))
@@ -65,8 +65,7 @@ pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> 
             script.insert_str(range.start, s);
         }
 
-        // Hopefully the two FTL version have different sizes...
-        let obj = if std::fs::metadata(ftl.join("FTL.amd64"))?.len() == 72443660 {
+        let obj = if matches!(version, super::Version::Steam1_6_13Linux) {
             "Hyperspace.1.6.13.amd64.so"
         } else {
             "Hyperspace.1.6.12.amd64.so"

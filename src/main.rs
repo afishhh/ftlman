@@ -584,6 +584,9 @@ fn fixup_ftl_directory(path: &mut PathBuf) -> bool {
     if path.join("data/ftl.dat").exists() {
         path.push("data");
         true
+    } else if path.join("FTL.app").exists() {
+        path.push("FTL.app/Contents/Resources");
+        true
     } else {
         false
     }
@@ -1031,15 +1034,15 @@ impl App {
                                     return;
                                 };
 
-                                if match self.hyperspace_installer.as_ref() {
-                                    Some(Ok(Ok(_))) => true,
+                                let installer = match self.hyperspace_installer.as_ref() {
+                                    Some(Ok(Ok(installer))) => installer,
                                     Some(Ok(Err(error))) => {
                                         ui.label(
                                             RichText::new(error)
                                             .color(ui.visuals().error_fg_color)
                                             .strong(),
                                         );
-                                        false
+                                        return;
                                     },
                                     Some(Err(error)) => {
                                         ui.label(
@@ -1047,135 +1050,139 @@ impl App {
                                             .color(ui.visuals().error_fg_color)
                                             .strong(),
                                         );
-                                        false
+                                        return;
                                     }
                                     None => {
                                         if !self.settings.disable_hs_installer {
                                             self.hyperspace_installer = Some(hyperspace::Installer::create(ftl_directory));
                                         }
-                                        false
+                                        return;
                                     },
-                                } {
-                                    ui.label(RichText::new(l!("hyperspace")).font(FontId::default()).strong());
+                                };
 
-                                    let combobox = egui::ComboBox::new("hyperspace select combobox", "").selected_text(
-                                        shared.hyperspace.as_ref().map(|x| x.release.name()).unwrap_or("None"),
-                                    );
+                                ui.label(RichText::new(l!("hyperspace")).font(FontId::default()).strong());
 
-                                    let mut clicked = None;
-                                    match self.hyperspace_releases.ready() {
-                                        Some(Ok(releases)) => {
-                                            combobox.show_ui(ui, |ui| {
-                                                if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
-                                                    clicked = Some(None);
-                                                }
+                                let combobox = egui::ComboBox::new("hyperspace select combobox", "").selected_text(
+                                    shared.hyperspace.as_ref().map(|x| x.release.name()).unwrap_or("None"),
+                                );
 
-                                                for release in releases.iter() {
-                                                    let response = ui.selectable_label(
-                                                        shared
-                                                            .hyperspace
-                                                            .as_ref()
-                                                            .is_some_and(|x| x.release.id() == release.id()),
-                                                        release.name(),
-                                                    );
-                                                    let desc_pos = Pos2::new(
-                                                        ui.min_rect().max.x + 12.0,
-                                                        ui.min_rect().min.y - f32::from(ui.spacing().window_margin.top),
-                                                    );
-
-                                                    if response.clicked() {
-                                                        clicked = Some(Some(release.to_owned()));
-                                                    } else if response.hovered() {
-                                                        // TODO: A scroll area here?
-                                                        //       How do we distinguish users wanting to scroll
-                                                        //       the combobox vs the description?
-                                                        //       Making the description persist when the mouse
-                                                        //       moves out of the combobox could possibly be an option.
-                                                        egui::Window::new("hyperspace version tooltip")
-                                                            .fixed_pos(desc_pos)
-                                                            .title_bar(false)
-                                                            .resizable(false)
-                                                            .show(ctx, |ui| ui.monospace(release.description()));
-                                                    }
-                                                }
-                                            });
-                                        }
-                                        Some(Err(err)) => {
-                                            // TODO: move stuff out of `shared`
-                                            let error_chain =
-                                                err.chain().map(|x| x.to_string()).collect::<Vec<String>>();
-                                            if self.ignore_releases_fetch_error {
-                                                let name = shared.hyperspace.as_ref().map(|n| n.release.name());
-                                                if let Some(name) = name {
-                                                    ui.label(name);
-                                                } else {
-                                                    ui.label(
-                                                        RichText::new("Unavailable")
-                                                            .color(ui.style().visuals.error_fg_color)
-                                                    );
-                                                }
-                                            } else {
-                                                egui::Window::new(l!("hyperspace-fetch-releases-failed"))
-                                                    .auto_sized()
-                                                    .frame(egui::Frame::popup(ui.style()))
-                                                    .show(ctx, |ui| {
-                                                        // HACK: w h a t ???
-                                                        ui.set_width(ui.available_width() / 2.0);
-
-                                                        render_error_chain(ui, error_chain.iter());
-
-                                                        ui.with_layout(
-                                                            egui::Layout::left_to_right(egui::Align::Min),
-                                                            |ui| {
-                                                                if ui.button("Dismiss").clicked() {
-                                                                    self.ignore_releases_fetch_error = true;
-                                                                    if let Some(cached) =
-                                                                        hyperspace::get_cached_hyperspace_releases()
-                                                                            .unwrap_or_else(|e| {
-                                                                                error!("Failed to read cached hyperspace releases: {e}");
-                                                                                None
-                                                                            })
-                                                                    {
-                                                                        self.hyperspace_releases.set(Promise::from_ready(Ok(cached)))
-                                                                    }
-                                                                    ctx.request_repaint();
-                                                                }
-
-                                                                ui.with_layout(
-                                                                    egui::Layout::right_to_left(egui::Align::Min),
-                                                                    |ui| {
-                                                                        if ui.button("Retry").clicked() {
-                                                                            self.hyperspace_releases.take();
-                                                                            ctx.request_repaint();
-                                                                        }
-                                                                    },
-                                                                );
-                                                            },
-                                                        );
-                                                    });
+                                let mut clicked = None;
+                                match self.hyperspace_releases.ready() {
+                                    Some(Ok(releases)) => {
+                                        combobox.show_ui(ui, |ui| {
+                                            if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
+                                                clicked = Some(None);
                                             }
-                                        }
-                                        None => {
-                                            combobox.show_ui(ui, |ui| {
-                                                ui.strong(l!("hyperspace-releases-loading"));
-                                            });
-                                        }
-                                    };
 
-                                    if let Some(new_value) = clicked {
-                                        if let Some(release) = new_value {
-                                            shared.hyperspace = Some(HyperspaceState {
-                                                release,
-                                            });
+                                            for release in releases.iter() {
+                                                if let Some(version) = release.version() && !installer.available_in(version) {
+                                                    continue;
+                                                }
+
+                                                let response = ui.selectable_label(
+                                                    shared
+                                                        .hyperspace
+                                                        .as_ref()
+                                                        .is_some_and(|x| x.release.id() == release.id()),
+                                                    release.name(),
+                                                );
+                                                let desc_pos = Pos2::new(
+                                                    ui.min_rect().max.x + 12.0,
+                                                    ui.min_rect().min.y - f32::from(ui.spacing().window_margin.top),
+                                                );
+
+                                                if response.clicked() {
+                                                    clicked = Some(Some(release.to_owned()));
+                                                } else if response.hovered() {
+                                                    // TODO: A scroll area here?
+                                                    //       How do we distinguish users wanting to scroll
+                                                    //       the combobox vs the description?
+                                                    //       Making the description persist when the mouse
+                                                    //       moves out of the combobox could possibly be an option.
+                                                    egui::Window::new("hyperspace version tooltip")
+                                                        .fixed_pos(desc_pos)
+                                                        .title_bar(false)
+                                                        .resizable(false)
+                                                        .show(ctx, |ui| ui.monospace(release.description()));
+                                                }
+                                            }
+                                        });
+                                    }
+                                    Some(Err(err)) => {
+                                        // TODO: move stuff out of `shared`
+                                        let error_chain =
+                                            err.chain().map(|x| x.to_string()).collect::<Vec<String>>();
+                                        if self.ignore_releases_fetch_error {
+                                            let name = shared.hyperspace.as_ref().map(|n| n.release.name());
+                                            if let Some(name) = name {
+                                                ui.label(name);
+                                            } else {
+                                                ui.label(
+                                                    RichText::new("Unavailable")
+                                                        .color(ui.style().visuals.error_fg_color)
+                                                );
+                                            }
                                         } else {
-                                            shared.hyperspace = None;
+                                            egui::Window::new(l!("hyperspace-fetch-releases-failed"))
+                                                .auto_sized()
+                                                .frame(egui::Frame::popup(ui.style()))
+                                                .show(ctx, |ui| {
+                                                    // HACK: w h a t ???
+                                                    ui.set_width(ui.available_width() / 2.0);
+
+                                                    render_error_chain(ui, error_chain.iter());
+
+                                                    ui.with_layout(
+                                                        egui::Layout::left_to_right(egui::Align::Min),
+                                                        |ui| {
+                                                            if ui.button("Dismiss").clicked() {
+                                                                self.ignore_releases_fetch_error = true;
+                                                                if let Some(cached) =
+                                                                    hyperspace::get_cached_hyperspace_releases()
+                                                                        .unwrap_or_else(|e| {
+                                                                            error!("Failed to read cached hyperspace releases: {e}");
+                                                                            None
+                                                                        })
+                                                                {
+                                                                    self.hyperspace_releases.set(Promise::from_ready(Ok(cached)))
+                                                                }
+                                                                ctx.request_repaint();
+                                                            }
+
+                                                            ui.with_layout(
+                                                                egui::Layout::right_to_left(egui::Align::Min),
+                                                                |ui| {
+                                                                    if ui.button("Retry").clicked() {
+                                                                        self.hyperspace_releases.take();
+                                                                        ctx.request_repaint();
+                                                                    }
+                                                                },
+                                                            );
+                                                        },
+                                                    );
+                                                });
                                         }
                                     }
-
-                                    if self.hyperspace_releases.ready().is_none() {
-                                        ui.label(l!("hyperspace-fetching-releases"));
-                                        ui.spinner();
+                                    None => {
+                                        combobox.show_ui(ui, |ui| {
+                                            ui.strong(l!("hyperspace-releases-loading"));
+                                        });
                                     }
+                                };
+
+                                if let Some(new_value) = clicked {
+                                    if let Some(release) = new_value {
+                                        shared.hyperspace = Some(HyperspaceState {
+                                            release,
+                                        });
+                                    } else {
+                                        shared.hyperspace = None;
+                                    }
+                                }
+
+                                if self.hyperspace_releases.ready().is_none() {
+                                    ui.label(l!("hyperspace-fetching-releases"));
+                                    ui.spinner();
                                 }
                             });
 
