@@ -32,7 +32,7 @@ if [[  -z $wanted_target || "x86_64-pc-windows-gnu" == $wanted_target ]]; then
   cd ftlman
   ln -f ../../target-x86_64-pc-windows-gnu/x86_64-pc-windows-gnu/release/ftlman.exe ftlman.exe
   cd ..
-  7z a ftlman-x86_64-pc-windows-gnu.zip ftlman
+  7zz a ftlman-x86_64-pc-windows-gnu.zip ftlman
   rm -r ftlman
 fi
 
