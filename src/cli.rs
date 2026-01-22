@@ -6,7 +6,8 @@ use clap::{Parser, Subcommand};
 use log::{error, info, warn};
 
 use crate::{
-    Mod, ModSource, Settings, hyperspace,
+    Mod, ModSource, Settings,
+    hyperspace::{self, VersionIndex},
     lua::{
         LuaContext, ModLuaRuntime,
         io::{LuaDirectoryFS, LuaFS},
@@ -262,6 +263,7 @@ pub fn main(command: Command) -> Result<()> {
 
             let mut releases =
                 super::hyperspace::fetch_hyperspace_releases().context("Failed to fetch Hyperspace releases")?;
+            let versions = VersionIndex::fetch_or_load_cached().context("Failed to acquire version index")?;
 
             for release in &releases {
                 if release.version().is_none() {
@@ -271,18 +273,25 @@ pub fn main(command: Command) -> Result<()> {
 
             releases.sort_unstable_by(|a, b| a.version().cmp(&b.version()));
 
+            let installer = hyperspace::Installer::create(versions, &data_dir)
+                .context("Failed to create Hyperspace installer")?
+                .map_err(anyhow::Error::msg)
+                .context("Unrecognized FTL installation")?;
+
             let release = match command.version {
                 VersionOrLatest::Version(version) => releases
                     .iter()
                     .rfind(|release| release.version().is_some_and(|v| *v == version)),
-                VersionOrLatest::Latest => releases.last(),
+                VersionOrLatest::Latest => releases
+                    .iter()
+                    .rev()
+                    .find(|r| r.version().is_some_and(|v| installer.supports(v))),
             }
             .context("No matching Hyperspace release found")?;
 
-            let installer = hyperspace::Installer::create(&data_dir)
-                .context("Failed to create Hyperspace installer")?
-                .map_err(anyhow::Error::msg)
-                .context("Unrecognized FTL installation")?;
+            if !installer.supports(release.version().context("Matched Hyperspace release has no version")?) {
+                bail!("Matched hyperspace release is not compatible with this FTL installation");
+            }
 
             let mut current_download_prefix = String::new();
             crate::apply::apply_hyperspace(&data_dir, installer, release.clone(), move |message| {

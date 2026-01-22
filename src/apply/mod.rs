@@ -943,13 +943,17 @@ pub fn apply_hyperspace(
     })?;
     let mut zip = ZipArchive::new(Cursor::new(zip_data))?;
 
-    let patcher = if let Some(patch) = installer.required_patch() {
+    let patch_data = if let Some(patch) = installer
+        .find_patch(release.version().context("Hyperspace has no version")?)
+        .context("Failed to find appropriate patch")?
+    {
         if patch.is_remote() {
             on_progress(HyperspaceProgress::DownloadStarted {
                 is_patch: true,
-                version: patch.source_version_name().into(),
+                version: installer.ftl_version().name().into(),
             })
         }
+
         Some(
             patch
                 .fetch_or_load_cached(&mut zip, |current, max| {
@@ -962,7 +966,7 @@ pub fn apply_hyperspace(
     };
 
     on_progress(HyperspaceProgress::Installing);
-    installer.install(ftl_path, &mut zip, patcher.as_ref())?;
+    installer.install(ftl_path, &mut zip, patch_data.as_deref())?;
     release.extract_hyperspace_ftl(&mut zip)
 }
 

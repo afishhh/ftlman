@@ -22,12 +22,12 @@ status-repacking = Repacking archive
 status-scanning-mods = Scanning mod folder
 
 invalid-ftl-directory = Invalid FTL directory specified
-hyperspace-fetch-releases-failed = Failed to fetch hyperspace releases
+hyperspace-fetch-resources-failed = Failed to fetch hyperspace installer resources
 incompatible-hs-release = Not available for {$ftl-version}
 
 hyperspace = Hyperspace
-hyperspace-releases-loading = Loading...
-hyperspace-fetching-releases = Fetching hyperspace releases...
+hyperspace-resources-loading = Loading...
+hyperspace-fetching-resources = Fetching hyperspace installer resources...
 
 mod-meta-authors = Authors:
 mod-meta-hs-req = Required hyperspace version:

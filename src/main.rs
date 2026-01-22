@@ -61,7 +61,7 @@ use lazy::ResettableLazy;
 use update::{UpdaterProgress, get_latest_release_or_none};
 use util::{SloppyVersion, to_human_size_units, touch_create};
 
-use crate::util::fs_write_atomic;
+use crate::{hyperspace::VersionIndex, util::fs_write_atomic};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SETTINGS_LOCATION: &str = "ftlman/settings.json";
@@ -675,6 +675,11 @@ fn check_ftl_directory_candidate(mut path: PathBuf) -> Option<PathBuf> {
 static STATE_MIGRATION_FLAG_PATH: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::config_local_dir().unwrap().join(STATE_MIGRATION_FLAG_FILE));
 
+struct HyperspaceInstallerResources {
+    releases: Vec<HyperspaceRelease>,
+    version_index: Arc<VersionIndex>,
+}
+
 struct App {
     last_hovered_mod: Option<usize>,
     shared: Arc<Mutex<SharedState>>,
@@ -684,7 +689,7 @@ struct App {
     // updater_state != None -> last_ftlman_release != None
     updater_state: Option<UpdaterState>,
 
-    hyperspace_releases: ResettableLazy<Promise<Result<Vec<HyperspaceRelease>>>>,
+    installer_resources: ResettableLazy<Promise<Result<HyperspaceInstallerResources>>>,
     ignore_releases_fetch_error: bool,
 
     // TODO: Plan for phasing this out?
@@ -777,8 +782,15 @@ impl App {
                 .then(|| Promise::spawn_thread("fetch last ftlman release", get_latest_release_or_none)),
             updater_state: None,
 
-            hyperspace_releases: ResettableLazy::new(|| {
-                Promise::spawn_thread("fetch hyperspace releases", hyperspace::fetch_hyperspace_releases)
+            installer_resources: ResettableLazy::new(|| {
+                Promise::spawn_thread("fetch hyperspace installer required remote resources", || {
+                    Ok(HyperspaceInstallerResources {
+                        releases: hyperspace::fetch_hyperspace_releases()
+                            .context("Failed to fetch hyperspace releases")?,
+                        version_index: hyperspace::VersionIndex::fetch_or_load_cached()
+                            .context("Failed to fetch FTL version index")?,
+                    })
+                })
             }),
             ignore_releases_fetch_error: false,
 
@@ -1106,6 +1118,78 @@ impl App {
                                     return;
                                 };
 
+                                let mut clicked = None;
+                                let resources = match self.installer_resources.ready() {
+                                    Some(Ok(resources)) => {
+                                        resources
+                                    }
+                                    Some(Err(err)) => {
+                                        // TODO: move stuff out of `shared`
+                                        let error_chain =
+                                            err.chain().map(|x| x.to_string()).collect::<Vec<String>>();
+                                        if self.ignore_releases_fetch_error {
+                                            let name = shared.hyperspace.as_ref().map(|n| n.release.name());
+                                            if let Some(name) = name {
+                                                ui.label(name);
+                                            } else {
+                                                ui.label(
+                                                    RichText::new("Unavailable")
+                                                        .color(ui.style().visuals.error_fg_color)
+                                                );
+                                            }
+                                            return;
+                                        } else {
+                                            // TODO: least horizontal piece of egui code
+                                            egui::Window::new(l!("hyperspace-fetch-resources-failed"))
+                                                .auto_sized()
+                                                .frame(egui::Frame::popup(ui.style()))
+                                                .show(ctx, |ui| {
+                                                    // HACK: w h a t ???
+                                                    ui.set_width(ui.available_width() / 2.0);
+
+                                                    render_error_chain(ui, error_chain.iter());
+
+                                                    ui.with_layout(
+                                                        egui::Layout::left_to_right(egui::Align::Min),
+                                                        |ui| {
+                                                            if ui.button("Dismiss").clicked() {
+                                                                self.ignore_releases_fetch_error = true;
+                                                                if let Some(cached) =
+                                                                    hyperspace::get_cached_hyperspace_releases()
+                                                                        .unwrap_or_else(|e| {
+                                                                            error!("Failed to read cached hyperspace releases: {e}");
+                                                                            None
+                                                                        }) && let Some(v_cached) = hyperspace::VersionIndex::load_cached().unwrap_or_else(|e| {
+                                                                            error!("Failed to read cached version index: {e}");
+                                                                            None
+                                                                })
+                                                                {
+                                                                    self.installer_resources.set(Promise::from_ready(Ok(HyperspaceInstallerResources { releases: cached, version_index: v_cached})))
+                                                                }
+                                                                ctx.request_repaint();
+                                                            }
+
+                                                            ui.with_layout(
+                                                                egui::Layout::right_to_left(egui::Align::Min),
+                                                                |ui| {
+                                                                    if ui.button("Retry").clicked() {
+                                                                        self.installer_resources.take();
+                                                                        ctx.request_repaint();
+                                                                    }
+                                                                },
+                                                            );
+                                                        },
+                                                    );
+                                                });
+                                        }
+                                        return;
+                                    }
+                                    None => {
+                                        ui.strong(l!("hyperspace-resources-loading"));
+                                        return;
+                                    }
+                                };
+
                                 let installer = match self.hyperspace_installer.as_ref() {
                                     Some(Ok(Ok(installer))) => installer,
                                     Some(Ok(Err(error))) => {
@@ -1126,7 +1210,7 @@ impl App {
                                     }
                                     None => {
                                         if !self.settings.disable_hs_installer {
-                                            self.hyperspace_installer = Some(hyperspace::Installer::create(ftl_directory));
+                                            self.hyperspace_installer = Some(hyperspace::Installer::create(resources.version_index.clone(), ftl_directory));
                                         }
                                         return;
                                     },
@@ -1138,121 +1222,56 @@ impl App {
                                     shared.hyperspace.as_ref().map(|x| x.release.name()).unwrap_or("None"),
                                 );
 
-                                let mut clicked = None;
-                                match self.hyperspace_releases.ready() {
-                                    Some(Ok(releases)) => {
-                                        combobox.show_ui(ui, |ui| {
-                                            if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
-                                                clicked = Some(None);
-                                            }
-
-                                            for release in releases.iter() {
-                                                if let Some(version) = release.version() && !installer.supports(version) {
-                                                    let tooltip = l!(
-                                                        "incompatible-hs-release",
-                                                         "ftl-version" => installer.ftl_version_name()
-                                                    );
-                                                    ui.add(
-                                                        egui::Button::new(RichText::new(release.name()).weak())
-                                                            .frame(true)
-                                                            .frame_when_inactive(false)
-                                                            .sense(Sense::empty())
-                                                    ).on_hover_text(
-                                                        RichText::new(tooltip).color(egui::Color32::ORANGE),
-                                                    );
-                                                    continue;
-                                                }
-
-                                                let response = ui.selectable_label(
-                                                    shared
-                                                        .hyperspace
-                                                        .as_ref()
-                                                        .is_some_and(|x| x.release.id() == release.id()),
-                                                    release.name(),
-                                                );
-                                                let desc_pos = Pos2::new(
-                                                    ui.min_rect().max.x + 12.0,
-                                                    ui.min_rect().min.y - f32::from(ui.spacing().window_margin.top),
-                                                );
-
-                                                if response.clicked() {
-                                                    clicked = Some(Some(release.to_owned()));
-                                                } else if response.hovered() {
-                                                    // TODO: A scroll area here?
-                                                    //       How do we distinguish users wanting to scroll
-                                                    //       the combobox vs the description?
-                                                    //       Making the description persist when the mouse
-                                                    //       moves out of the combobox could possibly be an option.
-                                                    egui::Window::new("hyperspace version tooltip")
-                                                        .fixed_pos(desc_pos)
-                                                        .title_bar(false)
-                                                        .resizable(false)
-                                                        .show(ctx, |ui| ui.monospace(release.description()));
-                                                }
-                                            }
-                                        });
+                                combobox.show_ui(ui, |ui| {
+                                    if ui.selectable_label(shared.hyperspace.is_none(), "None").clicked() {
+                                        clicked = Some(None);
                                     }
-                                    Some(Err(err)) => {
-                                        // TODO: move stuff out of `shared`
-                                        let error_chain =
-                                            err.chain().map(|x| x.to_string()).collect::<Vec<String>>();
-                                        if self.ignore_releases_fetch_error {
-                                            let name = shared.hyperspace.as_ref().map(|n| n.release.name());
-                                            if let Some(name) = name {
-                                                ui.label(name);
-                                            } else {
-                                                ui.label(
-                                                    RichText::new("Unavailable")
-                                                        .color(ui.style().visuals.error_fg_color)
-                                                );
-                                            }
-                                        } else {
-                                            egui::Window::new(l!("hyperspace-fetch-releases-failed"))
-                                                .auto_sized()
-                                                .frame(egui::Frame::popup(ui.style()))
-                                                .show(ctx, |ui| {
-                                                    // HACK: w h a t ???
-                                                    ui.set_width(ui.available_width() / 2.0);
 
-                                                    render_error_chain(ui, error_chain.iter());
+                                    for release in resources.releases.iter() {
+                                        if let Some(version) = release.version() && !installer.supports(version) {
+                                            let tooltip = l!(
+                                                "incompatible-hs-release",
+                                                 "ftl-version" => installer.ftl_version().name()
+                                            );
+                                            ui.add(
+                                                egui::Button::new(RichText::new(release.name()).weak())
+                                                    .frame(true)
+                                                    .frame_when_inactive(false)
+                                                    .sense(Sense::empty())
+                                            ).on_hover_text(
+                                                RichText::new(tooltip).color(egui::Color32::ORANGE),
+                                            );
+                                            continue;
+                                        }
 
-                                                    ui.with_layout(
-                                                        egui::Layout::left_to_right(egui::Align::Min),
-                                                        |ui| {
-                                                            if ui.button("Dismiss").clicked() {
-                                                                self.ignore_releases_fetch_error = true;
-                                                                if let Some(cached) =
-                                                                    hyperspace::get_cached_hyperspace_releases()
-                                                                        .unwrap_or_else(|e| {
-                                                                            error!("Failed to read cached hyperspace releases: {e}");
-                                                                            None
-                                                                        })
-                                                                {
-                                                                    self.hyperspace_releases.set(Promise::from_ready(Ok(cached)))
-                                                                }
-                                                                ctx.request_repaint();
-                                                            }
+                                        let response = ui.selectable_label(
+                                            shared
+                                                .hyperspace
+                                                .as_ref()
+                                                .is_some_and(|x| x.release.id() == release.id()),
+                                            release.name(),
+                                        );
+                                        let desc_pos = Pos2::new(
+                                            ui.min_rect().max.x + 12.0,
+                                            ui.min_rect().min.y - f32::from(ui.spacing().window_margin.top),
+                                        );
 
-                                                            ui.with_layout(
-                                                                egui::Layout::right_to_left(egui::Align::Min),
-                                                                |ui| {
-                                                                    if ui.button("Retry").clicked() {
-                                                                        self.hyperspace_releases.take();
-                                                                        ctx.request_repaint();
-                                                                    }
-                                                                },
-                                                            );
-                                                        },
-                                                    );
-                                                });
+                                        if response.clicked() {
+                                            clicked = Some(Some(release.to_owned()));
+                                        } else if response.hovered() {
+                                            // TODO: A scroll area here?
+                                            //       How do we distinguish users wanting to scroll
+                                            //       the combobox vs the description?
+                                            //       Making the description persist when the mouse
+                                            //       moves out of the combobox could possibly be an option.
+                                            egui::Window::new("hyperspace version tooltip")
+                                                .fixed_pos(desc_pos)
+                                                .title_bar(false)
+                                                .resizable(false)
+                                                .show(ctx, |ui| ui.monospace(release.description()));
                                         }
                                     }
-                                    None => {
-                                        combobox.show_ui(ui, |ui| {
-                                            ui.strong(l!("hyperspace-releases-loading"));
-                                        });
-                                    }
-                                };
+                                });
 
                                 if let Some(new_value) = clicked {
                                     if let Some(release) = new_value {
@@ -1264,7 +1283,7 @@ impl App {
                                     }
                                 }
 
-                                if self.hyperspace_releases.ready().is_none() {
+                                if self.installer_resources.ready().is_none() {
                                     ui.label(l!("hyperspace-fetching-releases"));
                                     ui.spinner();
                                 }
@@ -1558,7 +1577,7 @@ impl App {
                         if ftl_dir_buf.is_empty() {
                             self.settings.ftl_directory = None
                         } else {
-                            self.hyperspace_installer = Some(hyperspace::Installer::create(Path::new(&ftl_dir_buf)));
+                            self.hyperspace_installer = None;
                             self.settings.ftl_directory = Some(PathBuf::from(ftl_dir_buf));
                         }
                     }

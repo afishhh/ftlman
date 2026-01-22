@@ -20,11 +20,11 @@ status-repacking = Repakowanie archiwum
 status-scanning-mods = Skanowanie folderu modów
 
 invalid-ftl-directory = Niepoprawny folder FTL
-hyperspace-fetch-releases-failed = Pobieranie wersji hyperspace nie udało się
+hyperspace-fetch-resources-failed = Pobieranie zasobów instalatora hyperspace nie udało się
 
 hyperspace = Hyperspace
-hyperspace-releases-loading = Ładowanie...
-hyperspace-fetching-releases = Pobieranie wersji hyperspace...
+hyperspace-resources-loading = Ładowanie...
+hyperspace-fetching-resources = Pobieranie zasobów instalatora hyperspace...
 
 mod-meta-authors = Autorzy:
 mod-meta-hs-req = Wymagana wersja hyperspace:

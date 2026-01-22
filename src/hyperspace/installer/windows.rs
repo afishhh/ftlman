@@ -5,17 +5,7 @@ use zip::ZipArchive;
 
 use crate::bps;
 
-use super::Patcher;
-
-pub(crate) fn available(hs_version: &semver::Version, ftl_version: super::Version) -> bool {
-    if ftl_version == super::Version::Steam1_6_22Win {
-        *hs_version >= semver::Version::new(1, 21, 0)
-    } else {
-        *hs_version < semver::Version::new(1, 21, 0)
-    }
-}
-
-pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patcher: Option<&Patcher>) -> Result<()> {
+pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patch_data: Option<&[u8]>) -> Result<()> {
     let dlls: Vec<_> = zip
         .file_names()
         .filter(|x| x.ends_with(".dll"))
@@ -32,8 +22,8 @@ pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>, patcher: Optio
         }
     }
 
-    if let Some(patcher) = patcher.as_ref() {
-        let patch = bps::Patch::open(&patcher.data).context("Failed to parse executable patch")?;
+    if let Some(patch_data) = patch_data {
+        let patch = bps::Patch::open(patch_data).context("Failed to parse executable patch")?;
         if ftl.join("FTLGame.exe").metadata()?.len() != patch.target_size as u64 {
             let source = std::fs::read(ftl.join("FTLGame.exe")).context("Failed to read FTLGame.exe")?;
             let mut out = Vec::new();
