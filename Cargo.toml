@@ -24,6 +24,9 @@ once_cell = "1"
 parking_lot = "0.12"
 poll-promise = { version = "0.3" }
 
+# ring is already a dependency of ureq and allows us to compute hashes :)
+ring = "0.17"
+
 # For BPS patches
 crc32fast = "1"
 

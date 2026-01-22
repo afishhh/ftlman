@@ -11,6 +11,18 @@ pub use gdrive::*;
 mod download;
 pub use download::*;
 
+pub fn to_hex(bytes: impl Iterator<Item = u8>) -> String {
+    let to_hex = |v: u8| char::from_digit(v.into(), 16).unwrap();
+    let mut output = String::with_capacity(bytes.size_hint().0 << 1);
+
+    for value in bytes {
+        output.push(to_hex(value >> 4));
+        output.push(to_hex(value & 0xF));
+    }
+
+    output
+}
+
 pub fn to_human_size_units(num: u64) -> (f64, &'static str) {
     const UNITS: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB", "YiB"];
 

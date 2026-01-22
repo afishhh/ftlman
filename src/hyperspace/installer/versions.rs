@@ -45,6 +45,7 @@ pub struct Patch {
     requirements: Vec<PatchRequirement>,
     #[serde(flatten)]
     source: PatchSource,
+    sha256: Option<Box<str>>,
 }
 
 impl Patch {
@@ -81,6 +82,14 @@ impl Patch {
                     archive.by_name("patch/patch.bps")?.read_to_end(&mut data)?;
                 }
             };
+
+            if let Some(expected_hex_digest) = &self.sha256 {
+                let digest = ring::digest::digest(&ring::digest::SHA256, &data);
+                let hex_digest = crate::util::to_hex(digest.as_ref().iter().copied());
+                if hex_digest != **expected_hex_digest {
+                    bail!("SHA256 digest {hex_digest} doesn't match {expected_hex_digest}");
+                }
+            }
 
             Ok(data)
         })

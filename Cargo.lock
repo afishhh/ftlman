@@ -1591,6 +1591,7 @@ dependencies = [
  "quick-xml 0.37.5",
  "regex",
  "regex-syntax",
+ "ring",
  "ryu",
  "semver",
  "serde",
