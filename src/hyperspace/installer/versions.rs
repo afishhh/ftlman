@@ -9,7 +9,7 @@ use log::{debug, error};
 use serde::Deserialize;
 use zip::ZipArchive;
 
-use crate::{AGENT, cache::CACHE};
+use crate::{AGENT, cache::CACHE, util::check_respones_status};
 
 const VERSION_INDEX_URLS: &[(&str, &str)] = &[
     (
@@ -29,6 +29,8 @@ enum PatchSource {
     HyperspaceZip { path: String },
     #[serde(rename = "gdrive")]
     GoogleDrive { file_id: String },
+    #[serde(rename = "http")]
+    Http { url: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,6 +82,16 @@ impl Patch {
                     let mut archive =
                         ZipArchive::new(std::io::Cursor::new(patch)).context("Failed to open patch zip archive")?;
                     archive.by_name("patch/patch.bps")?.read_to_end(&mut data)?;
+                }
+                PatchSource::Http { url } => {
+                    let response = AGENT.get(url).call()?;
+                    check_respones_status(&response)?;
+                    data = crate::util::download_body_with_progress(response, move |current, total| {
+                        if let Some(total) = total {
+                            on_progress(current, total);
+                        }
+                    })
+                    .with_context(|| format!("Failed to download patch from {url:?}"))?;
                 }
             };
 

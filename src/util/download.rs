@@ -1,5 +1,17 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use ureq::Response;
+
+pub fn check_respones_status(res: &ureq::Response) -> Result<()> {
+    if res.status() != 200 {
+        bail!(
+            "Received unsuccessful response code: {} {}",
+            res.status(),
+            res.status_text()
+        );
+    }
+
+    Ok(())
+}
 
 pub fn download_body_with_progress(
     response: Response,
