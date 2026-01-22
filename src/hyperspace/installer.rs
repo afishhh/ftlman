@@ -15,10 +15,12 @@ mod windows;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Version {
+    Steam1_6_22Win = 14,
     Steam1_6_14Win = 0,
     Steam1_6_13Win = 9,
     Steam1_6_13Linux = 1,
     Steam1_6_13Mac = 10,
+    Gog1_6_22 = 15,
     Gog1_6_13B = 2,
     Gog1_6_12 = 13,
     Gog1_6_9 = 3,
@@ -34,6 +36,7 @@ enum Version {
 impl Version {
     const fn from_executable_size(size: u64) -> Option<Version> {
         Some(match size {
+            128367661 => Version::Steam1_6_22Win,
             24762981 => Version::Downgraded1_6_9Win,
             5497856 => Version::Steam1_6_14Win,
             5497344 => Version::Steam1_6_13Win,
@@ -42,6 +45,7 @@ impl Version {
             72161049 => Version::Humble1_6_12Linux,
             5178880 => Version::Epic1_6_12,
             127810474 => Version::Microsoft1_6_12,
+            128367663 => Version::Gog1_6_22,
             128019802 => Version::Gog1_6_13B,
             125159498 => Version::Gog1_6_12,
             125087845 => Version::Gog1_6_9,
@@ -53,10 +57,12 @@ impl Version {
 
     fn name(&self) -> &'static str {
         match self {
+            Version::Steam1_6_22Win => "Steam 1.6.22 Windows",
             Version::Steam1_6_14Win => "Steam 1.6.14 Windows",
             Version::Steam1_6_13Win => "Steam 1.6.13 Windows",
             Version::Steam1_6_13Mac => "Steam 1.6.13 MacOS",
             Version::Steam1_6_13Linux => "Steam 1.6.13 Linux",
+            Version::Gog1_6_22 => "GOG 1.6.22",
             Version::Gog1_6_13B => "GOG 1.6.13B",
             Version::Gog1_6_12 => "GOG 1.6.12",
             Version::Gog1_6_9 => "GOG 1.6.9",
@@ -89,6 +95,12 @@ pub struct Patch {
 }
 
 const PATCHES: &[Patch] = &[
+    Patch {
+        from: Version::Steam1_6_22Win,
+        source: PatchLocation::HyperspaceZip {
+            path: "Windows - Extract these files into where FTLGame.exe is/patch/patch.bps",
+        },
+    },
     Patch {
         from: Version::Steam1_6_14Win,
         source: PatchLocation::HyperspaceZip {
