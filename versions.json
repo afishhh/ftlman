@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "versions": [
+    {
+      "exe_size": 128367661,
+      "platform": "windows",
+      "name": "Steam 1.6.22 Windows",
+      "patches": [
+        {
+          "id": "1.6.22-to-1.6.9",
+          "kind": "zip",
+          "path": "Windows - Extract these files into where FTLGame.exe is/patch/patch.bps",
+          "requirements": [
+            {
+              "kind": "hs_version",
+              "req": "= 1.21.0"
+            }
+          ],
+          "sha256": "6ec8783e7067d5af66ad60ca006e2c0dc216818cd70a970ce6d6979f4887a942"
+        },
+        {
+          "id": "1.6.22-to-1.6.9",
+          "kind": "http",
+          "url": "https://fishhh.dev/ftlman/patches/1.6.22-to-1.6.9.bps",
+          "sha256": "6ec8783e7067d5af66ad60ca006e2c0dc216818cd70a970ce6d6979f4887a942"
+        }
+      ]
+    },
+    {
+      "exe_size": 5497856,
+      "platform": "windows",
+      "name": "Steam 1.6.14 Windows",
+      "patches": [
+        {
+          "id": "1.6.14-to-1.6.9",
+          "kind": "zip",
+          "path": "Windows - Extract these files into where FTLGame.exe is/patch/patch.bps",
+          "requirements": [
+            {
+              "kind": "hs_version",
+              "req": "< 1.21.0"
+            }
+          ],
+          "sha256": "2cd67ba75618d8b9088f26f7b2f49eacfffa63a0e994e4b6adb3ad18d9cfa1ca"
+        },
+        {
+          "id": "1.6.14-to-1.6.9",
+          "kind": "http",
+          "url": "https://fishhh.dev/ftlman/patches/1.6.14-to-1.6.9.bps",
+          "sha256": "2cd67ba75618d8b9088f26f7b2f49eacfffa63a0e994e4b6adb3ad18d9cfa1ca"
+        }
+      ]
+    },
+    {
+      "exe_size": 5497344,
+      "platform": "windows",
+      "name": "Steam 1.6.13 Windows"
+    },
+    {
+      "exe_size": 72443660,
+      "natively_supported": true,
+      "platform": "linux",
+      "name": "Steam 1.6.13 Linux"
+    },
+    {
+      "exe_size": 4952160,
+      "platform": "macos",
+      "name": "Steam 1.6.13 MacOS"
+    },
+    {
+      "exe_size": 128367663,
+      "platform": "windows",
+      "name": "GOG 1.6.22"
+    },
+    {
+      "exe_size": 128019802,
+      "platform": "windows",
+      "name": "GOG 1.6.13B"
+    },
+    {
+      "exe_size": 125159498,
+      "platform": "windows",
+      "name": "GOG 1.6.12"
+    },
+    {
+      "exe_size": 125087845,
+      "natively_supported": true,
+      "platform": "windows",
+      "name": "GOG 1.6.9"
+    },
+    {
+      "exe_size": 72161049,
+      "natively_supported": true,
+      "platform": "linux",
+      "name": "Humble 1.6.12 Linux"
+    },
+    {
+      "exe_size": 4898736,
+      "platform": "macos",
+      "name": "Humble 1.6.12 MacOS"
+    },
+    {
+      "exe_size": 5178880,
+      "platform": "windows",
+      "name": "Epic 1.6.12",
+      "patches": [
+        {
+          "id": "epic-1.6.12-to-1.6.9",
+          "kind": "gdrive",
+          "file_id": "1wM4Lb1ADy3PHay5sNuWpQOTnWbpIOGQ1"
+        }
+      ]
+    },
+    {
+      "exe_size": 125162840,
+      "platform": "windows",
+      "name": "Origin 1.6.12",
+      "patches": [
+        {
+          "id": "origin-1.6.12-to-1.6.9",
+          "kind": "gdrive",
+          "file_id": "1GTxiidyp0o5D1HBMrT0XprstVmPwvuqo"
+        }
+      ]
+    },
+    {
+      "exe_size": 127810474,
+      "platform": "windows",
+      "name": "Microsoft 1.6.12",
+      "patches": [
+        {
+          "id": "ms-1.6.12-to-1.6.9",
+          "kind": "gdrive",
+          "file_id": "18tnHl85Ll36gBMcGGCbzu1LQZJ8QBiA0"
+        }
+      ]
+    },
+    {
+      "exe_size": 24762981,
+      "platform": "windows",
+      "name": "Unknown 1.6.9"
+    }
+  ]
+}
