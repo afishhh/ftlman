@@ -1,7 +1,11 @@
 ## [Unreleased]
 
+## [v0.7.0]
+
 ### Added
+
 - Fatal errors on Windows will now result in an error box popping up with the details.
+- Windows Steam 1.6.22 FTL support
 
 ### Changed
 
@@ -203,7 +207,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.6.6...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.0...HEAD
+[v0.7.0]: https://github.com/afishhh/ftlman/compare/v0.6.6...v0.7.0
 [v0.6.6]: https://github.com/afishhh/ftlman/compare/v0.6.5...v0.6.6
 [v0.6.5]: https://github.com/afishhh/ftlman/compare/v0.6.4...v0.6.5
 [v0.6.4]: https://github.com/afishhh/ftlman/compare/v0.6.3...v0.6.4
