@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [v0.7.1]
+
+### Added
+
+- A warning is now emitted for mod namespaced tags in append subtrees that are supposed to be appended verbatim. ftlman was erroneously stripping these of their namespace which caused mods doing this to mysteriously fail in Slipstream.
+- Added remotely hosted downgrade patches for both 1.6.22 and 1.6.14. You should now be able to patch any Hyperspace version on Windows regardless of what version your base game is.
+
+### Changed
+
+- FTL version information is no longer hard-coded and instead lives on the [`version-index`](https://github.com/afishhh/ftlman/blob/version-index/versions.json) branch (fetched on startup and cached with TTL=1h). This means the mod manager will no longer have to receive a whole new update when a new FTL version is released.
+
 ## [v0.7.0]
 
 ### Added
@@ -207,7 +218,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.0...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.1...HEAD
+[v0.7.1]: https://github.com/afishhh/ftlman/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/afishhh/ftlman/compare/v0.6.6...v0.7.0
 [v0.6.6]: https://github.com/afishhh/ftlman/compare/v0.6.5...v0.6.6
 [v0.6.5]: https://github.com/afishhh/ftlman/compare/v0.6.4...v0.6.5
