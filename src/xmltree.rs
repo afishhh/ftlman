@@ -3,6 +3,8 @@
 
 use std::{borrow::Cow, collections::BTreeMap, ops::Deref};
 
+use speedy_xml::reader::StartEvent;
+
 pub mod builder;
 pub mod dom;
 pub mod emitter;
@@ -53,16 +55,14 @@ impl builder::TreeBuilder for SimpleTreeBuilder {
     type Element = Element;
     type Node = Node;
 
-    fn create_element<'a>(
-        &mut self,
-        prefix: Option<&'a str>,
-        name: &'a str,
-        attributes: impl Iterator<Item = (&'a str, Cow<'a, str>)>,
-    ) -> Self::Element {
+    fn create_element(&mut self, start: &StartEvent) -> Self::Element {
         Element {
-            prefix: prefix.map(Box::from),
-            name: name.into(),
-            attributes: attributes.map(|(k, v)| (k.into(), v.into())).collect(),
+            prefix: start.prefix().map(Box::from),
+            name: start.name().into(),
+            attributes: start
+                .attributes()
+                .map(|attr| (attr.name().into(), attr.value().into()))
+                .collect(),
             children: Vec::new(),
         }
     }

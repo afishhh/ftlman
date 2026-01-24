@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     cell::{Ref, RefMut},
     collections::BTreeMap,
     iter::FusedIterator,
@@ -10,6 +9,7 @@ use gc_arena::{
     Collect, Gc, Mutation,
     lock::{GcRefLock, RefLock},
 };
+use speedy_xml::reader::StartEvent;
 
 use crate::xmltree;
 
@@ -577,17 +577,15 @@ impl<'gc> TreeBuilder for DomTreeBuilder<'_, 'gc> {
     type Element = GcElement<'gc>;
     type Node = GcNode<'gc>;
 
-    fn create_element<'a>(
-        &mut self,
-        prefix: Option<&'a str>,
-        name: &'a str,
-        attributes: impl Iterator<Item = (&'a str, Cow<'a, str>)>,
-    ) -> Self::Element {
+    fn create_element(&mut self, start: &StartEvent) -> Self::Element {
         Element::create(
             self.0,
-            prefix.map(Box::from),
-            name.into(),
-            attributes.map(|(k, v)| (k.into(), v.into())).collect(),
+            start.prefix().map(Box::from),
+            start.name().into(),
+            start
+                .attributes()
+                .map(|attr| (attr.name().into(), attr.value().into()))
+                .collect(),
         )
     }
 

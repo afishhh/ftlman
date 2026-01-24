@@ -281,21 +281,13 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
 
                     match start.prefix() {
                         Some("mod-before") => {
-                            let mut element = xmltree::builder::parse_element_after(
-                                &mut SimpleTreeBuilder,
-                                &start,
-                                &mut self.reader,
-                            )?;
+                            let mut element = self.parse_element_warning_on_namespaces(&start, false, false)?;
                             element.prefix = None;
                             before.push(element);
                             break 'tag;
                         }
                         Some("mod-after") => {
-                            let mut element = xmltree::builder::parse_element_after(
-                                &mut SimpleTreeBuilder,
-                                &start,
-                                &mut self.reader,
-                            )?;
+                            let mut element = self.parse_element_warning_on_namespaces(&start, false, false)?;
                             element.prefix = None;
                             after.push(element);
                             break 'tag;
@@ -580,6 +572,109 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
         }))
     }
 
+    fn parse_element_warning_on_namespaces(
+        &mut self,
+        start: &StartEvent,
+        warn_on_initial: bool,
+        is_slipstream_incompat: bool,
+    ) -> Result<xmltree::Element, ParseError> {
+        struct WarningTreeBuilderProxy<'c, 'a, 'b, 's> {
+            initial_start: &'c StartEvent<'s>,
+            warn_on_initial: bool,
+            is_slipstream_incompat: bool,
+            diag: Option<&'c mut FileDiagnosticBuilder<'a, 'b>>,
+            dummy_reader: speedy_xml::Reader<'s>,
+        }
+
+        impl xmltree::builder::TreeBuilder for WarningTreeBuilderProxy<'_, '_, '_, '_> {
+            type Element = <xmltree::SimpleTreeBuilder as xmltree::builder::TreeBuilder>::Element;
+            type Node = <xmltree::SimpleTreeBuilder as xmltree::builder::TreeBuilder>::Node;
+
+            fn create_element(&mut self, start: &StartEvent) -> Self::Element {
+                if (self.warn_on_initial || !std::ptr::eq(self.initial_start, start))
+                    && start.prefix().is_some_and(|ns| super::MOD_NAMESPACES.contains(&ns))
+                {
+                    self.diag.with_mut(|builder| {
+                        let prefix_span = start
+                            .prefix_position_in(&self.dummy_reader)
+                            .expect("prefix was just confirmed to exist");
+
+                        let mut annotations = Vec::new();
+
+                        let lines: &[&str] = if self.is_slipstream_incompat {
+                            &[
+                                "mod namespace is invalid in this context",
+                                "ftlman will strip it from the result but slipstream will not",
+                                "this behavior may change in the future",
+                            ]
+                        } else {
+                            &[
+                                "mod namespace is invalid in this context and will be stripped",
+                                "this behavior may change in the future",
+                            ]
+                        };
+                        for &line in lines {
+                            annotations.push(AnnotationKind::Primary.span(prefix_span.clone()).label(line));
+                        }
+
+                        if !self.warn_on_initial {
+                            annotations.push(
+                                AnnotationKind::Context
+                                    .span(self.initial_start.position_in(&self.dummy_reader))
+                                    .label("in this appended element"),
+                            );
+                        }
+
+                        builder.message(
+                            Level::WARNING.primary_title("non-portable ignored mod namespace"),
+                            annotations,
+                        )
+                    });
+                }
+
+                SimpleTreeBuilder.create_element(start)
+            }
+
+            fn cdata_to_node(&mut self, content: &str) -> Self::Node {
+                SimpleTreeBuilder.cdata_to_node(content)
+            }
+
+            fn text_to_node(&mut self, content: Cow<str>) -> Self::Node {
+                SimpleTreeBuilder.text_to_node(content)
+            }
+
+            fn comment_to_node(&mut self, content: &str) -> Self::Node {
+                SimpleTreeBuilder.comment_to_node(content)
+            }
+
+            fn element_to_node(&mut self, element: Self::Element) -> Self::Node {
+                SimpleTreeBuilder.element_to_node(element)
+            }
+
+            fn push_element_child(&mut self, element: &mut Self::Element, child: Self::Node) {
+                SimpleTreeBuilder.push_element_child(element, child)
+            }
+
+            fn node_into_element(&mut self, node: Self::Node) -> Option<Self::Element> {
+                SimpleTreeBuilder.node_into_element(node)
+            }
+        }
+
+        xmltree::builder::parse_element_after(
+            &mut WarningTreeBuilderProxy {
+                initial_start: start,
+                warn_on_initial,
+                is_slipstream_incompat,
+                diag: self.diag.as_deref_mut(),
+                // HACK: hacky but works (relies on speedy-xml implementation details)
+                dummy_reader: speedy_xml::Reader::new(self.reader.buffer()),
+            },
+            start,
+            &mut self.reader,
+        )
+        .map_err(Into::into)
+    }
+
     fn parse_commands(
         &mut self,
         mut selector_slot: Option<(&mut Option<SelectorFilterOrError>, bool)>,
@@ -667,20 +762,17 @@ impl<'a: 'b, 'b: 'c, 'c, 'd> Parser<'a, 'b, 'c, 'd> {
                         },
                     },
                     Some("mod-prepend") => {
-                        let mut element =
-                            xmltree::builder::parse_element_after(&mut SimpleTreeBuilder, &start, &mut self.reader)?;
+                        let mut element = self.parse_element_warning_on_namespaces(&start, false, false)?;
                         element.prefix = None;
                         Command::Prepend(element)
                     }
                     Some("mod-append") => {
-                        let mut element =
-                            xmltree::builder::parse_element_after(&mut SimpleTreeBuilder, &start, &mut self.reader)?;
+                        let mut element = self.parse_element_warning_on_namespaces(&start, false, true)?;
                         element.prefix = None;
                         Command::Append(element)
                     }
                     Some("mod-overwrite") => {
-                        let mut element =
-                            xmltree::builder::parse_element_after(&mut SimpleTreeBuilder, &start, &mut self.reader)?;
+                        let mut element = self.parse_element_warning_on_namespaces(&start, false, true)?;
                         element.prefix = None;
                         Command::Overwrite(element)
                     }
@@ -1010,7 +1102,7 @@ pub fn parse<'a: 'b, 'b>(
             }
 
             Event::Start(start) | Event::Empty(start) => FindOrContent::Content(Node::Element(
-                xmltree::builder::parse_element_after(&mut SimpleTreeBuilder, &start, &mut parser.reader)?,
+                parser.parse_element_warning_on_namespaces(&start, true, true)?,
             )),
             Event::Text(text) => FindOrContent::Content(Node::Text(text.content().into())),
             Event::CData(cdata) => FindOrContent::Content(Node::CData(cdata.content().into())),

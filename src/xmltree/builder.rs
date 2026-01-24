@@ -7,12 +7,7 @@ pub trait TreeBuilder {
     type Element;
     type Node;
 
-    fn create_element<'a>(
-        &mut self,
-        prefix: Option<&'a str>,
-        name: &'a str,
-        attributes: impl Iterator<Item = (&'a str, Cow<'a, str>)>,
-    ) -> Self::Element;
+    fn create_element(&mut self, start: &StartEvent) -> Self::Element;
     fn cdata_to_node(&mut self, content: &str) -> Self::Node;
     fn text_to_node(&mut self, content: Cow<str>) -> Self::Node;
     fn comment_to_node(&mut self, content: &str) -> Self::Node;
@@ -31,12 +26,8 @@ macro_rules! build_loop_match {
     }};
     ($builder: expr, $reader: expr, output = $output_where: ident($output: expr), End($end_name: tt) => $end: expr, Eof => $eof: expr) => {
         match $reader.next().transpose()? {
-            Some(ref event @ (Event::Start(ref x) | Event::Empty(ref x))) => {
-                let mut new_element = $builder.create_element(
-                    x.prefix(),
-                    x.name(),
-                    x.attributes().map(|attr| (attr.name(), attr.value()))
-                );
+            Some(ref event @ (Event::Start(ref start) | Event::Empty(ref start))) => {
+                let mut new_element = $builder.create_element(start);
 
                 if matches!(event, Event::Start(..)) {
                     build_under($reader, $builder, &mut new_element)?;
@@ -112,11 +103,7 @@ pub fn parse_element_after<B: TreeBuilder>(
     start: &StartEvent,
     reader: &mut speedy_xml::Reader,
 ) -> Result<B::Element, ParseError> {
-    let mut new_element = builder.create_element(
-        start.prefix(),
-        start.name(),
-        start.attributes().map(|attr| (attr.name(), attr.value())),
-    );
+    let mut new_element = builder.create_element(start);
 
     if !start.is_empty() {
         build_under(reader, builder, &mut new_element)?;

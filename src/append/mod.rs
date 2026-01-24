@@ -10,6 +10,8 @@ pub use parse::*;
 // FIXME: This is a giant hack
 const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
 
+const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-prepend", "mod-overwrite"];
+
 pub enum PatchError<'s> {
     Panic(&'s FindPanic),
     AlreadyReported,
@@ -99,8 +101,6 @@ impl ElementFilter for SimpleFilter {
 }
 
 fn cleanup(element: &mut Element) {
-    const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-prepend", "mod-overwrite"];
-
     if element.prefix.as_deref().is_some_and(|x| MOD_NAMESPACES.contains(&x)) {
         element.prefix = None
     }
