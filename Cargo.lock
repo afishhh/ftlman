@@ -3755,9 +3755,9 @@ dependencies = [
 
 [[package]]
 name = "speedy-xml"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2694e2c5260796ef661dce056e481764474a418b52c411d86c07b01fbd51fbca"
+checksum = "07744a30dafbd511d40cb9c21700e355f1f5e47c9d4c31e64e7402f1e6335b88"
 dependencies = [
  "memchr",
 ]
