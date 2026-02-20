@@ -59,6 +59,12 @@
     {
       "exe_size": 72443660,
       "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.0.1"
+        }
+      ],
       "platform": "linux",
       "name": "Steam 1.6.13 Linux"
     },
@@ -91,6 +97,12 @@
     {
       "exe_size": 72161049,
       "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.0.1"
+        }
+      ],
       "platform": "linux",
       "name": "Humble 1.6.12 Linux"
     },
