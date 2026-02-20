@@ -70,6 +70,7 @@
     },
     {
       "exe_size": 4952160,
+      "natively_supported": true,
       "platform": "macos",
       "name": "Steam 1.6.13 MacOS"
     },
@@ -108,8 +109,15 @@
     },
     {
       "exe_size": 4898736,
+      "natively_supported": true,
       "platform": "macos",
-      "name": "Humble 1.6.12 MacOS"
+      "name": "Unknown 1.6.12 MacOS"
+    },
+    {
+      "exe_size": 4899748,
+      "natively_supported": true,
+      "platform": "macos",
+      "name": "GOG 1.6.13 MacOS"
     },
     {
       "exe_size": 5178880,
