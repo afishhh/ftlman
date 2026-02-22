@@ -114,6 +114,8 @@ pub struct Version {
     platform: super::Platform,
     #[serde(default)]
     natively_supported: bool,
+    #[serde(default)] // NOTE: this is ignored if patch is present
+    native_requirements: Vec<PatchRequirement>,
     name: Box<str>,
     #[serde(default)]
     patches: Vec<Patch>,
@@ -130,6 +132,12 @@ impl Version {
 
     pub fn natively_supported(&self) -> bool {
         self.natively_supported
+    }
+
+    pub fn natively_supported_on(&self, hs_version: &semver::Version) -> bool {
+        self.native_requirements.iter().all(|req| match req {
+            PatchRequirement::HyperspaceVersion { req } => req.matches(hs_version),
+        })
     }
 
     pub fn patches(&self) -> &[Patch] {

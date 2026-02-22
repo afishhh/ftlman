@@ -144,16 +144,9 @@ impl Installer {
 
     /// Returns whether this platform is supported by the provided Hyperspace version.
     pub fn supports(&self, hs_version: &semver::Version) -> bool {
-        if let Some(patches) = &self.patches
-            && !patches.iter().any(|p| p.supported_on(hs_version))
-        {
-            return false;
-        }
-
-        match self.platform {
-            Platform::Windows => true,
-            Platform::Linux => linux::available(hs_version),
-            Platform::MacOS => false,
+        match &self.patches {
+            Some(patches) => patches.iter().any(|p| p.supported_on(hs_version)),
+            None => self.version.natively_supported_on(hs_version),
         }
     }
 
