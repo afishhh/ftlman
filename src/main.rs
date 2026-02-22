@@ -761,6 +761,11 @@ impl App {
                 )),
             }
 
+            if cfg!(target_os = "macos") {
+                candidates.extend(dirs::home_dir().map(|h| h.join("Games/Heroic/FasterThanLight/")));
+                candidates.push(PathBuf::from("/Applications/"));
+            }
+
             for candidate in candidates {
                 debug!("Looking for FTL in {}", candidate.display());
                 if let Some(path) = check_ftl_directory_candidate(candidate) {
