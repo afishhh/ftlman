@@ -9,7 +9,7 @@ use log::{debug, error};
 use serde::Deserialize;
 use zip::ZipArchive;
 
-use crate::{AGENT, cache::CACHE, util::check_respones_status};
+use crate::{AGENT, cache::CACHE, util::check_response_status};
 
 const VERSION_INDEX_URLS: &[(&str, &str)] = &[
     (
@@ -85,7 +85,7 @@ impl Patch {
                 }
                 PatchSource::Http { url } => {
                     let response = AGENT.get(url).call()?;
-                    check_respones_status(&response)?;
+                    check_response_status(&response)?;
                     data = crate::util::download_body_with_progress(response, move |current, total| {
                         if let Some(total) = total {
                             on_progress(current, total);

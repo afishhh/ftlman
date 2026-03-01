@@ -3,7 +3,7 @@ use std::sync::LazyLock;
 use anyhow::{Result, bail};
 use regex::Regex;
 
-use crate::util::check_respones_status;
+use crate::util::check_response_status;
 
 static UUID_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#""([0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12})""#).unwrap());
@@ -33,7 +33,7 @@ pub fn request_google_drive_download(file_id: &str) -> Result<ureq::Response> {
         initial_response
     };
 
-    check_respones_status(&data_response)?;
+    check_response_status(&data_response)?;
 
     Ok(data_response)
 }

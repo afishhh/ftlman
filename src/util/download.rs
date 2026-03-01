@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use ureq::Response;
 
-pub fn check_respones_status(res: &ureq::Response) -> Result<()> {
+pub fn check_response_status(res: &ureq::Response) -> Result<()> {
     if res.status() != 200 {
         bail!(
             "Received unsuccessful response code: {} {}",
