@@ -42,7 +42,7 @@ impl Repository {
             std::time::Duration::from_secs(15 * 60),
             || -> Result<_> {
                 let url: String = format!(
-                    "{API_ROOT}/repos/{owner}/{repo}/releases",
+                    "{API_ROOT}/repos/{owner}/{repo}/releases?per_page=100",
                     owner = self.owner,
                     repo = self.name
                 );
