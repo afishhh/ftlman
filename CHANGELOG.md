@@ -1,9 +1,15 @@
 ## [Unreleased]
 
+## [v0.7.2]
+
 ### Added
 
 - Support for installing Hyperspace on MacOS.
 - Support for Hyperspace releases with split per-platform assets.
+
+### Fixed
+
+- Hyperspace version dropdown will now show up to 100 most recent releases instead of only 30.
 
 ## [v0.7.1]
 
@@ -223,7 +229,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.1...HEAD
+[unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.2...HEAD
+[v0.7.2]: https://github.com/afishhh/ftlman/compare/v0.7.1...v0.7.2
 [v0.7.1]: https://github.com/afishhh/ftlman/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/afishhh/ftlman/compare/v0.6.6...v0.7.0
 [v0.6.6]: https://github.com/afishhh/ftlman/compare/v0.6.5...v0.6.6
