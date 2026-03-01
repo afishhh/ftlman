@@ -173,8 +173,17 @@ impl VersionIndex {
             &String::from_utf8(
                 CACHE.read_or_create_with_ttl("ftl-version-index", Duration::from_mins(60), || {
                     debug!("Fetching FTL version index");
+
+                    let override_url_tmp;
+                    let index_urls: &[(&str, &str)] = if let Ok(url) = std::env::var("FTLMAN_VERSION_INDEX_OVERRIDE") {
+                        override_url_tmp = url;
+                        &[("override URL", &override_url_tmp)]
+                    } else {
+                        VERSION_INDEX_URLS
+                    };
+
                     let mut last_error = None;
-                    for (source_name, url) in VERSION_INDEX_URLS {
+                    for (source_name, url) in index_urls {
                         let response = match AGENT.get(url).call() {
                             Ok(response) => response,
                             Err(error) => {
