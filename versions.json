@@ -59,11 +59,24 @@
     {
       "exe_size": 72443660,
       "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.0.1"
+        }
+      ],
       "platform": "linux",
       "name": "Steam 1.6.13 Linux"
     },
     {
       "exe_size": 4952160,
+      "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.22.0"
+        }
+      ],
       "platform": "macos",
       "name": "Steam 1.6.13 MacOS"
     },
@@ -91,13 +104,38 @@
     {
       "exe_size": 72161049,
       "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.0.1"
+        }
+      ],
       "platform": "linux",
       "name": "Humble 1.6.12 Linux"
     },
     {
       "exe_size": 4898736,
+      "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.22.0"
+        }
+      ],
       "platform": "macos",
-      "name": "Humble 1.6.12 MacOS"
+      "name": "Unknown 1.6.12 MacOS"
+    },
+    {
+      "exe_size": 4899748,
+      "natively_supported": true,
+      "native_requirements": [
+        {
+          "kind": "hs_version",
+          "req": ">= 1.22.0"
+        }
+      ],
+      "platform": "macos",
+      "name": "GOG 1.6.13 MacOS"
     },
     {
       "exe_size": 5178880,
