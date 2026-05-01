@@ -236,11 +236,9 @@ impl ModLuaRuntime {
             )?;
         }
 
-        if let Some(path) = meta_path {
-            lua.set_app_data(LuaExecutionContext {
-                current_file: Some(path.into()),
-            });
-        }
+        lua.set_app_data(LuaExecutionContext {
+            current_file: meta_path.map(Box::from),
+        });
 
         lua.load(code)
             .set_name(chunk_name)

@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `mod.meta.current_path` and `mod.util.eval()` causing a panic when used in the XML Sandbox.
+
 ## [v0.7.2]
 
 ### Added
