@@ -502,7 +502,11 @@ pub fn main(command: Command) -> Result<()> {
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
                     other => other.context("Failed to create output directory")?,
                 }
-                std::io::copy(&mut pkg.open(&path)?, &mut File::create(out)?)?;
+                std::io::copy(
+                    &mut pkg.open(&path)?,
+                    &mut File::create(out).with_context(|| format!("Failed to create {path} in output directory"))?,
+                )
+                .with_context(|| format!("Failed to extract {path}"))?;
             }
             Ok(())
         }
