@@ -1,5 +1,6 @@
 use std::{
     io::{Read, Seek},
+    ops::Range,
     sync::Arc,
     time::Duration,
 };
@@ -111,6 +112,7 @@ impl Patch {
 #[derive(Deserialize)]
 pub struct Version {
     pub(super) exe_size: u64,
+    pub(super) exe_size_range: Option<Range<u64>>,
     platform: super::Platform,
     #[serde(default)]
     natively_supported: bool,
@@ -152,7 +154,16 @@ pub struct VersionIndex {
 
 impl VersionIndex {
     pub fn by_exe_size(&self, size: u64) -> Option<Arc<Version>> {
-        self.versions.iter().find(|version| version.exe_size == size).cloned()
+        self.versions
+            .iter()
+            .find(|version| {
+                version.exe_size == size
+                    || version
+                        .exe_size_range
+                        .as_ref()
+                        .is_some_and(|range| range.contains(&size))
+            })
+            .cloned()
     }
 
     fn load(body: &str) -> Result<Arc<Self>> {
