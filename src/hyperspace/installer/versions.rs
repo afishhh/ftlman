@@ -206,7 +206,7 @@ impl VersionIndex {
                         .into())
                 })?,
             )
-            .context("Failed to decode fetched or cached versions.xml")?,
+            .context("Failed to decode fetched or cached versions.json")?,
         )
     }
 
@@ -217,7 +217,7 @@ impl VersionIndex {
         };
 
         Ok(Some(Self::load(
-            &String::from_utf8(body).context("Failed to decode fetched or cached versions.xml")?,
+            &String::from_utf8(body).context("Failed to decode fetched or cached versions.json")?,
         )?))
     }
 }
