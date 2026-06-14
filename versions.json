@@ -21,6 +21,12 @@
         {
           "id": "1.6.22-to-1.6.9",
           "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/09a25e267cc76e6ea5400b325c03b06e99750b52/patch/steam-1.6.22.bps",
+          "sha256": "6ec8783e7067d5af66ad60ca006e2c0dc216818cd70a970ce6d6979f4887a942"
+        },
+        {
+          "id": "1.6.22-to-1.6.9",
+          "kind": "http",
           "url": "https://fishhh.dev/ftlman/patches/1.6.22-to-1.6.9.bps",
           "sha256": "6ec8783e7067d5af66ad60ca006e2c0dc216818cd70a970ce6d6979f4887a942"
         }
@@ -41,6 +47,12 @@
               "req": "< 1.21.0"
             }
           ],
+          "sha256": "2cd67ba75618d8b9088f26f7b2f49eacfffa63a0e994e4b6adb3ad18d9cfa1ca"
+        },
+        {
+          "id": "1.6.14-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/09a25e267cc76e6ea5400b325c03b06e99750b52/patch/steam-1.6.14.bps",
           "sha256": "2cd67ba75618d8b9088f26f7b2f49eacfffa63a0e994e4b6adb3ad18d9cfa1ca"
         },
         {
@@ -152,6 +164,12 @@
       "patches": [
         {
           "id": "epic-1.6.12-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/09a25e267cc76e6ea5400b325c03b06e99750b52/patch/epic-1.6.12.bps",
+          "sha256": "8bc1587eb8c930ffb00afbbfdde9647954bdc3e61a075b1ab2d74f1ea0db2d62"
+        },
+        {
+          "id": "epic-1.6.12-to-1.6.9",
           "kind": "gdrive",
           "file_id": "1wM4Lb1ADy3PHay5sNuWpQOTnWbpIOGQ1",
           "sha256": "8bc1587eb8c930ffb00afbbfdde9647954bdc3e61a075b1ab2d74f1ea0db2d62"
@@ -165,6 +183,12 @@
       "patches": [
         {
           "id": "origin-1.6.12-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/09a25e267cc76e6ea5400b325c03b06e99750b52/patch/origin-1.6.12.bps",
+          "sha256": "595a06f838d891e1360fcda181f37c66a64cb4f02d47f2b33331e4a182968fed"
+        },
+        {
+          "id": "origin-1.6.12-to-1.6.9",
           "kind": "gdrive",
           "file_id": "1GTxiidyp0o5D1HBMrT0XprstVmPwvuqo",
           "sha256": "595a06f838d891e1360fcda181f37c66a64cb4f02d47f2b33331e4a182968fed"
@@ -176,6 +200,12 @@
       "platform": "windows",
       "name": "Microsoft 1.6.12",
       "patches": [
+        {
+          "id": "ms-1.6.12-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/09a25e267cc76e6ea5400b325c03b06e99750b52/patch/microsoft.1.6.12.bps",
+          "sha256": "91e84d5233308df1b92f900e14a8dddec3e9a02ee4fbd8fa66826ed1c6dd6545"
+        },
         {
           "id": "ms-1.6.12-to-1.6.9",
           "kind": "gdrive",
