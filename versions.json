@@ -153,7 +153,8 @@
         {
           "id": "epic-1.6.12-to-1.6.9",
           "kind": "gdrive",
-          "file_id": "1wM4Lb1ADy3PHay5sNuWpQOTnWbpIOGQ1"
+          "file_id": "1wM4Lb1ADy3PHay5sNuWpQOTnWbpIOGQ1",
+          "sha256": "8bc1587eb8c930ffb00afbbfdde9647954bdc3e61a075b1ab2d74f1ea0db2d62"
         }
       ]
     },
@@ -165,7 +166,8 @@
         {
           "id": "origin-1.6.12-to-1.6.9",
           "kind": "gdrive",
-          "file_id": "1GTxiidyp0o5D1HBMrT0XprstVmPwvuqo"
+          "file_id": "1GTxiidyp0o5D1HBMrT0XprstVmPwvuqo",
+          "sha256": "595a06f838d891e1360fcda181f37c66a64cb4f02d47f2b33331e4a182968fed"
         }
       ]
     },
@@ -177,7 +179,8 @@
         {
           "id": "ms-1.6.12-to-1.6.9",
           "kind": "gdrive",
-          "file_id": "18tnHl85Ll36gBMcGGCbzu1LQZJ8QBiA0"
+          "file_id": "18tnHl85Ll36gBMcGGCbzu1LQZJ8QBiA0",
+          "sha256": "91e84d5233308df1b92f900e14a8dddec3e9a02ee4fbd8fa66826ed1c6dd6545"
         }
       ]
     },
