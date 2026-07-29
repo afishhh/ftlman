@@ -5,6 +5,7 @@
 - Fixed `mod.meta.current_path` and `mod.util.eval()` causing a panic when used in the XML Sandbox.
 - Improved error message for `extract` command failing extract an output file (now mentions path).
 - Fixed undefined behavior in XML append patcher with nested `mod:findComposite`.
+- Fixed deleted elements still being considered for find tags in XML append patching.
 
 ## [v0.7.2]
 

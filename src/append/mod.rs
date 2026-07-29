@@ -182,6 +182,7 @@ fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a 
         .children
         .iter_mut()
         .filter_map(Node::as_mut_element)
+        .filter(|e| e.prefix.as_deref().is_none_or(|p| p != REMOVE_MARKER))
         .map(|e| e as *mut Element)
         .collect::<Vec<_>>();
     let mut result = Vec::new();
