@@ -7,6 +7,7 @@
 - Fixed undefined behavior in XML append patcher with nested `mod:findComposite`.
 - Fixed deleted elements still being considered for find tags in XML append patching.
 - Fixed `mod:findComposite` results not being sorted by position.
+- Fixed `mod:setValue` not clearing pre-existing non-text content.
 
 ## [v0.7.2]
 

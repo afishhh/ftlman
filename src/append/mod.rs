@@ -209,9 +209,7 @@ fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<()
                 }
             }
             Command::SetValue(value) => {
-                context
-                    .children
-                    .retain(|node| !matches!(node, XMLNode::CData(_) | XMLNode::Text(_)));
+                context.children.clear();
                 context.children.push(XMLNode::Text(value.to_string()))
             }
             Command::RemoveTag => context.prefix = Some(REMOVE_MARKER.into()),
