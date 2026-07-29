@@ -159,6 +159,7 @@ unsafe fn mod_find_raw<'s>(
                 result.extend(elements.iter().filter(|&c| !set.contains(c)));
             } else {
                 result.extend(set);
+                result.sort_unstable();
             }
         }
     };
@@ -182,6 +183,7 @@ fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a 
         .children
         .iter_mut()
         .filter_map(Node::as_mut_element)
+        // Previously removed elements should not be findable again.
         .filter(|e| e.prefix.as_deref().is_none_or(|p| p != REMOVE_MARKER))
         .map(|e| e as *mut Element)
         .collect::<Vec<_>>();

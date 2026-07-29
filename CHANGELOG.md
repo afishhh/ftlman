@@ -6,6 +6,7 @@
 - Improved error message for `extract` command failing extract an output file (now mentions path).
 - Fixed undefined behavior in XML append patcher with nested `mod:findComposite`.
 - Fixed deleted elements still being considered for find tags in XML append patching.
+- Fixed `mod:findComposite` results not being sorted by position.
 
 ## [v0.7.2]
 
