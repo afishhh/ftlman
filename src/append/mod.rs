@@ -216,7 +216,6 @@ fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<()
                 let mut new = element.clone();
                 new.prefix = None;
 
-                // FIXME: asymtotically ugly
                 context.children.insert(0, XMLNode::Element(new));
             }
             Command::Append(element) => {
@@ -236,49 +235,42 @@ fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<()
                 }
             }
             Command::InsertByFind(command) => {
-                let results = mod_find(context, &command.find)?;
+                let mut results = mod_find(context, &command.find)?;
 
-                let before_cloned_iter = command.before.iter().map(|element| Node::Element(element.clone()));
-                let after_cloned_iter = command.after.iter().map(|element| Node::Element(element.clone()));
+                let before_iter = command.before.iter().map(|element| Node::Element(element.clone()));
+                let after_iter = command.after.iter().map(|element| Node::Element(element.clone()));
                 if results.is_empty() {
                     if command.add_anyway {
-                        context.children.splice(0..0, before_cloned_iter);
-                        context.children.splice(context.children.len().., after_cloned_iter);
+                        context.children.splice(0..0, before_iter);
+                        context.children.splice(context.children.len().., after_iter);
                     }
                 } else {
                     // NOTE: This whole "process" is kinda ""hacky"" but is a pretty efficient way to do this I think.
 
-                    macro_rules! unwrap_ptr {
+                    macro_rules! node_addr {
                         ($ref_to_mut_ref: expr) => {
-                            unsafe {
-                                // This should be able to reverse-map an Element pointer that's part of a
-                                // Node enum back to the address of the original Node.
-                                // Requires unstable `offset_of_enum` feature.
-                                (*($ref_to_mut_ref as *const _ as *const *mut Element))
-                                    .byte_sub(offset_of!(Node, Element.0)) as *mut Node
-                            }
+                            // This will reverse-map an Element pointer that's part of a Node enum
+                            // back to the address of the original Node.
+                            // Requires unstable `offset_of_enum` feature.
+                            ($ref_to_mut_ref as *mut Element)
+                                .wrapping_byte_sub(offset_of!(Node, Element.0))
+                                .addr()
                         };
                     }
 
-                    let first = unwrap_ptr!(results.first().unwrap());
-                    let last = unwrap_ptr!(results.last().unwrap());
+                    let first_addr = node_addr!(*results.first_mut().unwrap());
+                    let last_addr = node_addr!(*results.last_mut().unwrap());
+                    drop(results);
 
-                    debug_assert!(first.is_aligned() && last.is_aligned());
-                    let range = context.children.as_mut_ptr_range();
-                    debug_assert!(range.contains(&first));
-                    debug_assert!(range.contains(&last));
+                    let start_addr = context.children.as_ptr().addr();
 
-                    // SAFETY: last and first should both point to the same allocation as `context.children`.
-                    let first_idx = unsafe { first.offset_from(range.start) as usize };
-                    let last_idx = unsafe { last.offset_from(range.start) as usize };
+                    let first_idx = (first_addr - start_addr) / std::mem::size_of::<Node>();
+                    let last_idx = (last_addr - start_addr) / std::mem::size_of::<Node>();
 
-                    // FIXME: This insertion strategy is not optimal. (does it matter?)
                     let before_len = command.before.len();
-                    context.children.splice(first_idx..first_idx, before_cloned_iter);
+                    context.children.splice(first_idx..first_idx, before_iter);
                     let after_insert_idx = last_idx + before_len + 1;
-                    context
-                        .children
-                        .splice(after_insert_idx..after_insert_idx, after_cloned_iter);
+                    context.children.splice(after_insert_idx..after_insert_idx, after_iter);
                 }
             }
             Command::Error => return Err(PatchError::AlreadyReported),
