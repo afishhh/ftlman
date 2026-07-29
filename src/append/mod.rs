@@ -43,14 +43,6 @@ pub fn patch<'s>(context: &mut Element, script: &'s Script) -> Result<(), PatchE
 
 trait ElementFilter {
     fn filter(&self, element: &Element) -> bool;
-
-    fn filter_children<'a>(&self, context: &'a mut Element) -> Vec<&'a mut Element> {
-        context
-            .children
-            .iter_mut()
-            .filter_map(|x| x.as_mut_element().filter(|child| self.filter(child)))
-            .collect()
-    }
 }
 
 impl ElementFilter for SelectorFilter {
@@ -118,75 +110,83 @@ fn cleanup(element: &mut Element) {
     }
 }
 
-fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a mut Element>, PatchError<'s>> {
-    let mut matches = match &find.filter {
-        FindFilter::Simple(filter) => filter.filter_children(context),
-        // PERF: This could theoretically be optimised to run in two passes instead of using a set.
+/// # Safety
+///
+/// All pointers in `elements` must be immutably borrowable.
+unsafe fn mod_find_raw<'s>(
+    elements: &[*mut Element],
+    result: &mut Vec<*mut Element>,
+    find: &'s Find,
+) -> Result<(), PatchError<'s>> {
+    debug_assert!(result.is_empty());
+
+    match &find.filter {
+        FindFilter::Simple(filter) => result.extend(
+            elements
+                .iter()
+                .copied()
+                .filter(|&element| unsafe { filter.filter(&*element) }),
+        ),
         FindFilter::Composite(filter) => {
             let mut it = filter.filters.iter();
 
             let Some(first) = it.next() else {
-                return Ok(if filter.operation.complement {
-                    context.children.iter_mut().filter_map(Node::as_mut_element).collect()
+                if filter.operation.complement {
+                    result.extend_from_slice(elements);
                 } else {
-                    Vec::new()
-                });
+                    // leave result empty
+                }
+
+                return Ok(());
             };
 
-            let mut set: HashSet<*mut Element> = mod_find(context, first)?
-                .into_iter()
-                .map(|e| e as *mut Element)
-                .collect();
+            unsafe { mod_find_raw(elements, result, first)? };
+            let mut set: HashSet<*mut Element> = result.drain(..).collect();
 
             for child in it {
-                let candidates = mod_find(context, child)?;
+                unsafe { mod_find_raw(elements, result, child)? };
 
                 match filter.operation.operator {
                     ParOperator::And => {
-                        let candidate_set = candidates
-                            .into_iter()
-                            .map(|x| x as *mut Element)
-                            .collect::<HashSet<_>>();
+                        let candidate_set = result.drain(..).collect::<HashSet<_>>();
                         set.retain(|x| candidate_set.contains(x));
                     }
-                    ParOperator::Or => {
-                        set.extend(candidates.into_iter().map(|x| x as *mut Element));
-                    }
+                    ParOperator::Or => set.extend(result.drain(..)),
                 }
             }
 
-            // TODO: I believe these pointers are actually invalidated
-            //       by the time we get here but I don't care enough to fix this
-            //       right now.
             if filter.operation.complement {
-                context
-                    .children
-                    .iter_mut()
-                    .filter_map(Node::as_mut_element)
-                    .map(|c| c as *mut Element)
-                    .filter(|c| !set.contains(c))
-                    .map(|c| unsafe { &mut *c })
-                    .collect()
+                result.extend(elements.iter().filter(|&c| !set.contains(c)));
             } else {
-                set.into_iter().map(|x| unsafe { &mut *x }).collect()
+                result.extend(set);
             }
         }
     };
 
-    // TODO: Simplify this by iterating in reverse in filter_children
-    let it = if find.reverse {
-        Box::new(matches.into_iter().rev()) as Box<dyn Iterator<Item = &mut Element>>
-    } else {
-        Box::new(matches.into_iter()) as Box<dyn Iterator<Item = &mut Element>>
-    };
+    if find.reverse {
+        result.reverse();
+    }
 
-    matches = it.skip(find.start).take(find.limit).collect();
+    result.truncate(find.start + find.limit);
+    result.drain(..find.start.min(result.len()));
 
-    if let Some(panic_location) = find.panic.as_ref().filter(|_| matches.is_empty()) {
+    if let Some(panic_location) = find.panic.as_ref().filter(|_| result.is_empty()) {
         return Err(PatchError::Panic(panic_location));
     }
 
-    Ok(matches)
+    Ok(())
+}
+
+fn mod_find<'a, 's>(context: &'a mut Element, find: &'s Find) -> Result<Vec<&'a mut Element>, PatchError<'s>> {
+    let elements = context
+        .children
+        .iter_mut()
+        .filter_map(Node::as_mut_element)
+        .map(|e| e as *mut Element)
+        .collect::<Vec<_>>();
+    let mut result = Vec::new();
+    unsafe { mod_find_raw(&elements, &mut result, find)? };
+    Ok(result.into_iter().map(|x| unsafe { &mut *x }).collect())
 }
 
 fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<(), PatchError<'s>> {
