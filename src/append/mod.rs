@@ -12,6 +12,7 @@ const REMOVE_MARKER: &str = "_FTLMAN_INTERNAL_REMOVE_MARKER";
 
 const MOD_NAMESPACES: &[&str] = &["mod", "mod-append", "mod-prepend", "mod-overwrite"];
 
+#[derive(Debug)]
 pub enum PatchError<'s> {
     Panic(&'s FindPanic),
     AlreadyReported,
@@ -280,3 +281,6 @@ fn mod_commands<'s>(context: &mut Element, commands: &'s [Command]) -> Result<()
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test;
