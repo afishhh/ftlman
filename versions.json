@@ -70,6 +70,10 @@
     },
     {
       "exe_size": 4952160,
+      "exe_size_range": {
+        "start": 4950000,
+        "end": 4954000
+      },
       "natively_supported": true,
       "native_requirements": [
         {
@@ -115,6 +119,10 @@
     },
     {
       "exe_size": 4898736,
+      "exe_size_range": {
+        "start": 4890000,
+        "end": 4900000
+      },
       "natively_supported": true,
       "native_requirements": [
         {
