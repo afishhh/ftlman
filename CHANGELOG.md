@@ -1,13 +1,16 @@
 ## [Unreleased]
 
+## [v0.7.3]
+
 ### Fixed
 
 - Fixed `mod.meta.current_path` and `mod.util.eval()` causing a panic when used in the XML Sandbox.
-- Improved error message for `extract` command failing extract an output file (now mentions path).
+- Improved error message for `extract` command failing to extract an output file (now mentions path).
 - Fixed undefined behavior in XML append patcher with nested `mod:findComposite`.
 - Fixed deleted elements still being considered for find tags in XML append patching.
 - Fixed `mod:findComposite` results not being sorted by position.
 - Fixed `mod:setValue` not clearing pre-existing non-text content.
+- Fixed MacOS Hyperspace installation often causing ftlman to no longer recognize the FTL version.
 
 ## [v0.7.2]
 
@@ -238,7 +241,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.3...HEAD
+[v0.7.3]: https://github.com/afishhh/ftlman/compare/v0.7.2...v0.7.3
 [v0.7.2]: https://github.com/afishhh/ftlman/compare/v0.7.1...v0.7.2
 [v0.7.1]: https://github.com/afishhh/ftlman/compare/v0.7.0...v0.7.1
 [v0.7.0]: https://github.com/afishhh/ftlman/compare/v0.6.6...v0.7.0
