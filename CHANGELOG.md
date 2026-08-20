@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [v0.7.4]
+
 ### Fixed
 
 - Fixed instalation of Hyperspace 1.23.0+ on MacOS.
@@ -246,7 +248,8 @@
 - Added error context to .txt file decoding error.
 - Fixed XML Sandbox displaying the wrong file after the data archive's file list has been changed.
 
-[Unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/afishhh/ftlman/compare/v0.7.4...HEAD
+[v0.7.4]: https://github.com/afishhh/ftlman/compare/v0.7.3...v0.7.4
 [v0.7.3]: https://github.com/afishhh/ftlman/compare/v0.7.2...v0.7.3
 [v0.7.2]: https://github.com/afishhh/ftlman/compare/v0.7.1...v0.7.2
 [v0.7.1]: https://github.com/afishhh/ftlman/compare/v0.7.0...v0.7.1
