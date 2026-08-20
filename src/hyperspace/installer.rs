@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{bail, Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use log::{info, warn};
 use serde::{Deserialize, Deserializer};
 use zip::ZipArchive;

@@ -64,19 +64,20 @@ impl<'de> Deserialize<'de> for HyperspaceRelease {
     }
 }
 
+fn check_name_words(name: &str, expected: &[&str]) -> bool {
+    let words = name
+        .split(|c: char| c.is_ascii_punctuation() || c.is_ascii_whitespace())
+        .filter(|s| !s.chars().all(|c| c.is_ascii_digit()));
+
+    words.eq_by(expected, |a, b| a.eq_ignore_ascii_case(b))
+}
+
 fn find_split_assets(assets: &[ReleaseAsset]) -> Result<HyperspaceSplitAssets> {
     let find_for_platform = |platform| {
         assets
             .iter()
             // probably unnecessary leniency but will help me sleep at night
-            .find(|asset| {
-                let words = asset
-                    .name
-                    .split(|c: char| c.is_ascii_punctuation() || c.is_ascii_whitespace())
-                    .filter(|s| !s.chars().all(|c| c.is_ascii_digit()));
-
-                words.eq_by(["ftl", "hyperspace", platform, "zip"], |a, b| a.eq_ignore_ascii_case(b))
-            })
+            .find(|asset| check_name_words(&asset.name, &["ftl", "hyperspace", platform, "zip"]))
             .map(|asset| asset.browser_download_url.as_str().into())
             .with_context(|| format!("Failed to find a split Hyperspace asset for {platform}"))
     };
@@ -111,7 +112,15 @@ impl HyperspaceRelease {
             std::cmp::Ordering::Less => {
                 bail!("Hyperspace release contains no assets")
             }
-            std::cmp::Ordering::Equal => HyperspaceAssets::Unified(assets[0].browser_download_url.as_str().into()),
+            std::cmp::Ordering::Equal => {
+                let asset = &assets[0];
+
+                if !check_name_words(&asset.name, &["ftl", "hyperspace", "zip"]) {
+                    bail!("Hyperspace release contains a single asset with suspicious name");
+                }
+
+                HyperspaceAssets::Unified(asset.browser_download_url.as_str().into())
+            }
             std::cmp::Ordering::Greater => HyperspaceAssets::Split(find_split_assets(assets)?),
         })
     }

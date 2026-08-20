@@ -3,6 +3,7 @@
 ### Fixed
 
 - Fixed instalation of Hyperspace 1.23.0+ on MacOS.
+- Made single-asset release handling more defensive to prevent split releases with incomplete assets from confusing ftlman.
 
 ## [v0.7.3]
 
