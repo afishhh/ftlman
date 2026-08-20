@@ -9,7 +9,7 @@ use zip::ZipArchive;
 
 use crate::{
     AGENT,
-    github::{self, Release},
+    github::{self, Release, ReleaseAsset},
 };
 
 static HYPERSPACE_REPOSITORY: LazyLock<github::Repository> =
@@ -64,6 +64,30 @@ impl<'de> Deserialize<'de> for HyperspaceRelease {
     }
 }
 
+fn find_split_assets(assets: &[ReleaseAsset]) -> Result<HyperspaceSplitAssets> {
+    let find_for_platform = |platform| {
+        assets
+            .iter()
+            // probably unnecessary leniency but will help me sleep at night
+            .find(|asset| {
+                let words = asset
+                    .name
+                    .split(|c: char| c.is_ascii_punctuation() || c.is_ascii_whitespace())
+                    .filter(|s| !s.chars().all(|c| c.is_ascii_digit()));
+
+                words.eq_by(["ftl", "hyperspace", platform, "zip"], |a, b| a.eq_ignore_ascii_case(b))
+            })
+            .map(|asset| asset.browser_download_url.as_str().into())
+            .with_context(|| format!("Failed to find a split Hyperspace asset for {platform}"))
+    };
+
+    Ok(HyperspaceSplitAssets {
+        windows: find_for_platform("Windows")?,
+        linux: find_for_platform("Linux")?,
+        macos: find_for_platform("MacOS")?,
+    })
+}
+
 impl HyperspaceRelease {
     pub fn name(&self) -> &str {
         &self.release.name
@@ -88,21 +112,7 @@ impl HyperspaceRelease {
                 bail!("Hyperspace release contains no assets")
             }
             std::cmp::Ordering::Equal => HyperspaceAssets::Unified(assets[0].browser_download_url.as_str().into()),
-            std::cmp::Ordering::Greater => {
-                let find_for_platform = |platform| {
-                    assets
-                        .iter()
-                        .find(|asset| asset.name.contains(platform))
-                        .map(|asset| asset.browser_download_url.as_str().into())
-                        .with_context(|| format!("Failed to find a split Hyperspace asset for {platform}"))
-                };
-
-                HyperspaceAssets::Split(HyperspaceSplitAssets {
-                    windows: find_for_platform("Windows")?,
-                    linux: find_for_platform("Linux")?,
-                    macos: find_for_platform("MacOS")?,
-                })
-            }
+            std::cmp::Ordering::Greater => HyperspaceAssets::Split(find_split_assets(assets)?),
         })
     }
 
@@ -163,11 +173,13 @@ pub fn get_cached_hyperspace_releases() -> Result<Option<Vec<HyperspaceRelease>>
     ))
 }
 
+#[derive(Debug)]
 enum HyperspaceAssets {
     Unified(Box<str>),
     Split(HyperspaceSplitAssets),
 }
 
+#[derive(Debug)]
 struct HyperspaceSplitAssets {
     windows: Box<str>,
     linux: Box<str>,

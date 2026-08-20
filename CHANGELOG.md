@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Fixed instalation of Hyperspace 1.23.0+ on MacOS.
+
 ## [v0.7.3]
 
 ### Fixed

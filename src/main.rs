@@ -1,4 +1,5 @@
 #![feature(offset_of_enum)] // :)
+#![feature(iter_order_by)] // lazy
 
 use std::{
     borrow::Cow,
