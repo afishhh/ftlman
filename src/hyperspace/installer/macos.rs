@@ -1,12 +1,28 @@
 use std::{borrow::Cow, io::Cursor, path::Path, sync::LazyLock};
 
-use anyhow::{Context as _, Result};
-use log::trace;
+use anyhow::{Context as _, Result, bail};
+use log::{trace, warn};
 use regex::Regex;
 use zip::ZipArchive;
 
 static PLIST_BUNDLE_EXECUTABLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(<key>CFBundleExecutable</key>\s*<string>)([^<]*)(</string>)"#).unwrap());
+static PLIST_SHORT_VERSION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>"#).unwrap());
+
+fn parse_bundle_version(content: &str) -> Option<&str> {
+    PLIST_SHORT_VERSION
+        .captures(content)
+        .map(|caps| caps.get(1).unwrap().as_str().trim())
+}
+
+/// Reads the FTL version (e.g. "1.6.13") from the app's Info.plist.
+pub fn bundle_version(contents_dir: &Path) -> Result<String> {
+    let content = std::fs::read_to_string(contents_dir.join("Info.plist")).context("Failed to read plist")?;
+    parse_bundle_version(&content)
+        .map(str::to_owned)
+        .context("CFBundleShortVersionString not found in plist")
+}
 
 fn modify_plist_content<'a>(content: &'a str, new_executable: &str) -> Cow<'a, str> {
     struct PlistReplacer<'a> {
@@ -56,109 +72,111 @@ fn adjust_plist(contents_dir: &Path, new_executable: &str) -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn install(ftl: &Path, version: &super::versions::Version, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
     const LAUNCH_SCRIPT: &str = "Hyperspace.command";
-    let dylib_name = if matches!(version.exe_size, 4952160 | 4899748) {
-        "Hyperspace.1.6.13.amd64.dylib"
-    } else {
-        "Hyperspace.1.6.12.amd64.dylib"
-    };
 
     let contents_dir = ftl.parent().context("Invalid FTL path")?;
-    let app_path = contents_dir.parent().context("Invalid FTL path")?;
     let exe_dir = contents_dir.join("MacOS");
 
-    for file in [LAUNCH_SCRIPT, dylib_name] {
+    // The plist version is a reliable way to get the FTL version on MacOS
+    let dylib_name = match bundle_version(contents_dir)?.as_str() {
+        "1.6.13" => "Hyperspace.1.6.13.amd64.dylib",
+        "1.6.12" => "Hyperspace.1.6.12.amd64.dylib",
+        other => bail!("Hyperspace does not support FTL {other} on MacOS"),
+    };
+
+    adjust_plist(contents_dir, LAUNCH_SCRIPT)?;
+
+    for file in [dylib_name, LAUNCH_SCRIPT] {
         let out_path = exe_dir.join(file);
         trace!("Copying {file}");
         let mut reader = zip
             .by_name(&format!("MacOS/{file}"))
             .with_context(|| format!("Failed to open {file} in zip"))?;
-        let mut output = {
-            let mut options = std::fs::OpenOptions::new();
-            options.write(true).create(true).truncate(true);
-            #[cfg(unix)]
-            if let Some(mode) = reader.unix_mode() {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(mode);
-            }
-
-            options
-                .open(&out_path)
-                .context(format!("Failed to open {}", out_path.display()))?
-        };
-
+        let mut output =
+            std::fs::File::create(&out_path).with_context(|| format!("Failed to open {}", out_path.display()))?;
         std::io::copy(&mut reader, &mut output).with_context(|| format!("Failed to copy {file}"))?;
     }
 
-    adjust_plist(&contents_dir, LAUNCH_SCRIPT)?;
+    std::fs::set_permissions(exe_dir.join(LAUNCH_SCRIPT), std::fs::Permissions::from_mode(0o755))
+        .with_context(|| format!("Failed to make {LAUNCH_SCRIPT} executable"))?;
 
-    let codesign = contents_dir.join("_CodeSignature");
-    let codesign_backup = codesign.with_file_name("_CodeSignatureBackup");
-    match std::fs::rename(&codesign, &codesign_backup) {
-        Ok(()) => (),
-        Err(err)
-            if matches!(
-                err.kind(),
-                std::io::ErrorKind::AlreadyExists
-                    | std::io::ErrorKind::DirectoryNotEmpty
-                    // This should not happen unless generating a new signature fails
-                    // and moving back the backup fails too.
-                    | std::io::ErrorKind::NotFound
-            ) => {}
-        Err(err) => Err(err).context("Failed to rename _CodeSignature")?,
-    };
+    sign(ftl)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install(_ftl: &Path, _zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+    // Can't expect codesign to be there on non-MacOS
+    bail!("Installation of MacOS Hyperspace is not supported on non-MacOS platforms")
+}
+
+pub fn disable(ftl: &Path) -> Result<()> {
+    let contents_dir = ftl.join("..");
+    let exe_dir = contents_dir.join("MacOS");
+
+    adjust_plist(&contents_dir, "FTL")?;
+
+    for entry in std::fs::read_dir(&exe_dir).context("Failed to read MacOS directory")? {
+        let path = entry?.path();
+        if path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("Hyperspace"))
+        {
+            trace!("Removing {}", path.display());
+            std::fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Re-signs FTL.app. ftl.dat is part of the signature, so this has to run again after it is written.
+#[cfg(target_os = "macos")]
+pub fn sign(ftl: &Path) -> Result<()> {
+    let app_path = ftl.join("../..");
+
+    // Left behind by older ftlman versions, the original signature is invalid once ftl.dat changes
+    let codesign_backup = ftl.join("../_CodeSignatureBackup");
+    if codesign_backup.try_exists()? {
+        std::fs::remove_dir_all(&codesign_backup).context("Failed to remove _CodeSignatureBackup")?;
+    }
+
+    // codesign refuses to sign bundles carrying Finder info or quarantine attributes
+    trace!("Clearing extended attributes");
+    match std::process::Command::new("xattr").arg("-cr").arg(&app_path).status() {
+        Ok(status) if status.success() => {}
+        result => warn!("Failed to clear extended attributes: {result:?}"),
+    }
 
     trace!("Generating new code signature");
-    if let Err(err) = std::process::Command::new("codesign")
+    let output = std::process::Command::new("codesign")
         .args(["-f", "-s", "-", "--timestamp=none", "--all-architectures", "--deep"])
-        .arg(app_path)
+        .arg(&app_path)
         .output()
-        .context("codesign failed")
-        .and_then(|output| {
-            if !output.status.success() {
-                let mut msg = format!("codesign failed: {}", output.status);
-                for (stream, name) in [(&output.stdout, "stdout"), (&output.stderr, "stderr")] {
-                    if !stream.is_empty() {
-                        msg.push('\n');
-                        msg.push_str(name);
-                        msg.push_str(":\n");
-                        msg.push_str(&String::from_utf8_lossy(stream.trim_ascii()));
-                    }
-                }
+        .context("codesign failed")?;
 
-                Err(anyhow::Error::msg(msg))
-            } else {
-                Ok(())
+    if !output.status.success() {
+        let mut msg = format!("codesign failed: {}", output.status);
+        for (stream, name) in [(&output.stdout, "stdout"), (&output.stderr, "stderr")] {
+            if !stream.is_empty() {
+                msg.push('\n');
+                msg.push_str(name);
+                msg.push_str(":\n");
+                msg.push_str(&String::from_utf8_lossy(stream.trim_ascii()));
             }
-        })
-    {
-        _ = std::fs::rename(codesign_backup, codesign);
-        return Err(err);
+        }
+
+        bail!(msg);
     }
 
     Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn install(_ftl: &Path, _version: &super::versions::Version, _zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+pub fn sign(_ftl: &Path) -> Result<()> {
     // Can't expect codesign to be there on non-MacOS
-    anyhow::bail!("Installation of MacOS Hyperspace is not supported on non-MacOS platforms")
-}
-
-pub fn disable(ftl: &Path) -> Result<()> {
-    let contents_dir = ftl.join("..");
-    let codesign = contents_dir.join("_CodeSignature");
-    let codesign_backup = codesign.with_file_name("_CodeSignatureBackup");
-
-    adjust_plist(&contents_dir, "FTL")?;
-
-    if codesign_backup.try_exists()? {
-        trace!("Restoring original signature");
-        std::fs::remove_dir_all(&codesign).context("Failed to remove custom signature")?;
-        std::fs::rename(codesign_backup, codesign).context("Failed to rename _CodeSignature")?;
-    }
-
     Ok(())
 }
 
@@ -193,6 +211,17 @@ mod test {
     <!-- elided -->
 </dict>
 </plist>"#;
+
+    #[test]
+    fn bundle_version_parsed() {
+        let plist = "<key>CFBundleShortVersionString</key>\n\t<string>1.6.13</string>";
+        assert_eq!(super::parse_bundle_version(plist), Some("1.6.13"));
+    }
+
+    #[test]
+    fn bundle_version_missing() {
+        assert_eq!(super::parse_bundle_version(EXAMPLE_PLIST), None);
+    }
 
     #[test]
     fn plist_borrowed_if_unchanged() {

@@ -166,6 +166,10 @@ impl VersionIndex {
             .cloned()
     }
 
+    pub fn by_name(&self, name: &str) -> Option<Arc<Version>> {
+        self.versions.iter().find(|version| &*version.name == name).cloned()
+    }
+
     fn load(body: &str) -> Result<Arc<Self>> {
         let value: serde_json::Value = serde_json::from_str(body).context("Failed to parse index as json")?;
 

@@ -36,6 +36,28 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
     })
 }
 
+fn find_version(versions: &VersionIndex, ftl: &Path, exe_path: &Path) -> Result<Option<Arc<versions::Version>>> {
+    if exe_path.ends_with("MacOS/FTL") {
+        let bundle_version = macos::bundle_version(&ftl.join(".."))?;
+        let name = match bundle_version.as_str() {
+            "1.6.13" => "Steam 1.6.13 MacOS",
+            "1.6.12" => "Unknown 1.6.12 MacOS",
+            other => {
+                warn!("Unsupported MacOS FTL version {other}");
+                return Ok(None);
+            }
+        };
+        return Ok(versions.by_name(name));
+    }
+
+    let size = exe_path.metadata().context("Failed to stat FTL executable")?.len();
+    let version = versions.by_exe_size(size);
+    if version.is_none() {
+        warn!("Failed to determine FTL version (size={size})");
+    }
+    Ok(version)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
     Windows,
@@ -88,12 +110,9 @@ impl Installer {
             return Ok(Err("FTL executable not found".to_string()));
         };
 
-        let size = exe_path.metadata().context("Failed to stat FTL executable")?.len();
-
-        let Some(version) = versions.by_exe_size(size) else {
-            warn!("Failed to determine FTL version (size={size})");
+        let Some(version) = find_version(&versions, ftl, &exe_path)? else {
             return Ok(Err(format!(
-                "FTL installation not recognized: {:?} size={size}",
+                "FTL installation not recognized: {:?}",
                 exe_path.file_name().unwrap()
             )));
         };
@@ -159,7 +178,7 @@ impl Installer {
             }
             Platform::MacOS => {
                 assert!(self.patches.is_none());
-                macos::install(ftl, &self.version, zip)
+                macos::install(ftl, zip)
             }
         }
     }
@@ -171,4 +190,15 @@ impl Installer {
             Platform::MacOS => macos::disable(ftl),
         }
     }
+}
+
+/// Re-signs FTL.app when `data_dir` is the data directory of a MacOS installation.
+/// Must run after ftl.dat has been written since it is part of the signature.
+pub fn sign_macos_app(data_dir: &Path) -> Result<()> {
+    // Only sign an FTL.app structure
+    if data_dir.join("../MacOS/FTL").try_exists()? {
+        macos::sign(data_dir)?;
+    }
+
+    Ok(())
 }
