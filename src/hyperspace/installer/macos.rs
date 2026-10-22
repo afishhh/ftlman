@@ -73,8 +73,6 @@ fn adjust_plist(contents_dir: &Path, new_executable: &str) -> Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
     const LAUNCH_SCRIPT: &str = "Hyperspace.command";
 
     let contents_dir = ftl.parent().context("Invalid FTL path")?;
@@ -87,21 +85,30 @@ pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> 
         other => bail!("Hyperspace does not support FTL {other} on MacOS"),
     };
 
-    adjust_plist(contents_dir, LAUNCH_SCRIPT)?;
-
-    for file in [dylib_name, LAUNCH_SCRIPT] {
+    for file in [LAUNCH_SCRIPT, dylib_name] {
         let out_path = exe_dir.join(file);
         trace!("Copying {file}");
         let mut reader = zip
             .by_name(&format!("MacOS/{file}"))
             .with_context(|| format!("Failed to open {file} in zip"))?;
-        let mut output =
-            std::fs::File::create(&out_path).with_context(|| format!("Failed to open {}", out_path.display()))?;
+        let mut output = {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            if let Some(mode) = reader.unix_mode() {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(mode);
+            }
+
+            options
+                .open(&out_path)
+                .context(format!("Failed to open {}", out_path.display()))?
+        };
+
         std::io::copy(&mut reader, &mut output).with_context(|| format!("Failed to copy {file}"))?;
     }
 
-    std::fs::set_permissions(exe_dir.join(LAUNCH_SCRIPT), std::fs::Permissions::from_mode(0o755))
-        .with_context(|| format!("Failed to make {LAUNCH_SCRIPT} executable"))?;
+    adjust_plist(&contents_dir, LAUNCH_SCRIPT)?;
 
     sign(ftl)
 }
