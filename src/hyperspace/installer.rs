@@ -194,7 +194,7 @@ impl Installer {
 
 /// Re-signs FTL.app when `data_dir` is the data directory of a MacOS installation.
 /// Must run after ftl.dat has been written since it is part of the signature.
-pub fn sign_macos_app(data_dir: &Path) -> Result<()> {
+pub fn sign_if_macos_app(data_dir: &Path) -> Result<()> {
     // Only sign an FTL.app structure
     if data_dir.join("../MacOS/FTL").try_exists()? {
         macos::sign(data_dir)?;
