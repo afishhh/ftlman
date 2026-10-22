@@ -137,7 +137,9 @@ pub fn disable(ftl: &Path) -> Result<()> {
 pub fn sign(ftl: &Path) -> Result<()> {
     let app_path = ftl.join("../..");
 
-    // Left behind by older ftlman versions, the original signature is invalid once ftl.dat changes
+    // Left behind by older ftlman versions. Keeping it is pointless, the original signature can't be restored:
+    // 1. codesign --deep also re-signs every binary in the bundle modifying them
+    // 2. ftl.dat.vanilla is still in the bundle. Any file added after signing invalidates the signature
     let codesign_backup = ftl.join("../_CodeSignatureBackup");
     if codesign_backup.try_exists()? {
         std::fs::remove_dir_all(&codesign_backup).context("Failed to remove _CodeSignatureBackup")?;
