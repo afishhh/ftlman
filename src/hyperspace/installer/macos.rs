@@ -9,6 +9,8 @@ static PLIST_BUNDLE_EXECUTABLE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(<key>CFBundleExecutable</key>\s*<string>)([^<]*)(</string>)"#).unwrap());
 static PLIST_SHORT_VERSION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"<key>CFBundleShortVersionString</key>\s*<string>([^<]*)</string>"#).unwrap());
+static HYPERSPACE_FILES: LazyLock<RegexSet> =
+    LazyLock::new(|| RegexSet::new([r"^Hyperspace\.command$", r"^Hyperspace\.\d+\.\d+\.\d+\.\w+\.dylib$"]).unwrap());
 
 fn parse_bundle_version(content: &str) -> Option<&str> {
     PLIST_SHORT_VERSION
@@ -126,11 +128,10 @@ pub fn disable(ftl: &Path) -> Result<()> {
 
     for entry in std::fs::read_dir(&exe_dir).context("Failed to read MacOS directory")? {
         let path = entry?.path();
-        if path.file_name().is_some_and(|name| {
-            RegexSet::new([r"^Hyperspace\.command$", r"^Hyperspace\.\d+\.\d+\.\d+\.\w+\.dylib$"])
-                .unwrap()
-                .is_match(&name.to_string_lossy())
-        }) {
+        if path
+            .file_name()
+            .is_some_and(|name| HYPERSPACE_FILES.is_match(&name.to_string_lossy()))
+        {
             trace!("Removing {}", path.display());
             std::fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
         }
