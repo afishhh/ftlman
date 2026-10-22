@@ -2,7 +2,7 @@ use std::{borrow::Cow, io::Cursor, path::Path, sync::LazyLock};
 
 use anyhow::{Context as _, Result, bail};
 use log::{trace, warn};
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use zip::ZipArchive;
 
 static PLIST_BUNDLE_EXECUTABLE: LazyLock<Regex> =
@@ -120,10 +120,11 @@ pub fn disable(ftl: &Path) -> Result<()> {
 
     for entry in std::fs::read_dir(&exe_dir).context("Failed to read MacOS directory")? {
         let path = entry?.path();
-        if path
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().starts_with("Hyperspace"))
-        {
+        if path.file_name().is_some_and(|name| {
+            RegexSet::new([r"^Hyperspace\.command$", r"^Hyperspace\.\d+\.\d+\.\d+\.\w+\.dylib$"])
+                .unwrap()
+                .is_match(&name.to_string_lossy())
+        }) {
             trace!("Removing {}", path.display());
             std::fs::remove_file(&path).with_context(|| format!("Failed to remove {}", path.display()))?;
         }
