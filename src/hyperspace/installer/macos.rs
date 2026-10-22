@@ -148,26 +148,34 @@ pub fn sign(ftl: &Path) -> Result<()> {
     // 1. codesign --deep also re-signs every binary in the bundle modifying them
     // 2. ftl.dat.vanilla is still in the bundle. Any file added after signing invalidates the signature
     let codesign_backup = ftl.join("../_CodeSignatureBackup");
-    if codesign_backup.try_exists()? {
-        std::fs::remove_dir_all(&codesign_backup).context("Failed to remove _CodeSignatureBackup")?;
+    if codesign_backup.exists()
+        && let Err(err) = std::fs::remove_dir_all(&codesign_backup)
+    {
+        warn!("Failed to remove _CodeSignatureBackup: {err}");
     }
 
     // codesign refuses to sign bundles carrying Finder info or quarantine attributes
     trace!("Clearing extended attributes");
-    match std::process::Command::new("xattr").arg("-cr").arg(&app_path).status() {
-        Ok(status) if status.success() => {}
-        result => warn!("Failed to clear extended attributes: {result:?}"),
-    }
+    let mut xattr = std::process::Command::new("xattr");
+    xattr.arg("-cr").arg(&app_path);
+    run_cmd_checked(xattr)?;
 
     trace!("Generating new code signature");
-    let output = std::process::Command::new("codesign")
+    let mut codesign = std::process::Command::new("codesign");
+    codesign
         .args(["-f", "-s", "-", "--timestamp=none", "--all-architectures", "--deep"])
-        .arg(&app_path)
-        .output()
-        .context("codesign failed")?;
+        .arg(&app_path);
+    run_cmd_checked(codesign)
+}
+
+/// Runs the command and returns an error with its output if it fails
+#[cfg(target_os = "macos")]
+fn run_cmd_checked(mut command: std::process::Command) -> Result<()> {
+    let program = command.get_program().to_string_lossy().into_owned();
+    let output = command.output().with_context(|| format!("Failed to run {program}"))?;
 
     if !output.status.success() {
-        let mut msg = format!("codesign failed: {}", output.status);
+        let mut msg = format!("{program} failed: {}", output.status);
         for (stream, name) in [(&output.stdout, "stdout"), (&output.stderr, "stderr")] {
             if !stream.is_empty() {
                 msg.push('\n');
