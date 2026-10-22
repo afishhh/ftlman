@@ -171,8 +171,9 @@ pub fn sign(ftl: &Path) -> Result<()> {
 /// Runs the command and returns an error with its output if it fails
 #[cfg(target_os = "macos")]
 fn run_cmd_checked(mut command: std::process::Command) -> Result<()> {
-    let program = command.get_program().to_string_lossy().into_owned();
-    let output = command.output().with_context(|| format!("Failed to run {program}"))?;
+    let output = command.output();
+    let program = command.get_program().to_string_lossy();
+    let output = output.with_context(|| format!("Failed to run {program}"))?;
 
     if !output.status.success() {
         let mut msg = format!("{program} failed: {}", output.status);
