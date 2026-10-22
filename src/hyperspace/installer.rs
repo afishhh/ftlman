@@ -39,15 +39,11 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
 fn find_version(versions: &VersionIndex, ftl: &Path, exe_path: &Path) -> Result<Option<Arc<versions::Version>>> {
     if exe_path.ends_with("MacOS/FTL") {
         let bundle_version = macos::bundle_version(&ftl.join(".."))?;
-        let name = match bundle_version.as_str() {
-            "1.6.13" => "Steam 1.6.13 MacOS",
-            "1.6.12" => "Unknown 1.6.12 MacOS",
-            other => {
-                warn!("Unsupported MacOS FTL version {other}");
-                return Ok(None);
-            }
-        };
-        return Ok(versions.by_name(name));
+        let version = versions.by_macos_bundle_version(&bundle_version);
+        if version.is_none() {
+            warn!("Failed to determine FTL version (bundle_version={bundle_version})");
+        }
+        return Ok(version);
     }
 
     let size = exe_path.metadata().context("Failed to stat FTL executable")?.len();
@@ -178,7 +174,7 @@ impl Installer {
             }
             Platform::MacOS => {
                 assert!(self.patches.is_none());
-                macos::install(ftl, zip)
+                macos::install(ftl, &self.version, zip)
             }
         }
     }

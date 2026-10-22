@@ -113,6 +113,8 @@ impl Patch {
 pub struct Version {
     pub(super) exe_size: u64,
     pub(super) exe_size_range: Option<Range<u64>>,
+    #[serde(default)]
+    pub(super) macos_bundle_version: Option<Box<str>>,
     platform: super::Platform,
     #[serde(default)]
     natively_supported: bool,
@@ -166,8 +168,11 @@ impl VersionIndex {
             .cloned()
     }
 
-    pub fn by_name(&self, name: &str) -> Option<Arc<Version>> {
-        self.versions.iter().find(|version| &*version.name == name).cloned()
+    pub fn by_macos_bundle_version(&self, bundle_version: &str) -> Option<Arc<Version>> {
+        self.versions
+            .iter()
+            .find(|version| version.macos_bundle_version.as_deref() == Some(bundle_version))
+            .cloned()
     }
 
     fn load(body: &str) -> Result<Arc<Self>> {

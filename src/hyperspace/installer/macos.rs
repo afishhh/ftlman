@@ -72,20 +72,19 @@ fn adjust_plist(contents_dir: &Path, new_executable: &str) -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+pub fn install(ftl: &Path, version: &super::versions::Version, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     const LAUNCH_SCRIPT: &str = "Hyperspace.command";
+    const ARCH: &str = "amd64";
+    let bundle_version = version
+        .macos_bundle_version
+        .as_deref()
+        .context("FTL version has no macos_bundle_version")?;
+    let dylib_name = format!("Hyperspace.{bundle_version}.{ARCH}.dylib");
 
     let contents_dir = ftl.parent().context("Invalid FTL path")?;
     let exe_dir = contents_dir.join("MacOS");
 
-    // The plist version is a reliable way to get the FTL version on MacOS
-    let dylib_name = match bundle_version(contents_dir)?.as_str() {
-        "1.6.13" => "Hyperspace.1.6.13.amd64.dylib",
-        "1.6.12" => "Hyperspace.1.6.12.amd64.dylib",
-        other => bail!("Hyperspace does not support FTL {other} on MacOS"),
-    };
-
-    for file in [LAUNCH_SCRIPT, dylib_name] {
+    for file in [LAUNCH_SCRIPT, dylib_name.as_str()] {
         let out_path = exe_dir.join(file);
         trace!("Copying {file}");
         let mut reader = zip
@@ -114,7 +113,7 @@ pub fn install(ftl: &Path, zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> 
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn install(_ftl: &Path, _zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
+pub fn install(_ftl: &Path, _version: &super::versions::Version, _zip: &mut ZipArchive<Cursor<Vec<u8>>>) -> Result<()> {
     // Can't expect codesign to be there on non-MacOS
     bail!("Installation of MacOS Hyperspace is not supported on non-MacOS platforms")
 }
