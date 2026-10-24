@@ -1052,6 +1052,8 @@ pub fn apply(
         true,
     )?;
 
+    hyperspace::sign_if_macos_app(&ftl_path)?;
+
     let apply_duration = Instant::now() - apply_start;
 
     let ts = jiff::Zoned::now();

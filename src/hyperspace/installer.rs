@@ -36,6 +36,24 @@ fn find_ftl_exe(ftl: &Path) -> Result<Option<PathBuf>> {
     })
 }
 
+fn find_version(versions: &VersionIndex, ftl: &Path, exe_path: &Path) -> Result<Option<Arc<versions::Version>>> {
+    if exe_path.ends_with("MacOS/FTL") {
+        let bundle_version = macos::bundle_version(&ftl.join(".."))?;
+        let version = versions.by_macos_bundle_version(&bundle_version);
+        if version.is_none() {
+            warn!("Failed to determine FTL version (bundle_version={bundle_version})");
+        }
+        return Ok(version);
+    }
+
+    let size = exe_path.metadata().context("Failed to stat FTL executable")?.len();
+    let version = versions.by_exe_size(size);
+    if version.is_none() {
+        warn!("Failed to determine FTL version (size={size})");
+    }
+    Ok(version)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
     Windows,
@@ -88,12 +106,9 @@ impl Installer {
             return Ok(Err("FTL executable not found".to_string()));
         };
 
-        let size = exe_path.metadata().context("Failed to stat FTL executable")?.len();
-
-        let Some(version) = versions.by_exe_size(size) else {
-            warn!("Failed to determine FTL version (size={size})");
+        let Some(version) = find_version(&versions, ftl, &exe_path)? else {
             return Ok(Err(format!(
-                "FTL installation not recognized: {:?} size={size}",
+                "FTL installation not recognized: {:?}",
                 exe_path.file_name().unwrap()
             )));
         };
@@ -171,4 +186,15 @@ impl Installer {
             Platform::MacOS => macos::disable(ftl),
         }
     }
+}
+
+/// Re-signs FTL.app when `data_dir` is the data directory of a MacOS installation.
+/// Must run after ftl.dat has been written since it is part of the signature.
+pub fn sign_if_macos_app(data_dir: &Path) -> Result<()> {
+    // Only sign an FTL.app structure
+    if data_dir.join("../MacOS/FTL").try_exists()? {
+        macos::sign(data_dir)?;
+    }
+
+    Ok(())
 }
