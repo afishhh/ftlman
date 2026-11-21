@@ -93,7 +93,15 @@
     {
       "exe_size": 128019802,
       "platform": "windows",
-      "name": "GOG 1.6.13B"
+      "name": "GOG 1.6.13B",
+      "patches": [
+        {
+          "id": "gog-1.6.13b-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/bce6c003a59822885ea35098432fb50ff2cf2efd/patch/GOG-1.6.13b.bps",
+          "sha256": "9e449139e10b83a8b8ca6c173a38428830f1a743710ccf0f0eb8b017cbcc5dc1"
+        }
+      ]
     },
     {
       "exe_size": 125159498,
