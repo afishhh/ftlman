@@ -27,6 +27,12 @@
       ]
     },
     {
+      "exe_size": 5168640,
+      "natively_supported": true,
+      "platform": "windows",
+      "name": "Unknown 1.6.9 Windows (stripped patch)"
+    },
+    {
       "exe_size": 5497856,
       "platform": "windows",
       "name": "Steam 1.6.14 Windows",
@@ -42,6 +48,12 @@
             }
           ],
           "sha256": "2cd67ba75618d8b9088f26f7b2f49eacfffa63a0e994e4b6adb3ad18d9cfa1ca"
+        },
+        {
+          "id": "1.6.14-to-1.6.9S",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/Steam-1.6.14.bps",
+          "sha256": "a1b70589c0614ee9aa9c1acd55af527bbec10f3e7af4640579b03ced0bd69f52"
         },
         {
           "id": "1.6.14-to-1.6.9",
@@ -93,12 +105,28 @@
     {
       "exe_size": 128019802,
       "platform": "windows",
-      "name": "GOG 1.6.13B"
+      "name": "GOG 1.6.13B",
+      "patches": [
+        {
+          "id": "gog-1.6.13-to-1.6.9S",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/GOG-1.6.13b.bps",
+          "sha256": "9e449139e10b83a8b8ca6c173a38428830f1a743710ccf0f0eb8b017cbcc5dc1"
+        }
+      ]
     },
     {
       "exe_size": 125159498,
       "platform": "windows",
-      "name": "GOG 1.6.12"
+      "name": "GOG 1.6.12",
+      "patches": [
+        {
+          "id": "gog-1.6.12-to-1.6.9S",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/GOG-1.6.12.bps",
+          "sha256": "901ffa5a0654e6f65217b62876a3f7cc70b0344d1da1634cd490b0f3b2d2f4bd"
+        }
+      ]
     },
     {
       "exe_size": 125087845,
@@ -153,6 +181,12 @@
       "name": "Epic 1.6.12",
       "patches": [
         {
+          "id": "epic-1.6.12-to-1.6.9S",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/Epic-1.6.12.bps",
+          "sha256": "0487a69996580eb716ee8d1abce44fa0ea2e04b20ea2c06a591fdb72051feeac"
+        },
+        {
           "id": "epic-1.6.12-to-1.6.9",
           "kind": "gdrive",
           "file_id": "1wM4Lb1ADy3PHay5sNuWpQOTnWbpIOGQ1",
@@ -167,6 +201,12 @@
       "patches": [
         {
           "id": "origin-1.6.12-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/Origin-1.6.12.bps",
+          "sha256": "595a06f838d891e1360fcda181f37c66a64cb4f02d47f2b33331e4a182968fed"
+        },
+        {
+          "id": "origin-1.6.12-to-1.6.9",
           "kind": "gdrive",
           "file_id": "1GTxiidyp0o5D1HBMrT0XprstVmPwvuqo",
           "sha256": "595a06f838d891e1360fcda181f37c66a64cb4f02d47f2b33331e4a182968fed"
@@ -178,6 +218,12 @@
       "platform": "windows",
       "name": "Microsoft 1.6.12",
       "patches": [
+        {
+          "id": "ms-1.6.12-to-1.6.9",
+          "kind": "http",
+          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/Microsoft.1.6.12.bps",
+          "sha256": "91e84d5233308df1b92f900e14a8dddec3e9a02ee4fbd8fa66826ed1c6dd6545"
+        },
         {
           "id": "ms-1.6.12-to-1.6.9",
           "kind": "gdrive",
