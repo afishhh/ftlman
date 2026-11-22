@@ -50,12 +50,6 @@
           "sha256": "2cd67ba75618d8b9088f26f7b2f49eacfffa63a0e994e4b6adb3ad18d9cfa1ca"
         },
         {
-          "id": "1.6.14-to-1.6.9S",
-          "kind": "http",
-          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/Steam-1.6.14.bps",
-          "sha256": "a1b70589c0614ee9aa9c1acd55af527bbec10f3e7af4640579b03ced0bd69f52"
-        },
-        {
           "id": "1.6.14-to-1.6.9",
           "kind": "http",
           "url": "https://fishhh.dev/ftlman/patches/1.6.14-to-1.6.9.bps",
@@ -180,12 +174,6 @@
       "platform": "windows",
       "name": "Epic 1.6.12",
       "patches": [
-        {
-          "id": "epic-1.6.12-to-1.6.9S",
-          "kind": "http",
-          "url": "https://raw.githubusercontent.com/FTL-Hyperspace/FTL-Version-Rollback/8103e738463242a65a4707f21ae62affb94ac8a6/patch/Epic-1.6.12.bps",
-          "sha256": "0487a69996580eb716ee8d1abce44fa0ea2e04b20ea2c06a591fdb72051feeac"
-        },
         {
           "id": "epic-1.6.12-to-1.6.9",
           "kind": "gdrive",
